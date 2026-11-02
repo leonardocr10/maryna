@@ -95,4 +95,15 @@ class TestWorker(unittest.TestCase):
   self.assertEqual(str(paras['Gerado.'].runs[0].font.color.rgb),'FF0000')
   self.assertIsNone(paras['ANAMNESE'].runs[0].font.color.rgb)
 
+ def test_rejects_zip_that_is_not_word(self):
+  import zipfile
+  with zipfile.ZipFile(self.base,'w') as z:z.writestr('x.txt','not a docx')
+  with self.assertRaises(AssertionError):run('inspect',str(self.base))
+
+ def test_rejects_zip_bomb(self):
+  import zipfile
+  with zipfile.ZipFile(self.base,'w',zipfile.ZIP_DEFLATED) as z:
+   z.writestr('word/document.xml','<w/>');z.writestr('big.bin',b'0'*(201*1024*1024))
+  with self.assertRaises(AssertionError):run('inspect',str(self.base))
+
 if __name__=='__main__':unittest.main()

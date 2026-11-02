@@ -53,28 +53,35 @@ python -m unittest discover -s tests                             # testes do wor
 
 Sem chave e autorização explicitamente configuradas, a IA retorna bloqueio (503). O app não reutiliza sessões do ChatGPT Web: a API é contratada e faturada separadamente.
 
+## Como usar (tela)
+1. Abra `iniciar.bat` (só neste PC) ou `iniciar-rede.bat` (rede local) e entre.
+2. À esquerda: **+ Nova avaliação** ou abra uma existente.
+3. **Arquivos:** arraste o arquivo base e a anamnese (DOCX). O sistema valida e encontra os pontos de inserção.
+4. **Gerar texto com IA:** um botão gera as 11 partes; mostra tokens e custo estimado em reais.
+5. **Conferir e baixar:** pré-visualize o Word no navegador, edite qualquer parte (ou use o modo manual com o ChatGPT) e clique em **Aprovar e baixar Word**.
+
+Custo: estimado a partir de `PRICES` em `api/src/server.mjs` (USD por 1M tokens, sobrescreva com `OPENAI_PRICE_INPUT`/`_CACHED`/`_OUTPUT`) e do câmbio `USD_BRL` no `api/.env`. O valor cobrado de fato está no painel da OpenAI. `GENERATED_TEXT_RED=true` deixa o texto gerado em vermelho no Word (modo teste).
+
 ## Endpoints
 - `GET /api/health`
-- `POST /api/setup` (somente quando não existem usuários)
-- `POST /api/login`
-- `GET /api/patients` / `POST /api/patients`
-- `GET /api/evaluations` / `POST /api/evaluations` / `GET /api/evaluations/:id`
-- `POST /api/evaluations/:id/upload/base` multipart `file` DOCX
-- `POST /api/evaluations/:id/upload/anamnesis` multipart `file` DOCX
+- `POST /api/setup` (somente quando não existem usuários) · `POST /api/login` · `PUT /api/me/password`
+- `GET/POST /api/patients`
+- `GET/POST /api/evaluations` · `GET/DELETE /api/evaluations/:id`
+- `POST /api/evaluations/:id/upload/base|anamnesis` (multipart `file`, DOCX validado)
 - `POST /api/evaluations/:id/inspect`
-- `GET/PUT /api/ai/settings`
-- `PUT /api/ai/prompts/:id`
-- `POST /api/evaluations/:id/generate/:key`
-- `PUT /api/evaluations/:id/sections/:key` body `{content,approve:true|false}`
-- `POST /api/evaluations/:id/approve`
-- `POST /api/evaluations/:id/export` retorna DOCX
+- `POST /api/evaluations/:id/generate/:key` (IA pela API; registra tokens e custo)
+- `POST /api/evaluations/:id/prompt/:key` (pedido pronto para o modo manual com ChatGPT)
+- `PUT /api/evaluations/:id/sections/:key` body `{content,approve}`
+- `POST /api/evaluations/:id/preview` (DOCX com rascunhos atuais)
+- `POST /api/evaluations/:id/approve` body `{approveSections:true}` opcional · `POST /api/evaluations/:id/export`
+- `GET/PUT /api/ai/settings` (verifica se o modelo existe na conta) · `PUT /api/ai/prompts/:id` · `GET /api/ai/usage`
 
 ## Limitações abertas antes de produção
 - Corrigir e validar o posicionamento visual de inserções para todos os diferentes modelos DOCX; preservar espaçamento, numeração de páginas e eventuais caixas de texto. Adicionar testes por modelos anonimizados.
 - A extração envia o **conteúdo estruturado do documento** à API externa se a integração for habilitada. **Ainda não há desidentificação automática suficiente**. Implantar minimização/pseudonimização consistente, base legal, política de retenção e contrato antes de usar dados reais. API não deve ser ativada em ambiente clínico até aprovação.
 - Persistir somente arquivos criptografados, mas conteúdo de seções e dados do paciente estão no MySQL: implementar criptografia de banco, backup criptografado, monitoramento, rotação de segredos, segregação de funções e política de expurgo.
 - Auth inicial não inclui MFA, renovação/invalidacão de tokens, criação de outros usuários nem recuperação de senha. Adicionar antes de liberar acesso remoto.
-- `POST /api/evaluations/:id/approve` aprova todas as seções existentes; falta política de completude por template.
+- Aprovação registra usuário e horário (`approved_by`/`approved_at`), mas ainda não há política de completude por template nem bloqueio de versão por assinatura.
 - Não há geração de PDF operacional: adicionar conversor com validação visual.
 - A conferência de pontuação não realiza normatização nem cálculo psicológico. A IA não pode inventar normas ou classificar testes.
 - Não copiar instrumentos restritos nem tabelas normativas licenciadas para o sistema sem permissão.

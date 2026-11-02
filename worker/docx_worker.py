@@ -5,7 +5,7 @@ Inserted text becomes new body paragraphs placed right after each destination ma
 (heading box or "Interpretação Clínica:" line). Existing elements are never edited.
 Section content format: blank line separates paragraphs; a line starting with "## " is a bold topic title.
 """
-import sys,json,re,os,hashlib
+import sys,json,re,os,hashlib,zipfile
 from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -39,6 +39,14 @@ class Markers:
    if k not in self.used and any(label.rstrip(':').startswith(p) for p in prefixes):self.used.add(k);return k
   return None
 
+MAX_UNZIPPED=200*1024*1024;MAX_ENTRIES=5000
+def open_docx(path):
+ """Document() with a zip-bomb guard: rejects archives that expand too much or hold too many entries."""
+ with zipfile.ZipFile(path) as z:
+  infos=z.infolist()
+  if len(infos)>MAX_ENTRIES or sum(i.file_size for i in infos)>MAX_UNZIPPED:raise SystemExit('docx too large when uncompressed')
+  if 'word/document.xml' not in z.namelist():raise SystemExit('not a Word document')
+ return Document(path)
 def all_elements(doc):
  for ch in doc.element.body.iterchildren():
   if ch.tag.endswith('}p'):
@@ -46,7 +54,7 @@ def all_elements(doc):
   elif ch.tag.endswith('}tbl'):
    yield {'type':'table','rows':[[clean(c.text) for c in row.cells] for row in Table(ch,doc).rows]}
 def inspect(path):
- d=Document(path);elements=list(all_elements(d));markers=[];m=Markers()
+ d=open_docx(path);elements=list(all_elements(d));markers=[];m=Markers()
  for i,e in enumerate(elements):
   txt=e['text'] if e['type']=='p' else ' '.join(x for row in e['rows'] for x in row)
   k=m.key(txt)
@@ -96,7 +104,7 @@ def sha256(path):
 def export(base,out,sections,highlight=False):
  if os.path.abspath(base)==os.path.abspath(out):raise SystemExit('out must differ from base')
  before=sha256(base)
- d=Document(base);seen=[];m=Markers()
+ d=open_docx(base);seen=[];m=Markers()
  for ch in list(d.element.body.iterchildren()):
   if not (ch.tag.endswith('}p') or ch.tag.endswith('}tbl')):continue
   k=m.key(element_text(ch,d))

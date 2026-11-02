@@ -89,3 +89,4 @@ main{padding:24px;max-width:1100px;width:100%}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#173431;color:#fff;padding:12px 18px;border-radius:10px;box-shadow:0 6px 20px #0003;max-width:90vw;cursor:pointer;z-index:10}
 
 @media(max-width:860px){.app{grid-template-columns:1fr}aside{position:static;max-height:none;border-right:0;border-bottom:1px solid var(--line)}.grid{grid-template-columns:1fr}main{padding:16px}}
+.cost{display:flex;flex-wrap:wrap;gap:12px;margin-top:16px}.cost>div{flex:1;min-width:200px;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:10px 14px;display:flex;flex-direction:column;gap:2px}.cost strong{font-size:20px;color:var(--brand-dark)}.cost p{flex-basis:100%;margin:0}

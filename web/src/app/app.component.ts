@@ -106,6 +106,11 @@ const SECTIONS = [
             <span *ngFor="let s of progressKeys()" [class]="'pill '+gen[s.id]">{{icon(gen[s.id])}} {{s.name}}</span>
           </div>
         </ng-container>
+        <div *ngIf="runUsage.total_tokens || usage?.calls" class="cost">
+          <div *ngIf="runUsage.total_tokens"><span class="muted small">Esta geração</span><strong>{{brl(runUsage.cost_brl)}}</strong><span class="small">{{int(runUsage.total_tokens)}} tokens ({{int(runUsage.input_tokens)}} entrada • {{int(runUsage.output_tokens)}} saída)</span></div>
+          <div *ngIf="usage?.calls"><span class="muted small">Total desta avaliação</span><strong>{{brl(usage.cost_brl)}}</strong><span class="small">{{int(usage.total_tokens)}} tokens em {{usage.calls}} chamadas</span></div>
+          <p class="muted small">Valores estimados pela tabela de preços do modelo e câmbio de {{brl(usdBrl)}}/US$. O valor exato fica no painel da OpenAI.</p>
+        </div>
         <p *ngIf="locked()" class="muted">Avaliação aprovada: textos travados.</p>
       </section>
 
@@ -162,6 +167,11 @@ const SECTIONS = [
         <label class="check"><input type="checkbox" [(ngModel)]="aiEnabled"> Habilitar geração pela API</label>
         <button (click)="saveSettings()">Salvar</button>
         <p class="small">Chave configurada: {{apiConfigured?'Sim':'Não'}} • Envio autorizado no servidor: {{privacyGate?'Sim':'Não'}}</p>
+        <div *ngIf="globalUsage" class="cost">
+          <div><span class="muted small">Gasto estimado neste mês</span><strong>{{brl(globalUsage.month.cost_brl)}}</strong><span class="small">{{int(globalUsage.month.total_tokens)}} tokens</span></div>
+          <div><span class="muted small">Total desde o início</span><strong>{{brl(globalUsage.total.cost_brl)}}</strong><span class="small">{{int(globalUsage.total.total_tokens)}} tokens</span></div>
+          <p class="muted small">Câmbio usado: {{brl(usdBrl)}}/US$ (USD_BRL no api/.env).</p>
+        </div>
       </section>
       <section class="card">
         <h2>Instruções da IA por parte</h2>
@@ -192,6 +202,7 @@ export class AppComponent {
   drafts: Record<string, string> = {}; warnings: Record<string, string[]> = {};
   dragOver = ''; uploading = '';
   gen: Record<string, GenState> = {}; generating = false;
+  usage: any = null; runUsage: any = {}; globalUsage: any = null; usdBrl = 5.5;
   reviewTab: 'preview' | 'edit' = 'preview'; previewLoading = false; openSection = '';
 
   model = 'gpt-4.1'; aiEnabled = false; apiConfigured = false; privacyGate = false; aiReady = false;
@@ -237,7 +248,7 @@ export class AppComponent {
     } catch {}
   }
   async select(id: string) {
-    this.evaluationId = id; this.view = 'evaluation'; this.inspection = null; this.gen = {}; this.warnings = {}; this.reviewTab = 'preview';
+    this.evaluationId = id; this.view = 'evaluation'; this.inspection = null; this.gen = {}; this.warnings = {}; this.reviewTab = 'preview'; this.runUsage = {};
     this.clearPreview();
     try {
       await this.refresh();
@@ -247,7 +258,7 @@ export class AppComponent {
   }
   async refresh() {
     const r = await this.req('GET', '/evaluations/' + this.evaluationId);
-    this.current = r.evaluation; this.documents = r.documents || []; this.sections = r.sections || [];
+    this.current = r.evaluation; this.documents = r.documents || []; this.sections = r.sections || []; this.usage = r.usage;
     this.drafts = Object.fromEntries(this.sections.map(s => [s.section_key, s.content]));
     for (const s of this.sections) if (s.source_summary && !this.warnings[s.section_key]) { try { this.warnings[s.section_key] = JSON.parse(s.source_summary); } catch {} }
     const i = this.evaluations.findIndex(x => x.id === this.evaluationId);
@@ -294,9 +305,14 @@ export class AppComponent {
     if (this.hasDrafts() && !confirm('Gerar tudo de novo? Os textos atuais (inclusive editados) serão substituídos. As versões antigas ficam no histórico.')) return;
     const keys = this.availableSections().map(s => s.id);
     this.gen = Object.fromEntries(keys.map(k => [k, 'pending' as GenState])); this.generating = true; this.message = '';
+    this.runUsage = {input_tokens: 0, output_tokens: 0, total_tokens: 0, cost_brl: 0};
     for (const k of keys) {
       this.gen[k] = 'running';
-      try { const r = await this.req('POST', `/evaluations/${this.evaluationId}/generate/${k}`, {notes: ''}); this.warnings[k] = r.warnings || []; this.gen[k] = 'done'; }
+      try {
+        const r = await this.req('POST', `/evaluations/${this.evaluationId}/generate/${k}`, {notes: ''});
+        this.warnings[k] = r.warnings || []; this.gen[k] = 'done';
+        for (const f of ['input_tokens', 'output_tokens', 'total_tokens', 'cost_brl']) this.runUsage[f] += r.usage?.[f] || 0;
+      }
       catch { this.gen[k] = 'error'; for (const rest of keys) if (this.gen[rest] === 'pending') this.gen[rest] = 'skipped'; break; }
     }
     this.generating = false;
@@ -346,6 +362,9 @@ export class AppComponent {
     } catch {}
   }
 
+  brl(v: number) { return (v || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: (v || 0) < 1 ? 4 : 2}); }
+  int(v: number) { return (v || 0).toLocaleString('pt-BR'); }
+
   // ---- Settings ----
   openSettings() { this.view = 'settings'; this.settings(); }
   async settings() {
@@ -354,6 +373,7 @@ export class AppComponent {
       this.model = s.model; this.aiEnabled = s.enabled; this.apiConfigured = s.configured; this.privacyGate = s.privacy_gate;
       this.aiReady = s.enabled && s.configured && s.privacy_gate;
       this.defaults = s.defaults || {}; this.saved = Object.fromEntries((s.prompts || []).map((x: any) => [x.id, x.prompt])); this.loadPrompt();
+      this.globalUsage = await this.req('GET', '/ai/usage'); this.usdBrl = this.globalUsage.usd_brl;
     } catch {}
   }
   loadPrompt() { this.promptText = this.saved[this.promptKey] || this.defaults[this.promptKey] || ''; }

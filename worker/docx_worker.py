@@ -53,7 +53,7 @@ def inspect(path):
   if k:markers.append({'key':k,'index':i,'label':txt})
  return {'elements':elements,'markers':markers,'warnings':['Conferir visualmente a ordem dos marcadores e os resultados.']}
 
-def new_paragraph(text,bold=False):
+def new_paragraph(text,bold=False,red=False):
  """Body paragraph matching the report layout: Arial 11, justified, 1.5 line spacing."""
  p=OxmlElement('w:p');ppr=OxmlElement('w:pPr')
  sp=OxmlElement('w:spacing');sp.set(qn('w:line'),'360');sp.set(qn('w:lineRule'),'auto');ppr.append(sp)
@@ -65,6 +65,7 @@ def new_paragraph(text,bold=False):
   for a in ('ascii','hAnsi','cs','eastAsia'):f.set(qn('w:'+a),'Arial')
   rpr.append(f)
   if bold:rpr.append(OxmlElement('w:b'));rpr.append(OxmlElement('w:bCs'))
+  if red:c=OxmlElement('w:color');c.set(qn('w:val'),'FF0000');rpr.append(c)
   for tag in ('w:sz','w:szCs'):s=OxmlElement(tag);s.set(qn('w:val'),'22');rpr.append(s)
   r.append(rpr);t=OxmlElement('w:t');t.set(qn('xml:space'),'preserve');t.text=text;r.append(t);p.append(r)
  return p
@@ -82,17 +83,17 @@ def blocks(content):
     out.append((line.lstrip('#').strip(),True))
    else:out.append((line,False))
  return out
-def insert_after(anchor,content):
+def insert_after(anchor,content,red=False):
  last=anchor
  for text,bold in blocks(content):
-  p=new_paragraph(text,bold);last.addnext(p);last=p
+  p=new_paragraph(text,bold,red);last.addnext(p);last=p
 
 def sha256(path):
  h=hashlib.sha256()
  with open(path,'rb') as f:
   for chunk in iter(lambda:f.read(65536),b''):h.update(chunk)
  return h.hexdigest()
-def export(base,out,sections):
+def export(base,out,sections,highlight=False):
  if os.path.abspath(base)==os.path.abspath(out):raise SystemExit('out must differ from base')
  before=sha256(base)
  d=Document(base);seen=[];m=Markers()
@@ -100,7 +101,7 @@ def export(base,out,sections):
   if not (ch.tag.endswith('}p') or ch.tag.endswith('}tbl')):continue
   k=m.key(element_text(ch,d))
   if k in sections and clean(sections[k]) and k not in seen:
-   insert_after(ch,sections[k]);seen.append(k)
+   insert_after(ch,sections[k],highlight);seen.append(k)
  d.save(out)
  after=sha256(base)
  if before!=after:raise SystemExit('base document changed during export')
@@ -110,6 +111,6 @@ def main():
  sys.stdout.reconfigure(encoding='utf-8')
  if op=='inspect': print(json.dumps(inspect(sys.argv[2]),ensure_ascii=False))
  elif op=='export':
-  spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(export(spec['base'],spec['out'],spec['sections']),ensure_ascii=False))
+  spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(export(spec['base'],spec['out'],spec['sections'],spec.get('highlight',False)),ensure_ascii=False))
  else: raise SystemExit('unknown operation')
 if __name__=='__main__':main()

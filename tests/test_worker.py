@@ -89,4 +89,10 @@ class TestWorker(unittest.TestCase):
   self.assertEqual([p.text for p in paras],['ANAMNESE','Sono','Dorme pouco.'])
   self.assertTrue(paras[1].runs[0].bold)
 
+ def test_highlight_marks_generated_text_red_only(self):
+  run('export',stdin={'base':str(self.base),'out':str(self.out),'sections':{'anamnesis':'Gerado.'},'highlight':True})
+  paras={p.text:p for p in Document(self.out).paragraphs}
+  self.assertEqual(str(paras['Gerado.'].runs[0].font.color.rgb),'FF0000')
+  self.assertIsNone(paras['ANAMNESE'].runs[0].font.color.rgb)
+
 if __name__=='__main__':unittest.main()

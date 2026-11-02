@@ -19,7 +19,19 @@ Aplicação Angular 19 + Node.js 22 / Express + MySQL 8.4 + OpenAI Responses API
 - `docs/`: requisitos, segurança e backlog.
 - `templates/*PRIVADO*`: arquivos originais do usuário para conferência local; **excluídos do Git por .gitignore**. Não distribuir nem usar como fixture em CI.
 
-## Execução local
+## Execução local no Windows (sem Docker, sem admin)
+Pré-requisitos: Node 22+, Python 3.11+.
+```powershell
+python -m pip install python-docx==1.2.0
+powershell -ExecutionPolicy Bypass -File scripts\setup-env.ps1   # gera api/.env com segredos aleatórios
+powershell -ExecutionPolicy Bypass -File scripts\start-db.ps1    # MariaDB 11.4 portátil em .local/ (127.0.0.1:3307)
+cd api; npm install; npm start                                   # API em http://localhost:3001
+cd web; npm install; npm start                                   # UI em http://localhost:4200 (proxy /api -> 3001)
+python -m unittest discover -s tests                             # testes do worker DOCX
+```
+`GET /api/health` retorna `db:true` quando o banco está acessível. A API recusa iniciar se `JWT_SECRET`, `FILE_ENCRYPTION_KEY` ou o worker estiverem ausentes.
+
+## Execução local (Docker)
 1. Instalar Docker Compose, Node 22, Python 3.11+ e `python-docx` se quiser rodar API fora do Docker.
 2. Copiar `api/.env.example` para `api/.env`. Definir `JWT_SECRET` (32+ chars aleatórios), `FILE_ENCRYPTION_KEY` (64 caracteres hex), `DB_PASSWORD` e `CORS_ORIGIN`.
 3. `docker compose up --build -d` para MySQL + API. Porta API `http://localhost:3001` (local somente).

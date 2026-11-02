@@ -9,3 +9,6 @@ __pycache__/
 *.pyc
 # Referências reais com dados pessoais NÃO devem ir ao git
 templates/*PRIVADO*.docx
+.local/
+.angular/
+web/.angular/

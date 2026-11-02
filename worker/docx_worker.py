@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Isolated DOCX reader / conservative content inserter. Never overwrites the original."""
-import sys,json,re,os
+import sys,json,re,os,hashlib
 from docx import Document
 from docx.oxml import OxmlElement
 from docx.text.paragraph import Paragraph
@@ -35,7 +35,14 @@ def inspect(path):
   if ('INTERPRETAÇÃO E OBSERVAÇÕES CLÍNICAS' in label or label=='INTERPRETAÇÃO CLÍNICA:') and len(label)<130:
    if n<len(slots):markers.append({'key':slots[n],'index':i,'label':txt});n+=1
  return {'elements':elements,'markers':markers,'warnings':['Conferir visualmente a ordem dos marcadores e os resultados.']}
+def sha256(path):
+ h=hashlib.sha256()
+ with open(path,'rb') as f:
+  for chunk in iter(lambda:f.read(65536),b''):h.update(chunk)
+ return h.hexdigest()
 def export(base,out,sections):
+ if os.path.abspath(base)==os.path.abspath(out):raise SystemExit('out must differ from base')
+ before=sha256(base)
  d=Document(base); slots=['inteligencia','percepcao','memoria','atencao','funcoes_executivas','comportamento','comportamento_diva'];seen=[]; n=0
  from docx.table import Table
  for ch in list(d.element.body.iterchildren()):
@@ -55,7 +62,9 @@ def export(base,out,sections):
     # Append within same heading cell; preserve heading and all existing table values.
     t.cell(len(t.rows)-1,0).add_paragraph(sections[destination]);seen.append(destination)
  d.save(out)
- return {'inserted':seen,'missing':[k for k in sections if k not in seen]}
+ after=sha256(base)
+ if before!=after:raise SystemExit('base document changed during export')
+ return {'inserted':seen,'missing':[k for k in sections if k not in seen],'base_sha256':before,'out_sha256':sha256(out)}
 def main():
  op=sys.argv[1]
  if op=='inspect': print(json.dumps(inspect(sys.argv[2]),ensure_ascii=False))

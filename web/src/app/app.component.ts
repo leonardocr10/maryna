@@ -1,99 +1,363 @@
-import {Component,inject} from '@angular/core';import {CommonModule} from '@angular/common';import {FormsModule} from '@angular/forms';import {HttpClient,HttpHeaders} from '@angular/common/http';import {firstValueFrom} from 'rxjs';
-@Component({selector:'app-root',standalone:true,imports:[CommonModule,FormsModule],template:`
-<header><div><strong>🧠 NeuroLaudos IA</strong><div class="muted">Clínica • Elaboração assistida</div></div><span>{{loggedIn?'Ambiente autenticado':'Acesso restrito'}}</span></header>
-<main>
- <section *ngIf="!loggedIn" class="card"><h1>Entrar</h1><p class="muted">Use um usuário do sistema ou configure o primeiro administrador.</p><label>E-mail</label><input [(ngModel)]="email" type="email"><label>Senha</label><input [(ngModel)]="password" type="password"><div class="row" style="margin-top:16px"><button (click)="login()">Entrar</button><button class="secondary" (click)="setup()">Primeiro acesso (setup)</button></div><p class="warning">{{message}}</p></section>
- <ng-container *ngIf="loggedIn">
-  <div class="row tabs" style="margin-bottom:20px"><button [class.selected]="tab==='avaliacoes'" (click)="tab='avaliacoes';load()">Avaliações</button><button [class.selected]="tab==='documentos'" (click)="tab='documentos';load()">Documentos</button><button [class.selected]="tab==='editor'" (click)="tab='editor'">Montar laudo</button><button [class.selected]="tab==='config'" (click)="tab='config';settings()">Configurações IA</button><button class="secondary" (click)="logout()">Sair</button></div>
-  <section *ngIf="tab==='avaliacoes'" class="split">
-<div class="card"><h2>Nova avaliação</h2><label>Nome do paciente</label><input [(ngModel)]="patientName" (keyup.enter)="create()"><label>Data de nascimento</label><input type="date" [(ngModel)]="birthDate"><button style="margin-top:16px;width:100%" [disabled]="patientName.trim().length<2" (click)="create()">Cadastrar e iniciar avaliação</button></div>
-<div class="card"><h2>Avaliações cadastradas <span class="muted count">{{evaluations.length}}</span></h2>
-<p *ngIf="!evaluations.length" class="muted">Nenhuma avaliação ainda.</p>
-<div *ngFor="let x of evaluations" class="eval-row">
-<div class="eval-info"><strong>{{x.patient_name}}</strong><span class="muted">{{x.created_at | date:'dd/MM/yyyy HH:mm'}}</span></div>
-<span class="badge" [class]="'badge '+x.status">{{statusLabel(x.status)}}</span>
-<button class="secondary" (click)="select(x.id)">Abrir</button>
-<button class="danger" title="Excluir avaliação" (click)="removeEvaluation(x)">Excluir</button>
-</div></div>
-</section>
-  <section *ngIf="tab==='documentos'" class="card">
-<h2>Arquivos da avaliação</h2>
-<label>Avaliação</label>
-<select [ngModel]="evaluationId" (ngModelChange)="select($event,'documentos')">
-<option value="" disabled>Escolha a avaliação…</option>
-<option *ngFor="let x of evaluations" [value]="x.id">{{x.patient_name}} — {{statusLabel(x.status)}}</option>
-</select>
-<p *ngIf="!evaluations.length" class="muted">Nenhuma avaliação ainda. Crie uma na aba Avaliações.</p>
-<div class="grid" style="margin-top:18px">
-<div *ngFor="let d of dropSlots" class="drop" [class.over]="dragOver===d.kind" [class.done]="docName(d.kind)" [class.disabled]="!evaluationId" [class.busy]="uploading===d.kind"
- (click)="evaluationId&&picker.click()" (dragover)="$event.preventDefault();dragOver=d.kind" (dragleave)="dragOver=''" (drop)="onDrop($event,d.kind)">
-<input #picker type="file" accept=".docx" hidden (change)="onPick($event,d.kind)">
-<div class="drop-icon">{{uploading===d.kind?'⏳':docName(d.kind)?'✅':'📄'}}</div>
-<strong>{{d.title}}</strong>
-<span class="muted">{{d.hint}}</span>
-<span *ngIf="docName(d.kind) && uploading!==d.kind" class="filename">{{docName(d.kind)}}</span>
-<span class="drop-cta">{{uploading===d.kind?'Enviando…':docName(d.kind)?'Arraste outro para substituir':'Arraste o DOCX aqui ou clique para escolher'}}</span>
+import {Component, ElementRef, ViewChild, inject} from '@angular/core';
+import {CommonModule} from '@angular/common';
+import {FormsModule} from '@angular/forms';
+import {HttpClient, HttpHeaders} from '@angular/common/http';
+import {firstValueFrom} from 'rxjs';
+import {renderAsync} from 'docx-preview';
+
+type GenState = 'pending' | 'running' | 'done' | 'error' | 'skipped';
+
+const SECTIONS = [
+  {id: 'demanda', name: 'Descrição da demanda'},
+  {id: 'anamnesis', name: 'Anamnese'},
+  {id: 'inteligencia', name: 'Habilidades intelectuais'},
+  {id: 'percepcao', name: 'Percepção'},
+  {id: 'memoria', name: 'Memória e aprendizagem'},
+  {id: 'atencao', name: 'Processos atencionais'},
+  {id: 'funcoes_executivas', name: 'Funções executivas'},
+  {id: 'comportamento', name: 'Comportamento'},
+  {id: 'comportamento_diva', name: 'Comportamento / DIVA'},
+  {id: 'conclusao', name: 'Conclusão'},
+  {id: 'recomendacoes', name: 'Indicações e recomendações'},
+];
+
+@Component({
+  selector: 'app-root',
+  standalone: true,
+  imports: [CommonModule, FormsModule],
+  template: `
+<header>
+  <div class="brand"><strong>🧠 NeuroLaudos IA</strong><span class="muted">Elaboração assistida de laudos</span></div>
+  <div class="row" *ngIf="loggedIn">
+    <button class="ghost" [class.selected]="view==='settings'" (click)="openSettings()">⚙ Configurações</button>
+    <button class="ghost" (click)="logout()">Sair</button>
+  </div>
+</header>
+
+<!-- Login -->
+<main *ngIf="!loggedIn" class="login">
+  <section class="card">
+    <h1>Entrar</h1>
+    <label>E-mail</label><input [(ngModel)]="email" type="email" autocomplete="username">
+    <label>Senha</label><input [(ngModel)]="password" type="password" autocomplete="current-password" (keyup.enter)="login()">
+    <button style="margin-top:18px;width:100%" (click)="login()">Entrar</button>
+    <button class="link" (click)="setup()">Primeiro acesso: criar administrador</button>
+    <p class="warning">{{message}}</p>
+  </section>
+</main>
+
+<div *ngIf="loggedIn" class="app">
+  <!-- Left: evaluations -->
+  <aside>
+    <button style="width:100%" (click)="showNew=!showNew">{{showNew?'Cancelar':'+ Nova avaliação'}}</button>
+    <div *ngIf="showNew" class="new-form">
+      <label>Nome do paciente</label><input [(ngModel)]="patientName" (keyup.enter)="create()">
+      <label>Data de nascimento</label><input type="date" [(ngModel)]="birthDate">
+      <button style="margin-top:12px;width:100%" [disabled]="patientName.trim().length<2" (click)="create()">Criar</button>
+    </div>
+    <p class="aside-title">Avaliações ({{evaluations.length}})</p>
+    <p *ngIf="!evaluations.length" class="muted small">Nenhuma avaliação ainda.</p>
+    <div *ngFor="let x of evaluations" class="eval-item" [class.active]="x.id===evaluationId && view==='evaluation'" (click)="select(x.id)">
+      <div class="eval-info"><strong>{{x.patient_name}}</strong><span class="small muted">{{x.created_at | date:'dd/MM/yyyy'}}</span></div>
+      <span [class]="'badge '+x.status">{{statusLabel(x.status)}}</span>
+      <button class="icon" title="Excluir" (click)="$event.stopPropagation();removeEvaluation(x)">🗑</button>
+    </div>
+  </aside>
+
+  <main>
+    <!-- Empty state -->
+    <section *ngIf="view==='home'" class="card empty">
+      <h2>Comece por aqui</h2>
+      <p class="muted">Crie uma avaliação à esquerda ou abra uma existente. Depois: envie os dois arquivos, gere com a IA, confira a pré-visualização e baixe o Word.</p>
+    </section>
+
+    <!-- Evaluation workflow -->
+    <ng-container *ngIf="view==='evaluation' && current">
+      <div class="title-row">
+        <h1>{{current.patient_name}}</h1>
+        <span [class]="'badge '+current.status">{{statusLabel(current.status)}}</span>
+      </div>
+
+      <!-- 1. Files -->
+      <section class="card step">
+        <h2><span class="num" [class.ok]="docsReady()">1</span> Arquivos</h2>
+        <div class="grid">
+          <div *ngFor="let d of dropSlots" class="drop" [class.over]="dragOver===d.kind" [class.done]="docName(d.kind)" [class.busy]="uploading===d.kind" [class.disabled]="locked()"
+               (click)="!locked()&&picker.click()" (dragover)="$event.preventDefault();dragOver=d.kind" (dragleave)="dragOver=''" (drop)="onDrop($event,d.kind)">
+            <input #picker type="file" accept=".docx" hidden (change)="onPick($event,d.kind)">
+            <div class="drop-icon">{{uploading===d.kind?'⏳':docName(d.kind)?'✅':'📄'}}</div>
+            <strong>{{d.title}}</strong>
+            <span *ngIf="docName(d.kind)" class="filename">{{docName(d.kind)}}</span>
+            <span class="drop-cta">{{uploading===d.kind?'Enviando…':docName(d.kind)?'Arraste outro para trocar':'Arraste o DOCX aqui ou clique'}}</span>
+          </div>
+        </div>
+        <p *ngIf="missingMarkers().length && inspection" class="warning small">Sem lugar no arquivo base para: {{missingMarkers().join(', ')}}. Essas partes serão ignoradas.</p>
+      </section>
+
+      <!-- 2. Generate -->
+      <section class="card step" [class.dim]="!docsReady()">
+        <h2><span class="num" [class.ok]="hasDrafts()">2</span> Gerar texto com IA</h2>
+        <ng-container *ngIf="!locked()">
+          <div class="row">
+            <button [disabled]="!docsReady()||generating||!aiReady" (click)="generateAll()">{{generating?'Gerando… aguarde':hasDrafts()?'✨ Gerar tudo de novo':'✨ Gerar laudo com IA'}}</button>
+            <span class="muted small" *ngIf="!aiReady">IA pela API desligada. Ative em Configurações ou use o modo manual ao editar os textos.</span>
+          </div>
+          <div *ngIf="progressKeys().length" class="progress">
+            <span *ngFor="let s of progressKeys()" [class]="'pill '+gen[s.id]">{{icon(gen[s.id])}} {{s.name}}</span>
+          </div>
+        </ng-container>
+        <p *ngIf="locked()" class="muted">Avaliação aprovada: textos travados.</p>
+      </section>
+
+      <!-- 3. Review -->
+      <section class="card step" [class.dim]="!hasDrafts()">
+        <div class="review-head">
+          <h2><span class="num" [class.ok]="current.status==='approved'">3</span> Conferir e baixar</h2>
+          <div class="tabs">
+            <button [class.selected]="reviewTab==='preview'" (click)="showPreview()">👁 Pré-visualizar</button>
+            <button [class.selected]="reviewTab==='edit'" (click)="reviewTab='edit'">✏️ Editar textos</button>
+          </div>
+        </div>
+
+        <div [hidden]="reviewTab!=='preview'">
+          <p *ngIf="previewLoading" class="muted">Montando pré-visualização…</p>
+          <div #previewBox class="preview"></div>
+        </div>
+
+        <div *ngIf="reviewTab==='edit'">
+          <details *ngFor="let s of availableSections()" class="sec" [open]="openSection===s.id" (toggle)="onToggle($event,s.id)">
+            <summary><span>{{s.name}}</span><span class="small muted">{{textOf(s.id)?statusLabel(statusOf(s.id)):'vazio'}}</span></summary>
+            <p *ngFor="let w of warningsOf(s.id)" class="warning small">⚠ {{w}}</p>
+            <textarea [(ngModel)]="drafts[s.id]" [disabled]="locked()" placeholder="Sem texto. Gere com a IA ou use o modo manual abaixo."></textarea>
+            <div class="row" *ngIf="!locked()">
+              <button [disabled]="drafts[s.id]===textOf(s.id)||!(drafts[s.id]||'').trim()" (click)="saveSection(s.id)">Salvar</button>
+              <button class="link" (click)="copyPrompt(s.id)">Modo manual: copiar pedido para o ChatGPT</button>
+              <button class="link" (click)="pasteAnswer(s.id)">Colar resposta</button>
+            </div>
+          </details>
+        </div>
+
+        <div class="actions">
+          <button *ngIf="!locked()" [disabled]="!hasDrafts()" (click)="approveAndDownload()">✓ Aprovar e baixar Word</button>
+          <button *ngIf="locked()" (click)="exportDocx()">⬇ Baixar Word</button>
+          <span class="muted small">O arquivo base original nunca é alterado. A Hipótese Diagnóstica é escrita pela psicóloga no Word.</span>
+        </div>
+      </section>
+    </ng-container>
+
+    <!-- Settings -->
+    <ng-container *ngIf="view==='settings'">
+      <section class="card">
+        <h2>Minha senha</h2>
+        <div class="grid">
+          <div><label>Senha atual</label><input type="password" [(ngModel)]="pwCurrent" autocomplete="current-password"></div>
+          <div><label>Nova senha (mín. 10 caracteres)</label><input type="password" [(ngModel)]="pwNext" autocomplete="new-password"></div>
+        </div>
+        <button style="margin-top:14px" [disabled]="pwNext.length<10" (click)="changePassword()">Trocar senha</button>
+      </section>
+      <section class="card">
+        <h2>IA (OpenAI)</h2>
+        <p class="muted">A chave OPENAI_API_KEY fica no servidor (api/.env), nunca no navegador.</p>
+        <label>Modelo</label><input [(ngModel)]="model">
+        <label class="check"><input type="checkbox" [(ngModel)]="aiEnabled"> Habilitar geração pela API</label>
+        <button (click)="saveSettings()">Salvar</button>
+        <p class="small">Chave configurada: {{apiConfigured?'Sim':'Não'}} • Envio autorizado no servidor: {{privacyGate?'Sim':'Não'}}</p>
+      </section>
+      <section class="card">
+        <h2>Instruções da IA por parte</h2>
+        <select [(ngModel)]="promptKey" (change)="loadPrompt()"><option *ngFor="let s of sectionKeys" [value]="s.id">{{s.name}}</option></select>
+        <textarea [(ngModel)]="promptText"></textarea>
+        <button (click)="savePrompt()">Salvar instruções</button>
+      </section>
+    </ng-container>
+  </main>
 </div>
-</div>
-<div *ngIf="inspection" class="found">
-<h3>Pronto! Encontramos {{inspection.markers.length}} lugares para preencher no arquivo base</h3>
-<div class="chips"><span *ngFor="let m of inspection.markers" class="chip">{{nameOf(m.key)}}</span></div>
-<p *ngIf="missingMarkers().length" class="warning">Não encontrado no arquivo base: {{missingMarkers().join(', ')}}. Essas partes não entrarão no Word.</p>
-<button style="margin-top:14px" (click)="tab='editor'">Continuar para Montar laudo →</button>
-</div>
-</section>
-  <section *ngIf="tab==='editor'" class="card">
-<h2>Montar o laudo</h2>
-<p *ngIf="!evaluationId" class="warning">Abra uma avaliação na aba Avaliações primeiro.</p>
-<ng-container *ngIf="evaluationId">
-<p class="muted">Faça cada parte na ordem. Tudo é rascunho: revise antes de aprovar.</p>
-<div class="steps">
-<button *ngFor="let s of sectionKeys;let i=index" class="step" [class.selected]="s.id===sectionKey" (click)="pick(s.id)">
-<span class="dot" [class.ok]="statusOf(s.id)==='approved'" [class.draft]="statusOf(s.id)==='edited'||statusOf(s.id)==='generated'">{{statusOf(s.id)==='approved'?'✓':i+1}}</span>{{s.name}}</button>
-</div>
-<h3>{{nameOf(sectionKey)}}</h3>
-<div class="how">
-<p><strong>1.</strong> Clique em copiar. O ChatGPT abre numa aba nova.</p>
-<div class="row"><button (click)="copyPrompt()">📋 Copiar pedido e abrir ChatGPT</button><button *ngIf="aiReady" class="secondary" (click)="generate()">✨ Gerar pela API</button></div>
-<p><strong>2.</strong> No ChatGPT, cole com <kbd>Ctrl</kbd>+<kbd>V</kbd>, envie e copie a resposta.</p>
-<p><strong>3.</strong> Cole a resposta abaixo, revise e aprove.</p>
-<button class="secondary" (click)="pasteAnswer()">📥 Colar resposta do ChatGPT</button>
-</div>
-<textarea style="min-height:320px;margin-top:12px" [(ngModel)]="editor" placeholder="Cole aqui a resposta do ChatGPT. Títulos de tópicos podem começar com ## ou estar em **negrito**."></textarea>
-<details style="margin-top:10px"><summary class="muted">Observações extras para este pedido (opcional)</summary><textarea [(ngModel)]="notes" style="min-height:75px"></textarea></details>
-<div class="row" style="margin:15px 0">
-<button [disabled]="!editor.trim()" (click)="approveAndNext()">✓ Aprovar e ir para a próxima</button>
-<button class="secondary" [disabled]="!editor.trim()" (click)="save(false)">Salvar sem aprovar</button>
-</div>
-<hr>
-<p>{{approvedCount()}} de {{sectionKeys.length}} partes aprovadas. As partes sem texto ficam em branco no Word.</p>
-<button [disabled]="!approvedCount()" (click)="finish()">📄 Gerar laudo em Word</button>
-<p class="muted">O arquivo base original nunca é alterado. A Hipótese Diagnóstica continua sendo escrita pela psicóloga no Word.</p>
-</ng-container>
-</section>
-  <section *ngIf="tab==='config'" class="card"><h2>Minha senha</h2><p class="muted">Troque a senha padrão antes de liberar o sistema para outras pessoas.</p><div class="grid"><div><label>Senha atual</label><input type="password" [(ngModel)]="pwCurrent" autocomplete="current-password"></div><div><label>Nova senha (mín. 10 caracteres)</label><input type="password" [(ngModel)]="pwNext" autocomplete="new-password"></div></div><button style="margin-top:14px" [disabled]="pwNext.length<10" (click)="changePassword()">Trocar senha</button></section>
-<section *ngIf="tab==='config'" class="card"><h2>Configurações OpenAI</h2><p class="muted">A chave OPENAI_API_KEY é configurada no servidor, nunca no navegador.</p><label>Modelo disponível na sua conta API</label><input [(ngModel)]="model"><label><input style="width:auto" type="checkbox" [(ngModel)]="aiEnabled"> Habilitar geração (também requer AI_ENABLED e ALLOW_EXTERNAL_AI no backend)</label><button (click)="saveSettings()">Salvar configurações</button><p>Chave API configurada: {{apiConfigured?'Sim':'Não'}} • Ambiente autorizado para transmissão: {{privacyGate?'Sim':'Não'}}</p><h2>Editor de prompt</h2><select [(ngModel)]="promptKey" (change)="loadPrompt()"><option *ngFor="let s of sectionKeys" [value]="s.id">{{s.name}}</option></select><textarea [(ngModel)]="promptText" placeholder="Defina as regras do tópico..."></textarea><button (click)="savePrompt()">Salvar prompt deste tópico</button></section>
-  <p class="muted">{{message}}</p>
- </ng-container>
-</main>`})
-export class AppComponent{private http=inject(HttpClient);base='/api';loggedIn=!!sessionStorage.getItem('token');email='';password='';message='';tab='avaliacoes';patientName='';birthDate='';evaluations:any[]=[];evaluationId='';files:any={};inspection:any;sectionKey='demanda';editor='';notes='';sections:any[]=[];model='gpt-4.1';aiEnabled=false;apiConfigured=false;privacyGate=false;promptKey='anamnesis';promptText='';sectionKeys=[{id:'demanda',name:'Descrição da demanda'},{id:'anamnesis',name:'Anamnese por tópicos'},{id:'inteligencia',name:'Habilidades intelectuais'},{id:'percepcao',name:'Percepção'},{id:'memoria',name:'Memória e aprendizagem'},{id:'atencao',name:'Processos atencionais'},{id:'funcoes_executivas',name:'Funções executivas'},{id:'comportamento',name:'Comportamento'},{id:'comportamento_diva',name:'Comportamento / DIVA'},{id:'conclusao',name:'Conclusão (rascunho)'},{id:'recomendacoes',name:'Indicações e recomendações'}];constructor(){if(this.loggedIn){this.load();this.settings()}}
- private opts(){return{headers:new HttpHeaders({Authorization:'Bearer '+sessionStorage.getItem('token')})}}private async req(method:string,url:string,body?:any):Promise<any>{try{return await firstValueFrom(this.http.request(method,this.base+url,{...this.opts(),body,responseType:'json'}))}catch(e:any){if(e?.status===401&&!url.startsWith('/login')){this.logout();this.message='Sessão expirada. Entre novamente.'}else this.message=e?.status===0?'API indisponível. Verifique se o backend está rodando.':e?.error?.error||e.message;throw e}}
- async login(){try{const x=await this.req('POST','/login',{email:this.email,password:this.password});sessionStorage.setItem('token',x.token);this.loggedIn=true;this.message='';await this.load();await this.settings()}catch{}}async setup(){try{await this.req('POST','/setup',{email:this.email,name:'Administrador',password:this.password});this.message='Administrador criado. Agora clique em Entrar.'}catch{}}logout(){sessionStorage.removeItem('token');this.loggedIn=false;this.evaluationId='';this.sections=[];this.documents=[];this.inspection=null}
- async load(){try{this.evaluations=await this.req('GET','/evaluations')}catch{}}async create(){try{const p=await this.req('POST','/patients',{name:this.patientName,birth_date:this.birthDate||null});const e=await this.req('POST','/evaluations',{patient_id:p.id});await this.select(e.id);await this.load();this.message='Avaliação criada'}catch{}}async select(id:string,tab='documentos'){this.evaluationId=id;this.tab=tab;this.inspection=null;try{await this.refresh();this.syncEditor();if(this.docName('base')&&this.docName('anamnesis'))await this.inspect()}catch{}}
- dropSlots=[{kind:'base',title:'1. Arquivo base',hint:'Preenchido pela estagiária, com tabelas e escores'},{kind:'anamnesis',title:'2. Anamnese',hint:'Anotações da psicóloga'}];documents:any[]=[];dragOver='';uploading='';
- statusLabel(s:string){return({draft:'rascunho',review:'em revisão',approved:'aprovada'} as any)[s]||s}
- docName(kind:string){return this.documents.find(d=>d.kind===kind)?.filename||''}
- missingMarkers(){const found=new Set((this.inspection?.markers||[]).map((m:any)=>m.key));return this.sectionKeys.filter(s=>!found.has(s.id)).map(s=>s.name)}
- onDrop(e:DragEvent,kind:string){e.preventDefault();this.dragOver='';if(this.evaluationId)this.upload(kind,e.dataTransfer?.files?.[0])}
- onPick(e:Event,kind:string){const input=e.target as HTMLInputElement;this.upload(kind,input.files?.[0]);input.value=''}
- async upload(kind:string,file?:File|null){if(!file)return;if(!file.name.toLowerCase().endsWith('.docx')){this.message='Envie um arquivo .docx (Word).';return}this.uploading=kind;try{const fd=new FormData();fd.append('file',file);await this.req('POST',`/evaluations/${this.evaluationId}/upload/${kind}`,fd);await this.refresh();this.message='';if(this.docName('base')&&this.docName('anamnesis'))await this.inspect()}catch{}finally{this.uploading=''}}
- async inspect(){try{this.inspection=await this.req('POST',`/evaluations/${this.evaluationId}/inspect`)}catch{}}syncEditor(){this.editor=this.sections.find(s=>s.section_key===this.sectionKey)?.content||''}
- aiReady=false;statusOf(k:string){return this.sections.find(s=>s.section_key===k)?.status||''}nameOf(k:string){return this.sectionKeys.find(s=>s.id===k)?.name||k}approvedCount(){return this.sections.filter(s=>s.status==='approved').length}
- pick(k:string){this.sectionKey=k;this.notes='';this.syncEditor()}
- async copyPrompt(){try{const r=await this.req('POST',`/evaluations/${this.evaluationId}/prompt/${this.sectionKey}`,{notes:this.notes});await navigator.clipboard.writeText(r.text);window.open('https://chatgpt.com/','chatgpt');this.message='Pedido copiado. Cole no ChatGPT com Ctrl+V.'}catch{}}
- async pasteAnswer(){try{this.editor=(await navigator.clipboard.readText()).trim();this.message='Resposta colada. Revise antes de aprovar.'}catch{this.message='Não consegui ler a área de transferência. Clique no campo e use Ctrl+V.'}}
- async approveAndNext(){await this.save(true);if(this.statusOf(this.sectionKey)!=='approved')return;const i=this.sectionKeys.findIndex(s=>s.id===this.sectionKey);const next=this.sectionKeys.slice(i+1).find(s=>this.statusOf(s.id)!=='approved');if(next)this.pick(next.id);else this.message='Todas as partes aprovadas. Clique em Gerar laudo em Word.'}
- async finish(){try{const r=await this.req('GET','/evaluations/'+this.evaluationId);if(r.evaluation.status!=='approved')await this.req('POST',`/evaluations/${this.evaluationId}/approve`);await this.exportDocx();this.message='Laudo gerado.'}catch{}}async generate(){try{const r=await this.req('POST',`/evaluations/${this.evaluationId}/generate/${this.sectionKey}`,{notes:this.notes});this.editor=r.text;this.message='Texto gerado. Confira e aprove.';await this.refresh()}catch{}}async save(approve:boolean){try{await this.req('PUT',`/evaluations/${this.evaluationId}/sections/${this.sectionKey}`,{content:this.editor,approve});await this.refresh();this.message=approve?'Tópico aprovado':'Edição salva'}catch{}}async refresh(){const r=await this.req('GET','/evaluations/'+this.evaluationId);this.sections=r.sections||[];this.documents=r.documents||[]}
- async approveEvaluation(){try{await this.req('POST',`/evaluations/${this.evaluationId}/approve`);this.message='Avaliação aprovada'}catch{}}async exportDocx(){try{const response:any=await firstValueFrom(this.http.post(this.base+`/evaluations/${this.evaluationId}/export`,{},{...this.opts(),responseType:'blob'}));const url=URL.createObjectURL(response);const a=document.createElement('a');a.href=url;a.download='laudo-'+(this.evaluations.find(x=>x.id===this.evaluationId)?.patient_name||'revisado').replace(/[^\p{L}\p{N}]+/gu,'-')+'.docx';a.click();URL.revokeObjectURL(url)}catch(e:any){this.message='Falha na exportação. Confira se as seções estão aprovadas.'}}
- async settings(){try{const s=await this.req('GET','/ai/settings');this.model=s.model;this.aiEnabled=s.enabled;this.apiConfigured=s.configured;this.privacyGate=s.privacy_gate;this.aiReady=s.enabled&&s.configured&&s.privacy_gate;this.defaults=s.defaults||{};this.saved=Object.fromEntries((s.prompts||[]).map((x:any)=>[x.id,x.prompt]));this.loadPrompt()}catch{}}defaults:any={};saved:any={};loadPrompt(){this.promptText=this.saved[this.promptKey]||this.defaults[this.promptKey]||''}async saveSettings(){try{await this.req('PUT','/ai/settings',{model:this.model,enabled:this.aiEnabled});this.message='Configuração salva'}catch{}}async removeEvaluation(x:any){if(!confirm(`Excluir a avaliação de ${x.patient_name}?\n\nOs documentos enviados e os textos serão apagados definitivamente.`))return;try{await this.req('DELETE','/evaluations/'+x.id);if(this.evaluationId===x.id){this.evaluationId='';this.sections=[];this.documents=[];this.inspection=null}await this.load();this.message='Avaliação excluída.'}catch{}}pwCurrent='';pwNext='';async changePassword(){try{await this.req('PUT','/me/password',{current:this.pwCurrent,next:this.pwNext});this.pwCurrent='';this.pwNext='';this.message='Senha alterada.'}catch{}}async savePrompt(){try{await this.req('PUT','/ai/prompts/'+this.promptKey,{prompt:this.promptText});this.message='Prompt salvo'}catch{}}
+
+<div *ngIf="message && loggedIn" class="toast" (click)="message=''">{{message}}</div>
+`})
+export class AppComponent {
+  private http = inject(HttpClient);
+  @ViewChild('previewBox') previewBox?: ElementRef<HTMLDivElement>;
+
+  base = '/api';
+  sectionKeys = SECTIONS;
+  dropSlots = [{kind: 'base', title: '1. Arquivo base (estagiária)'}, {kind: 'anamnesis', title: '2. Anamnese (psicóloga)'}];
+
+  loggedIn = !!sessionStorage.getItem('token');
+  email = ''; password = ''; message = '';
+  view: 'home' | 'evaluation' | 'settings' = 'home';
+
+  evaluations: any[] = []; showNew = false; patientName = ''; birthDate = '';
+  evaluationId = ''; current: any = null; documents: any[] = []; sections: any[] = []; inspection: any = null;
+  drafts: Record<string, string> = {}; warnings: Record<string, string[]> = {};
+  dragOver = ''; uploading = '';
+  gen: Record<string, GenState> = {}; generating = false;
+  reviewTab: 'preview' | 'edit' = 'preview'; previewLoading = false; openSection = '';
+
+  model = 'gpt-4.1'; aiEnabled = false; apiConfigured = false; privacyGate = false; aiReady = false;
+  promptKey = 'demanda'; promptText = ''; defaults: any = {}; saved: any = {};
+  pwCurrent = ''; pwNext = '';
+
+  constructor() { if (this.loggedIn) { this.load(); this.settings(); } }
+
+  // ---- HTTP ----
+  private opts() { return {headers: new HttpHeaders({Authorization: 'Bearer ' + sessionStorage.getItem('token')})}; }
+  private async req(method: string, url: string, body?: any): Promise<any> {
+    try { return await firstValueFrom(this.http.request(method, this.base + url, {...this.opts(), body, responseType: 'json'})); }
+    catch (e: any) {
+      if (e?.status === 401 && !url.startsWith('/login')) { this.logout(); this.message = 'Sessão expirada. Entre novamente.'; }
+      else this.message = e?.status === 0 ? 'API indisponível. Abra o iniciar.bat.' : e?.error?.error || e.message;
+      throw e;
+    }
+  }
+  private async blob(url: string): Promise<Blob> {
+    try { return await firstValueFrom(this.http.post(this.base + url, {}, {...this.opts(), responseType: 'blob'})); }
+    catch (e: any) {
+      let msg = 'Falha ao montar o Word.';
+      try { msg = JSON.parse(await (e.error as Blob).text()).error || msg; } catch {}
+      this.message = msg; throw e;
+    }
+  }
+
+  // ---- Auth ----
+  async login() { try { const x = await this.req('POST', '/login', {email: this.email, password: this.password}); sessionStorage.setItem('token', x.token); this.loggedIn = true; this.message = ''; await this.load(); await this.settings(); } catch {} }
+  async setup() { try { await this.req('POST', '/setup', {email: this.email, name: 'Administrador', password: this.password}); this.message = 'Administrador criado. Agora clique em Entrar.'; } catch {} }
+  logout() { sessionStorage.removeItem('token'); this.loggedIn = false; this.view = 'home'; this.evaluationId = ''; this.current = null; }
+
+  // ---- Evaluations ----
+  statusLabel(s: string) { return ({draft: 'rascunho', review: 'em revisão', approved: 'aprovada', generated: 'gerado', edited: 'editado'} as any)[s] || s; }
+  async load() { try { this.evaluations = await this.req('GET', '/evaluations'); } catch {} }
+  async create() {
+    if (this.patientName.trim().length < 2) return;
+    try {
+      const p = await this.req('POST', '/patients', {name: this.patientName.trim(), birth_date: this.birthDate || null});
+      const e = await this.req('POST', '/evaluations', {patient_id: p.id});
+      this.patientName = ''; this.birthDate = ''; this.showNew = false;
+      await this.load(); await this.select(e.id);
+    } catch {}
+  }
+  async select(id: string) {
+    this.evaluationId = id; this.view = 'evaluation'; this.inspection = null; this.gen = {}; this.warnings = {}; this.reviewTab = 'preview';
+    this.clearPreview();
+    try {
+      await this.refresh();
+      if (this.docsReady()) await this.inspect();
+      if (this.hasDrafts()) this.renderPreview();
+    } catch {}
+  }
+  async refresh() {
+    const r = await this.req('GET', '/evaluations/' + this.evaluationId);
+    this.current = r.evaluation; this.documents = r.documents || []; this.sections = r.sections || [];
+    this.drafts = Object.fromEntries(this.sections.map(s => [s.section_key, s.content]));
+    for (const s of this.sections) if (s.source_summary && !this.warnings[s.section_key]) { try { this.warnings[s.section_key] = JSON.parse(s.source_summary); } catch {} }
+    const i = this.evaluations.findIndex(x => x.id === this.evaluationId);
+    if (i >= 0) this.evaluations[i] = {...this.evaluations[i], status: this.current.status};
+  }
+  async removeEvaluation(x: any) {
+    if (!confirm(`Excluir a avaliação de ${x.patient_name}?\n\nOs documentos enviados e os textos serão apagados definitivamente.`)) return;
+    try {
+      await this.req('DELETE', '/evaluations/' + x.id);
+      if (this.evaluationId === x.id) { this.evaluationId = ''; this.current = null; this.view = 'home'; }
+      await this.load(); this.message = 'Avaliação excluída.';
+    } catch {}
+  }
+  locked() { return this.current?.status === 'approved'; }
+
+  // ---- Files ----
+  docName(kind: string) { return this.documents.find(d => d.kind === kind)?.filename || ''; }
+  docsReady() { return !!(this.docName('base') && this.docName('anamnesis')); }
+  missingMarkers() { const found = new Set((this.inspection?.markers || []).map((m: any) => m.key)); return SECTIONS.filter(s => !found.has(s.id)).map(s => s.name); }
+  availableSections() { const found = new Set((this.inspection?.markers || []).map((m: any) => m.key)); return this.inspection ? SECTIONS.filter(s => found.has(s.id)) : SECTIONS; }
+  onDrop(e: DragEvent, kind: string) { e.preventDefault(); this.dragOver = ''; if (!this.locked()) this.upload(kind, e.dataTransfer?.files?.[0]); }
+  onPick(e: Event, kind: string) { const input = e.target as HTMLInputElement; this.upload(kind, input.files?.[0]); input.value = ''; }
+  async upload(kind: string, file?: File | null) {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.docx')) { this.message = 'Envie um arquivo .docx (Word).'; return; }
+    this.uploading = kind;
+    try {
+      const fd = new FormData(); fd.append('file', file);
+      await this.req('POST', `/evaluations/${this.evaluationId}/upload/${kind}`, fd);
+      await this.refresh(); this.message = '';
+      if (this.docsReady()) await this.inspect();
+    } catch {} finally { this.uploading = ''; }
+  }
+  async inspect() { try { this.inspection = await this.req('POST', `/evaluations/${this.evaluationId}/inspect`); } catch {} }
+
+  // ---- Generation ----
+  textOf(k: string) { return this.sections.find(s => s.section_key === k)?.content || ''; }
+  statusOf(k: string) { return this.sections.find(s => s.section_key === k)?.status || ''; }
+  warningsOf(k: string) { return this.warnings[k] || []; }
+  hasDrafts() { return this.sections.some(s => s.content?.trim()); }
+  progressKeys() { return SECTIONS.filter(s => this.gen[s.id]); }
+  icon(s: GenState) { return ({pending: '○', running: '⏳', done: '✓', error: '✕', skipped: '–'} as any)[s]; }
+  async generateAll() {
+    if (this.hasDrafts() && !confirm('Gerar tudo de novo? Os textos atuais (inclusive editados) serão substituídos. As versões antigas ficam no histórico.')) return;
+    const keys = this.availableSections().map(s => s.id);
+    this.gen = Object.fromEntries(keys.map(k => [k, 'pending' as GenState])); this.generating = true; this.message = '';
+    for (const k of keys) {
+      this.gen[k] = 'running';
+      try { const r = await this.req('POST', `/evaluations/${this.evaluationId}/generate/${k}`, {notes: ''}); this.warnings[k] = r.warnings || []; this.gen[k] = 'done'; }
+      catch { this.gen[k] = 'error'; for (const rest of keys) if (this.gen[rest] === 'pending') this.gen[rest] = 'skipped'; break; }
+    }
+    this.generating = false;
+    await this.refresh();
+    if (!Object.values(this.gen).includes('error')) { this.message = 'Texto gerado. Confira a pré-visualização.'; this.showPreview(); }
+  }
+
+  // ---- Review ----
+  onToggle(e: Event, id: string) { if ((e.target as HTMLDetailsElement).open) this.openSection = id; }
+  async saveSection(k: string) {
+    try { await this.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content: this.drafts[k]}); await this.refresh(); this.message = 'Texto salvo.'; } catch {}
+  }
+  async copyPrompt(k: string) {
+    try {
+      const r = await this.req('POST', `/evaluations/${this.evaluationId}/prompt/${k}`, {});
+      await navigator.clipboard.writeText(r.text); window.open('https://chatgpt.com/', 'chatgpt');
+      this.message = 'Pedido copiado. Cole no ChatGPT com Ctrl+V, depois copie a resposta e clique em Colar resposta.';
+    } catch {}
+  }
+  async pasteAnswer(k: string) {
+    try { this.drafts[k] = (await navigator.clipboard.readText()).trim(); this.message = 'Resposta colada. Clique em Salvar.'; }
+    catch { this.message = 'Não consegui ler a área de transferência. Clique no campo e use Ctrl+V.'; }
+  }
+  private clearPreview() { if (this.previewBox) this.previewBox.nativeElement.innerHTML = ''; }
+  showPreview() { this.reviewTab = 'preview'; setTimeout(() => this.renderPreview()); }
+  async renderPreview() {
+    const box = this.previewBox?.nativeElement; if (!box || !this.hasDrafts()) return;
+    this.previewLoading = true;
+    try {
+      const data = await this.blob(`/evaluations/${this.evaluationId}/preview`);
+      box.innerHTML = '';
+      await renderAsync(data, box, undefined, {className: 'docx', inWrapper: true, ignoreLastRenderedPageBreak: true});
+    } catch {} finally { this.previewLoading = false; }
+  }
+  async approveAndDownload() {
+    const unsaved = SECTIONS.filter(s => (this.drafts[s.id] || '') !== this.textOf(s.id));
+    if (unsaved.length) { this.message = 'Salve as alterações em: ' + unsaved.map(s => s.name).join(', '); this.reviewTab = 'edit'; return; }
+    if (!confirm('Confirmar que você revisou o laudo? Depois de aprovado, os textos ficam travados.')) return;
+    try { await this.req('POST', `/evaluations/${this.evaluationId}/approve`, {approveSections: true}); await this.refresh(); await this.exportDocx(); } catch {}
+  }
+  async exportDocx() {
+    try {
+      const data = await this.blob(`/evaluations/${this.evaluationId}/export`);
+      const url = URL.createObjectURL(data); const a = document.createElement('a');
+      a.href = url; a.download = 'laudo-' + (this.current?.patient_name || 'revisado').replace(/[^\p{L}\p{N}]+/gu, '-') + '.docx';
+      a.click(); URL.revokeObjectURL(url); this.message = 'Word baixado.';
+    } catch {}
+  }
+
+  // ---- Settings ----
+  openSettings() { this.view = 'settings'; this.settings(); }
+  async settings() {
+    try {
+      const s = await this.req('GET', '/ai/settings');
+      this.model = s.model; this.aiEnabled = s.enabled; this.apiConfigured = s.configured; this.privacyGate = s.privacy_gate;
+      this.aiReady = s.enabled && s.configured && s.privacy_gate;
+      this.defaults = s.defaults || {}; this.saved = Object.fromEntries((s.prompts || []).map((x: any) => [x.id, x.prompt])); this.loadPrompt();
+    } catch {}
+  }
+  loadPrompt() { this.promptText = this.saved[this.promptKey] || this.defaults[this.promptKey] || ''; }
+  async saveSettings() { try { await this.req('PUT', '/ai/settings', {model: this.model, enabled: this.aiEnabled}); await this.settings(); this.message = 'Configuração salva.'; } catch {} }
+  async savePrompt() { try { await this.req('PUT', '/ai/prompts/' + this.promptKey, {prompt: this.promptText}); this.saved[this.promptKey] = this.promptText; this.message = 'Instruções salvas.'; } catch {} }
+  async changePassword() { try { await this.req('PUT', '/me/password', {current: this.pwCurrent, next: this.pwNext}); this.pwCurrent = ''; this.pwNext = ''; this.message = 'Senha alterada.'; } catch {} }
 }

@@ -24,6 +24,7 @@ Pré-requisitos: Node 22+, Python 3.11+.
 Atalho na raiz do projeto:
 ```powershell
 npm run setup   # dependências npm + python-docx + api/.env
+npm run db:init # MySQL existente (porta 3306): pede a senha do root, cria banco/usuário e aplica o schema
 npm run dev     # banco + API (node) + web; Ctrl+C para parar
 npm test        # testes do worker + checagem da API + build web
 ```
@@ -31,7 +32,8 @@ Passo a passo equivalente:
 ```powershell
 python -m pip install python-docx==1.2.0
 powershell -ExecutionPolicy Bypass -File scripts\setup-env.ps1   # gera api/.env com segredos aleatórios
-powershell -ExecutionPolicy Bypass -File scripts\start-db.ps1    # MariaDB 11.4 portátil em .local/ (127.0.0.1:3307)
+cd api; npm run db:init                                          # MySQL já instalado (DB_PORT=3306 no api/.env)
+# ou, sem MySQL: scripts\start-db.ps1 (MariaDB portátil, use DB_PORT=3307)
 cd api; npm install; npm start                                   # API em http://localhost:3001
 cd web; npm install; npm start                                   # UI em http://localhost:4200 (proxy /api -> 3001)
 python -m unittest discover -s tests                             # testes do worker DOCX

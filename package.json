@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "setup": "npm --prefix api install && npm --prefix web install && python -m pip install python-docx==1.2.0 && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-env.ps1",
-    "db": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-db.ps1",
+    "db:init": "npm --prefix api run db:init",
+    "db:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-db.ps1",
     "dev": "node scripts/dev.mjs",
     "test": "python -m unittest discover -s tests && npm --prefix api run check && npm --prefix web run build"
   }

@@ -1,6 +1,7 @@
-// Starts the whole stack without Docker: portable MariaDB, API (node) and Angular dev server.
+// Starts the whole stack without Docker: database check, API (node) and Angular dev server.
 import {spawn,spawnSync} from 'node:child_process';
-import {existsSync} from 'node:fs';
+import {existsSync,readFileSync} from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
@@ -10,7 +11,11 @@ const ps=f=>spawnSync('powershell',['-NoProfile','-ExecutionPolicy','Bypass','-F
 
 if(!win){console.error('scripts/dev.mjs usa os scripts PowerShell do Windows; em outro SO rode MySQL e npm start em api/ e web/.');process.exit(1)}
 if(!existsSync(path.join(root,'api','.env'))&&ps('setup-env.ps1').status)process.exit(1);
-if(ps('start-db.ps1').status)process.exit(1);
+// Portable MariaDB only when api/.env points to it (port 3307); otherwise use the existing MySQL.
+const env=Object.fromEntries(readFileSync(path.join(root,'api','.env'),'utf8').split(/\r?\n/).map(l=>l.match(/^\s*([A-Z_]+)=(.*)$/)).filter(Boolean).map(m=>[m[1],m[2].trim()]));
+if(env.DB_PORT==='3307'&&ps('start-db.ps1').status)process.exit(1);
+const dbUp=await new Promise(r=>net.connect(Number(env.DB_PORT||3306),env.DB_HOST||'127.0.0.1').on('connect',function(){this.end();r(true)}).on('error',()=>r(false)));
+if(!dbUp){console.error(`MySQL não responde em ${env.DB_HOST}:${env.DB_PORT}. Inicie o serviço (ex.: net start MySQL80) e rode "npm --prefix api run db:init".`);process.exit(1)}
 
 const children=[];
 function run(name,cwd){

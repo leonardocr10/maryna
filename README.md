@@ -21,6 +21,13 @@ Aplicação Angular 19 + Node.js 22 / Express + MySQL 8.4 + OpenAI Responses API
 
 ## Execução local no Windows (sem Docker, sem admin)
 Pré-requisitos: Node 22+, Python 3.11+.
+Atalho na raiz do projeto:
+```powershell
+npm run setup   # dependências npm + python-docx + api/.env
+npm run dev     # banco + API (node) + web; Ctrl+C para parar
+npm test        # testes do worker + checagem da API + build web
+```
+Passo a passo equivalente:
 ```powershell
 python -m pip install python-docx==1.2.0
 powershell -ExecutionPolicy Bypass -File scripts\setup-env.ps1   # gera api/.env com segredos aleatórios

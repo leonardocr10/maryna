@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+storage/
+*.log
+__pycache__/
+*.pyc
+# Referências reais com dados pessoais NÃO devem ir ao git
+templates/*PRIVADO*.docx

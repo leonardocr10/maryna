@@ -36,7 +36,7 @@ class TestWorker(unittest.TestCase):
 
  def test_inspect_finds_anamnesis_and_seven_markers_in_order(self):
   r=run('inspect',str(self.base))
-  self.assertEqual([m['key'] for m in r['markers']],['anamnesis',*SLOTS])
+  self.assertEqual([m['key'] for m in r['markers']],['anamnesis',*SLOTS,'conclusao'])
 
  def test_export_inserts_all_eight_points_and_keeps_original(self):
   before=sha(self.base)
@@ -65,5 +65,20 @@ class TestWorker(unittest.TestCase):
  def test_export_refuses_to_overwrite_base(self):
   with self.assertRaises(AssertionError):
    run('export',stdin={'base':str(self.base),'out':str(self.base),'sections':{'anamnesis':'Z.'}})
+
+ def test_heading_box_markers_get_body_paragraphs_with_bold_topics(self):
+  d=Document()
+  for label in ['DESCRIÇÃO DA DEMANDA','ANAMNESE:','Interpretação e Observações Clínicas:','Indicações e Recomendações Clínicas:']:
+   d.add_table(rows=1,cols=1).cell(0,0).text=label;d.add_paragraph('')
+  d.save(self.base)
+  content='## Queixa\n\nTexto da queixa.\n\n## Sono\n\nTexto do sono.'
+  r=run('export',stdin={'base':str(self.base),'out':str(self.out),'sections':{'demanda':'Demanda fictícia.','anamnesis':content,'inteligencia':'Interp.','recomendacoes':'Rec.'}})
+  self.assertEqual(r['missing'],[])
+  out=Document(self.out)
+  self.assertEqual([t.cell(0,0).text for t in out.tables],['DESCRIÇÃO DA DEMANDA','ANAMNESE:','Interpretação e Observações Clínicas:','Indicações e Recomendações Clínicas:'])
+  paras=[p for p in out.paragraphs if p.text]
+  self.assertEqual([p.text for p in paras],['Demanda fictícia.','Queixa','Texto da queixa.','Sono','Texto do sono.','Interp.','Rec.'])
+  self.assertTrue(paras[1].runs[0].bold);self.assertFalse(paras[2].runs[0].bold)
+  self.assertEqual(paras[2].runs[0].font.name,'Arial')
 
 if __name__=='__main__':unittest.main()

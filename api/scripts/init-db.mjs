@@ -29,8 +29,10 @@ const schema=(await fs.readFile(path.resolve(here,'../../db/schema.sql'),'utf8')
 
 if(!process.argv.includes('--no-admin')){
  const adminUser=process.env.DB_ADMIN_USER||'root';
- const adminPassword=process.env.DB_ADMIN_PASSWORD??await askHidden(`Senha do MySQL para ${adminUser}@${host}:${port}: `);
- const admin=await mysql.createConnection({host,port,user:adminUser,password:adminPassword});
+ const adminPassword=process.env.DB_ADMIN_PASSWORD??await askHidden(`Senha do MySQL para ${adminUser}@${process.env.DB_ADMIN_HOST||(host==='127.0.0.1'?'localhost':host)}:${port}: `);
+ // root@localhost and root@127.0.0.1 are distinct MySQL accounts; the installer grants privileges to localhost.
+ const adminHost=process.env.DB_ADMIN_HOST||(host==='127.0.0.1'?'localhost':host);
+ const admin=await mysql.createConnection({host:adminHost,port,user:adminUser,password:adminPassword});
  await admin.query(`CREATE DATABASE IF NOT EXISTS \`${db}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
  for(const h of ['localhost','127.0.0.1']){
   await admin.query('CREATE USER IF NOT EXISTS ?@? IDENTIFIED BY ?',[user,h,password]);

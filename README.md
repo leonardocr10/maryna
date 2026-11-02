@@ -27,6 +27,7 @@ npm run setup   # dependências npm + python-docx + api/.env
 npm run db:init # MySQL existente (porta 3306): pede a senha do root, cria banco/usuário e aplica o schema
 npm run dev     # banco + API (node) + web; Ctrl+C para parar
 npm test        # testes do worker + checagem da API + build web
+npm run dev:lan # igual ao dev, mas outros PCs da rede local acessam http://<IP-desta-máquina>:4200 (ou iniciar-rede.bat)
 ```
 Passo a passo equivalente:
 ```powershell

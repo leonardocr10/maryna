@@ -28,6 +28,7 @@ services:
       DB_USER: neurolaudos
       DB_PASSWORD: ${MYSQL_PASSWORD:-localdevonly}
       PORT: 3001
+      HOST: 0.0.0.0
       PYTHON_BIN: python3
     volumes:
       - ./storage:/app/storage

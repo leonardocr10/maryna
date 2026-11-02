@@ -81,4 +81,12 @@ class TestWorker(unittest.TestCase):
   self.assertTrue(paras[1].runs[0].bold);self.assertFalse(paras[2].runs[0].bold)
   self.assertEqual(paras[2].runs[0].font.name,'Arial')
 
+ def test_chatgpt_bold_line_becomes_topic_title(self):
+  d=Document();d.add_paragraph('ANAMNESE');d.save(self.base)
+  nl=chr(10)
+  run('export',stdin={'base':str(self.base),'out':str(self.out),'sections':{'anamnesis':'**Sono**'+nl+nl+'Dorme **pouco**.'}})
+  paras=[p for p in Document(self.out).paragraphs if p.text]
+  self.assertEqual([p.text for p in paras],['ANAMNESE','Sono','Dorme pouco.'])
+  self.assertTrue(paras[1].runs[0].bold)
+
 if __name__=='__main__':unittest.main()

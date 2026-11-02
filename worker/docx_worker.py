@@ -73,6 +73,9 @@ def blocks(content):
  out=[]
  for chunk in re.split(r'\n\s*\n',content.replace('\r','').strip()):
   for line in [l.strip() for l in chunk.split('\n') if l.strip()]:
+   # ChatGPT often marks topic titles as a whole bold line instead of "## ".
+   whole_bold=re.fullmatch(r'\*\*([^*]{1,80})\*\*:?',line)
+   if whole_bold:line='## '+whole_bold.group(1)
    line=re.sub(r'\*\*(.+?)\*\*',r'\1',line)
    if line.startswith('#'):
     if out:out.append(('',False))

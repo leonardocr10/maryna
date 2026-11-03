@@ -78,7 +78,7 @@ Custo: estimado a partir de `PRICES` em `api/src/server.mjs` (USD por 1M tokens,
 
 ## Limitações abertas antes de produção
 - Corrigir e validar o posicionamento visual de inserções para todos os diferentes modelos DOCX; preservar espaçamento, numeração de páginas e eventuais caixas de texto. Adicionar testes por modelos anonimizados.
-- A extração envia o **conteúdo estruturado do documento** à API externa se a integração for habilitada. **Ainda não há desidentificação automática suficiente**. Implantar minimização/pseudonimização consistente, base legal, política de retenção e contrato antes de usar dados reais. API não deve ser ativada em ambiente clínico até aprovação.
+- Pseudonimização (`api/src/privacy.mjs`): nome, data de nascimento, autora, CRP, telefone, e-mail, clínica e nomes após palavras-guia (Dr., psi, pediatra, colégio…) viram marcadores como `[PACIENTE]` antes do envio e voltam no texto final. A psicóloga confere e completa a lista na tela. Nomes soltos sem palavra-guia podem escapar: a lista precisa ser revisada. Ainda faltam base legal, política de retenção e contrato antes de uso clínico.
 - Persistir somente arquivos criptografados, mas conteúdo de seções e dados do paciente estão no MySQL: implementar criptografia de banco, backup criptografado, monitoramento, rotação de segredos, segregação de funções e política de expurgo.
 - Auth inicial não inclui MFA, renovação/invalidacão de tokens, criação de outros usuários nem recuperação de senha. Adicionar antes de liberar acesso remoto.
 - Aprovação registra usuário e horário (`approved_by`/`approved_at`), mas ainda não há política de completude por template nem bloqueio de versão por assinatura.

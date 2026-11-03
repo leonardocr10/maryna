@@ -7,7 +7,7 @@
     "db:init": "npm --prefix api run db:init",
     "db:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-db.ps1",
     "dev": "node scripts/dev.mjs",
-    "test": "python -m unittest discover -s tests && npm --prefix api run check && npm --prefix web run build",
+    "test": "python -m unittest discover -s tests && npm --prefix api test && npm --prefix api run check && npm --prefix web run build",
     "dev:lan": "node scripts/dev.mjs --lan"
   }
 }

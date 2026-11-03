@@ -97,6 +97,18 @@ const SECTIONS = [
       <!-- 2. Generate -->
       <section class="card step" [class.dim]="!docsReady()">
         <h2><span class="num" [class.ok]="hasDrafts()">2</span> Gerar texto com IA</h2>
+        <div *ngIf="privacy && !locked()" class="privacy">
+          <div class="privacy-head"><strong>🔒 Dados ocultados antes de enviar à IA</strong><span class="muted small">A IA recebe só os marcadores. No laudo, os dados reais voltam sozinhos.</span></div>
+          <div class="chips">
+            <span *ngFor="let t of privacyList()" class="chip" [class.off]="t.ignored" [title]="t.ignored?'Não será ocultado. Clique para ocultar.':'Clique para NÃO ocultar'" (click)="toggleTerm(t)">
+              <span class="ph">{{t.placeholder||'—'}}</span> {{t.value}} <b>{{t.ignored?'+':'×'}}</b></span>
+            <span *ngFor="let x of privacy.extra" class="chip extra" title="Remover" (click)="removeExtra(x.value)"><span class="ph">{{x.placeholder}}</span> {{x.value}} <b>×</b></span>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <input style="flex:1;min-width:200px" [(ngModel)]="newTerm" placeholder="Faltou algum nome, apelido, escola? Digite e clique em Ocultar" (keyup.enter)="addExtra()">
+            <button class="secondary" [disabled]="newTerm.trim().length<2" (click)="addExtra()">Ocultar</button>
+          </div>
+        </div>
         <ng-container *ngIf="!locked()">
           <div class="row">
             <button [disabled]="!docsReady()||generating||!aiReady" (click)="generateAll()">{{generating?'Gerando… aguarde':hasDrafts()?'✨ Gerar tudo de novo':'✨ Gerar laudo com IA'}}</button>
@@ -203,6 +215,7 @@ export class AppComponent {
   dragOver = ''; uploading = '';
   gen: Record<string, GenState> = {}; generating = false;
   usage: any = null; runUsage: any = {}; globalUsage: any = null; usdBrl = 5.5;
+  privacy: any = null; newTerm = '';
   reviewTab: 'preview' | 'edit' = 'preview'; previewLoading = false; openSection = '';
 
   model = 'gpt-4.1'; aiEnabled = false; apiConfigured = false; privacyGate = false; aiReady = false;
@@ -248,7 +261,7 @@ export class AppComponent {
     } catch {}
   }
   async select(id: string) {
-    this.evaluationId = id; this.view = 'evaluation'; this.inspection = null; this.gen = {}; this.warnings = {}; this.reviewTab = 'preview'; this.runUsage = {};
+    this.evaluationId = id; this.view = 'evaluation'; this.inspection = null; this.gen = {}; this.warnings = {}; this.reviewTab = 'preview'; this.runUsage = {}; this.privacy = null;
     this.clearPreview();
     try {
       await this.refresh();
@@ -292,7 +305,27 @@ export class AppComponent {
       if (this.docsReady()) await this.inspect();
     } catch {} finally { this.uploading = ''; }
   }
-  async inspect() { try { this.inspection = await this.req('POST', `/evaluations/${this.evaluationId}/inspect`); } catch {} }
+  async inspect() { try { this.inspection = await this.req('POST', `/evaluations/${this.evaluationId}/inspect`); await this.loadPrivacy(); } catch {} }
+
+  // ---- Privacy (pseudonymisation list) ----
+  async loadPrivacy() { try { this.privacy = await this.req('GET', `/evaluations/${this.evaluationId}/privacy`); } catch {} }
+  privacyList() {
+    // One chip per placeholder (dates have several written forms).
+    const seen = new Set<string>();
+    return (this.privacy?.terms || []).filter((t: any) => { const k = t.ignored ? 'off:' + t.value : t.placeholder; if (seen.has(k)) return false; seen.add(k); return true; });
+  }
+  private async savePrivacy(extra: string[], ignored: string[]) {
+    try { await this.req('PUT', `/evaluations/${this.evaluationId}/privacy`, {extra, ignored}); await this.loadPrivacy(); } catch {}
+  }
+  private currentIgnored() { return (this.privacy?.terms || []).filter((t: any) => t.ignored).map((t: any) => t.value); }
+  private currentExtra() { return (this.privacy?.extra || []).map((x: any) => x.value); }
+  toggleTerm(t: any) {
+    const same = (this.privacy.terms as any[]).filter(x => x.placeholder === t.placeholder || x.value === t.value).map(x => x.value);
+    const ignored = t.ignored ? this.currentIgnored().filter((v: string) => !same.includes(v)) : [...this.currentIgnored(), ...same];
+    this.savePrivacy(this.currentExtra(), ignored);
+  }
+  addExtra() { const v = this.newTerm.trim(); if (v.length < 2) return; this.newTerm = ''; this.savePrivacy([...this.currentExtra(), v], this.currentIgnored()); }
+  removeExtra(v: string) { this.savePrivacy(this.currentExtra().filter((x: string) => x !== v), this.currentIgnored()); }
 
   // ---- Generation ----
   textOf(k: string) { return this.sections.find(s => s.section_key === k)?.content || ''; }
@@ -329,7 +362,7 @@ export class AppComponent {
     try {
       const r = await this.req('POST', `/evaluations/${this.evaluationId}/prompt/${k}`, {});
       await navigator.clipboard.writeText(r.text); window.open('https://chatgpt.com/', 'chatgpt');
-      this.message = 'Pedido copiado. Cole no ChatGPT com Ctrl+V, depois copie a resposta e clique em Colar resposta.';
+      this.message = `Pedido copiado (${r.hidden} dados ocultados). Cole no ChatGPT com Ctrl+V, depois copie a resposta e clique em Colar resposta.`;
     } catch {}
   }
   async pasteAnswer(k: string) {

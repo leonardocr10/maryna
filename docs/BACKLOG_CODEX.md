@@ -4,7 +4,7 @@
 - [x] Criar fixtures DOCX com dados 100% sintéticos: tabelas, sete marcadores, anamnese e cabeçalho.
 - [x] Testes automatizados Python worker: exatamente oito pontos, não alterar tabelas nem escores, layout mantido.
 - [x] Sanitizar/extrair somente seções necessárias do DOCX para envio à IA: evite envio irrestrito de todas as tabelas.
-- [ ] Implementar pseudonimização robusta de identidade e controle de acesso e retenção com avaliação de impacto de privacidade.
+- [ ] Pseudonimização feita (lista revisável por avaliação); faltam controle de acesso por papel, retenção e avaliação de impacto de privacidade.
 - [ ] Endurecer upload: zip bomb e validação DOCX feitos; faltam malware scan e log redaction.
 - [ ] MFA, gestão de contas, RBAC efetivo para estagiária x psicóloga e recuperação segura de acesso.
 - [x] Completar revisão da profissional: aprovação rastreável por usuário, timestamp e bloqueio da versão editada.

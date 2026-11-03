@@ -9,7 +9,7 @@ import {CommonModule} from '@angular/common';
   template: `
 <div class="dz" [class.done]="filename" [class.over]="over" [class.busy]="busy" [class.inline]="inline" [class.disabled]="disabled"
      (click)="!disabled&&!busy&&picker.click()" (dragover)="$event.preventDefault();over=true" (dragleave)="over=false" (drop)="onDrop($event)">
-  <input #picker type="file" accept=".docx" hidden (change)="onPick($event)">
+  <input #picker type="file" accept=".docx" hidden (click)="$event.stopPropagation()" (change)="onPick($event)">
   <div class="icon">{{busy?'…':filename?'✓':'+'}}</div>
   <div class="txt">
     <strong>{{title}}</strong>

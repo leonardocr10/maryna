@@ -1,4 +1,4 @@
-import {Component, computed, inject, signal} from '@angular/core';
+import {Component, computed, effect, inject, signal} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {FormsModule} from '@angular/forms';
 import {Api} from './api.service';
@@ -107,9 +107,11 @@ export class AppComponent {
   STATUS = STATUS; brDate = brDate;
   email = ''; password = '';
 
-  screen = signal<Screen>('evaluation');
+  // Open screen/evaluation survive a page reload (kept per browser tab).
+  private saved = (() => { try { return JSON.parse(sessionStorage.getItem('nl_view') || '{}'); } catch { return {}; } })();
+  screen = signal<Screen>(['evaluation', 'new', 'settings'].includes(this.saved.screen) ? this.saved.screen : 'evaluation');
   evaluations = signal<any[]>([]);
-  selectedId = signal('');
+  selectedId = signal<string>(this.saved.id || '');
   filter = signal<'all' | EvalStatus>('all');
   search = ''; searchSig = signal('');
   generating = false; autoGenerate = false;
@@ -120,14 +122,23 @@ export class AppComponent {
     return this.evaluations().filter(e => (!q || fold(e.patient_name).includes(q)) && (f === 'all' || listStatus(e) === f));
   });
 
-  constructor() { if (this.api.loggedIn()) this.load(); }
+  constructor() {
+    if (this.api.loggedIn()) this.load();
+    effect(() => { try { sessionStorage.setItem('nl_view', JSON.stringify({screen: this.screen(), id: this.selectedId()})); } catch {} });
+  }
 
   st(e: any) { return listStatus(e); }
   count(f: 'all' | EvalStatus) { return f === 'all' ? this.evaluations().length : this.evaluations().filter(e => listStatus(e) === f).length; }
 
   async login() { try { await this.api.login(this.email, this.password); this.password = ''; await this.load(); } catch {} }
-  logout() { if (this.blocked()) return; this.api.logout(); this.selectedId.set(''); this.screen.set('evaluation'); }
-  async load() { try { this.evaluations.set(await this.api.req('GET', '/evaluations')); } catch {} }
+  logout() { if (this.blocked()) return; this.api.logout(); this.selectedId.set(''); this.screen.set('evaluation'); try { sessionStorage.removeItem('nl_view'); } catch {} }
+  async load() {
+    try {
+      const list = await this.api.req<any[]>('GET', '/evaluations');
+      this.evaluations.set(list);
+      if (this.selectedId() && !list.some(e => e.id === this.selectedId())) this.selectedId.set('');
+    } catch {}
+  }
 
   private blocked() { if (this.generating) { this.api.notify('Aguarde a geração terminar.'); return true; } return false; }
   go(s: Screen) { if (this.blocked()) return; this.autoGenerate = false; this.screen.set(s); }

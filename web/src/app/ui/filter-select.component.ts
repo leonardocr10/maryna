@@ -20,9 +20,9 @@ const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCa
   <div *ngIf="open" class="fs-menu" role="listbox">
     <input #filterBox class="fs-filter" [(ngModel)]="query" placeholder="Filtrar…" (keydown.enter)="$event.preventDefault();pickFirst()" (keydown.escape)="close()">
     <div class="fs-list">
-      <ng-container *ngFor="let g of groups()">
+      <ng-container *ngFor="let g of groups(); trackBy: trackGroup">
         <div *ngIf="g.name" class="fs-group">{{g.name}}</div>
-        <button type="button" *ngFor="let o of g.items" class="fs-opt" [class.sel]="o.value===value" (click)="pick(o)">
+        <button type="button" *ngFor="let o of g.items; trackBy: trackOption" class="fs-opt" [class.sel]="o.value===value" (click)="pick(o)">
           <span>{{o.label}}</span><span *ngIf="o.value===value" class="check">✓</span>
         </button>
       </ng-container>
@@ -73,6 +73,9 @@ export class FilterSelectComponent {
     for (const o of this.filtered()) { let g = out.find(x => x.name === o.group); if (!g) out.push(g = {name: o.group, items: []}); g.items.push(o); }
     return out;
   }
+  // Stable identities: without these Angular rebuilds the option buttons on every mousedown and the click is lost.
+  trackGroup = (_: number, g: {name: string}) => g.name;
+  trackOption = (_: number, o: Normalized) => o.value;
   toggle() { this.open ? this.close() : this.show(); }
   show() { if (this.disabled) return; this.open = true; this.query = ''; setTimeout(() => this.filterBox?.nativeElement.focus()); }
   close() { this.open = false; }

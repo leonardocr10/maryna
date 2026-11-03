@@ -61,21 +61,27 @@ def inspect(path):
   if k:markers.append({'key':k,'index':i,'label':txt})
  return {'elements':elements,'markers':markers,'identification':identification(d),'warnings':['Conferir visualmente a ordem dos marcadores e os resultados.']}
 
+REPORT_FONT='Arial';REPORT_HALF_POINTS='22'  # Arial 11 pt
+def run_props(bold=False,red=False):
+ rpr=OxmlElement('w:rPr')
+ f=OxmlElement('w:rFonts')
+ for a in ('ascii','hAnsi','cs','eastAsia'):f.set(qn('w:'+a),REPORT_FONT)
+ rpr.append(f)
+ if bold:rpr.append(OxmlElement('w:b'));rpr.append(OxmlElement('w:bCs'))
+ if red:c=OxmlElement('w:color');c.set(qn('w:val'),'FF0000');rpr.append(c)
+ for tag in ('w:sz','w:szCs'):s=OxmlElement(tag);s.set(qn('w:val'),REPORT_HALF_POINTS);rpr.append(s)
+ return rpr
 def new_paragraph(text,bold=False,red=False):
- """Body paragraph matching the report layout: Arial 11, justified, 1.5 line spacing."""
+ """Body paragraph matching the report layout: Arial 11 pt, justified, 1.5 line spacing."""
  p=OxmlElement('w:p');ppr=OxmlElement('w:pPr')
  sp=OxmlElement('w:spacing');sp.set(qn('w:line'),'360');sp.set(qn('w:lineRule'),'auto');ppr.append(sp)
  ind=OxmlElement('w:ind');ind.set(qn('w:left'),'0');ind.set(qn('w:firstLine'),'0');ppr.append(ind)
- jc=OxmlElement('w:jc');jc.set(qn('w:val'),'both');ppr.append(jc);p.append(ppr)
+ jc=OxmlElement('w:jc');jc.set(qn('w:val'),'both');ppr.append(jc)
+ ppr.append(run_props(bold))  # paragraph mark too, so blank lines between topics are also Arial 11
+ p.append(ppr)
  if text:
-  r=OxmlElement('w:r');rpr=OxmlElement('w:rPr')
-  f=OxmlElement('w:rFonts')
-  for a in ('ascii','hAnsi','cs','eastAsia'):f.set(qn('w:'+a),'Arial')
-  rpr.append(f)
-  if bold:rpr.append(OxmlElement('w:b'));rpr.append(OxmlElement('w:bCs'))
-  if red:c=OxmlElement('w:color');c.set(qn('w:val'),'FF0000');rpr.append(c)
-  for tag in ('w:sz','w:szCs'):s=OxmlElement(tag);s.set(qn('w:val'),'22');rpr.append(s)
-  r.append(rpr);t=OxmlElement('w:t');t.set(qn('xml:space'),'preserve');t.text=text;r.append(t);p.append(r)
+  r=OxmlElement('w:r');r.append(run_props(bold,red))
+  t=OxmlElement('w:t');t.set(qn('xml:space'),'preserve');t.text=text;r.append(t);p.append(r)
  return p
 def blocks(content):
  """Split section text into (text,bold) paragraphs; blank paragraph between topics."""

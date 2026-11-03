@@ -126,4 +126,16 @@ class TestWorker(unittest.TestCase):
   self.assertEqual(texts[5],'Nome: não deve mudar depois do primeiro título')
   self.assertEqual(out.tables[1].cell(0,1).text,'123')
 
+ def test_inserted_text_is_arial_11_with_1_5_spacing(self):
+  nl=chr(10)
+  run('export',stdin={'base':str(self.base),'out':str(self.out),'sections':{'anamnesis':'## Sono'+nl+nl+'Texto.'+nl+nl+'## Escola'+nl+nl+'Outro.'}})
+  ps=Document(self.out).paragraphs
+  start=[p.text for p in ps].index('Sono')
+  for p in ps[start:start+5]:
+   self.assertEqual(p.paragraph_format.line_spacing,1.5)
+   if p.text:self.assertEqual((p.runs[0].font.name,p.runs[0].font.size.pt),('Arial',11.0))
+   else:
+    sz=p._p.pPr.find('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}rPr').find('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}sz')
+    self.assertEqual(sz.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val'),'22')
+
 if __name__=='__main__':unittest.main()

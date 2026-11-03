@@ -3,6 +3,7 @@ import {CommonModule} from '@angular/common';
 import {FormsModule} from '@angular/forms';
 import {renderAsync} from 'docx-preview';
 import {Api} from './api.service';
+import {WorkTimer} from './work-timer.service';
 import {DropZoneComponent} from './ui/drop-zone.component';
 import {Identity, IdentityFormComponent, emptyIdentity} from './ui/identity-form.component';
 import {SECTIONS, SECTION_STATE, STATUS, SectionState, ageText, brDate, brl, int, words} from './shared';
@@ -21,6 +22,7 @@ type Gen = 'pending' | 'running' | 'done' | 'error' | 'skipped';
 })
 export class EvaluationComponent implements OnDestroy {
   private api = inject(Api);
+  private timer = inject(WorkTimer);
   @ViewChild('previewBox') previewBox?: ElementRef<HTMLDivElement>;
   @Output() changed = new EventEmitter<void>();
   @Output() deleted = new EventEmitter<void>();
@@ -51,6 +53,8 @@ export class EvaluationComponent implements OnDestroy {
     try {
       const r = await this.api.req('GET', '/evaluations/' + this.evaluationId);
       this.current = r.evaluation; this.documents = r.documents || []; this.sections = r.sections || []; this.usage = r.usage;
+      if (first) this.timer.start(this.evaluationId, this.current.work_seconds, this.locked());
+      else if (this.locked()) this.timer.finish();
       if (first) {
         const c = this.current;
         this.idModel = {name: c.patient_name || '', birth_date: c.birth_date || '', sex: c.sex || '', schooling: c.schooling || '', start_date: c.start_date || '', end_date: c.end_date || ''};

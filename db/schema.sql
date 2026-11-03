@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS evaluations(
   approved_at TEXT NULL,
   privacy_json TEXT NULL,
   instructions_json TEXT NULL,
+  work_seconds INTEGER NOT NULL DEFAULT 0,
+  work_started_at TEXT NULL,
   sex TEXT NULL,
   schooling TEXT NULL,
   start_date TEXT NULL,

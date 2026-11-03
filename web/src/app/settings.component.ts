@@ -4,6 +4,7 @@ import {FormsModule} from '@angular/forms';
 import {Api} from './api.service';
 import {FilterSelectComponent} from './ui/filter-select.component';
 import {MODEL_OPTIONS, SECTIONS, brDate, brl, int, withCurrent} from './shared';
+import {WorkTimer, duration} from './work-timer.service';
 
 /** Settings with vertical tabs: Minha conta / IA e custos. */
 @Component({
@@ -17,7 +18,24 @@ import {MODEL_OPTIONS, SECTIONS, brDate, brl, int, withCurrent} from './shared';
   <nav class="tabs">
     <button [class.on]="tab==='conta'" (click)="tab='conta'"><strong>Minha conta</strong><span>Senha de acesso</span></button>
     <button [class.on]="tab==='ia'" (click)="tab='ia';load()"><strong>IA e custos</strong><span>Modelo, geração e gastos</span></button>
+    <button [class.on]="tab==='tempo'" (click)="tab='tempo';timer.loadStats()"><strong>Tempo</strong><span>Média por avaliação</span></button>
   </nav>
+
+  <div class="panel" *ngIf="tab==='tempo'">
+    <div class="costs">
+      <section class="card card-pad"><p class="label-caps">Tempo médio de trabalho</p><p class="money">{{t()?.finished ? duration(t().avg_work_seconds) : '—'}}</p><p class="caption">por avaliação concluída ({{t()?.finished||0}})</p></section>
+      <section class="card card-pad"><p class="label-caps">Do início ao fim</p><p class="money">{{t()?.finished ? duration(t().avg_calendar_seconds) : '—'}}</p><p class="caption">média entre criar e aprovar</p></section>
+    </div>
+    <section class="card card-pad">
+      <p class="label-caps">Detalhes</p>
+      <ul class="tlist">
+        <li><span>Mais rápida</span><strong>{{t()?.finished ? duration(t().min_work_seconds) : '—'}}</strong></li>
+        <li><span>Mais demorada</span><strong>{{t()?.finished ? duration(t().max_work_seconds) : '—'}}</strong></li>
+        <li><span>Em andamento</span><strong>{{t()?.in_progress||0}} avaliação(ões) · {{duration(t()?.in_progress_seconds||0)}} até agora</strong></li>
+      </ul>
+      <p class="caption">O tempo de trabalho conta só enquanto a avaliação está aberta na tela. Pausa quando a aba fica escondida ou após 5 minutos sem mexer, e para quando a avaliação é aprovada. "Do início ao fim" é o tempo de calendário, da criação até a aprovação.</p>
+    </section>
+  </div>
 
   <div class="panel" *ngIf="tab==='conta'">
     <section class="card">
@@ -113,6 +131,10 @@ h1{font-size:26px;font-weight:700;margin-bottom:20px}
 .strength div.good{background:var(--ok-dot)}
 .good-txt{color:var(--ok-fg)}
 .costs{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+.tlist{list-style:none;padding:0;margin:10px 0 12px;display:flex;flex-direction:column;gap:8px;font-size:13.5px}
+.tlist li{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--divider);padding-bottom:8px}
+.tlist span{color:var(--text-3)}
 .money{font-size:24px;font-weight:700;color:var(--primary-text);margin:10px 0 2px}
 .pills{display:flex;gap:8px;flex-wrap:wrap}
 .pill{font-size:12.5px;padding:4px 10px;border-radius:20px;background:var(--idle-bg);color:var(--idle-fg)}
@@ -153,7 +175,9 @@ tfoot td{font-weight:600;border-top:1px solid var(--border-card);border-bottom:0
 export class SettingsComponent {
   private api = inject(Api);
   brl = brl; int = int;
-  tab: 'conta' | 'ia' = 'conta';
+  timer = inject(WorkTimer); duration = duration;
+  tab: 'conta' | 'ia' | 'tempo' = 'conta';
+  t() { return this.timer.stats(); }
   pwCurrent = ''; pwNext = ''; saving = false;
   model = 'gpt-4.1'; enabled = false; configured = false; privacyGate = false; usage: any = null;
   testing = false; test: any = null;

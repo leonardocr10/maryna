@@ -6,6 +6,7 @@ import {EvalStatus, STATUS, brDate, fold, listStatus} from './shared';
 import {NewEvaluationComponent} from './new-evaluation.component';
 import {EvaluationComponent} from './evaluation.component';
 import {SettingsComponent} from './settings.component';
+import {WorkTimer, clock, duration} from './work-timer.service';
 
 type Screen = 'evaluation' | 'new' | 'settings';
 
@@ -28,6 +29,12 @@ type Screen = 'evaluation' | 'new' | 'settings';
   <header class="top">
     <button class="brand" type="button" (click)="goHome()"><span class="logo">NL</span><div><strong>NeuroLaudos IA</strong><span>Elaboração assistida de laudos</span></div></button>
     <nav>
+      <div *ngIf="screen()==='evaluation' && timer.evalId()" class="timer" [class.paused]="timer.state()==='paused'" [class.finished]="timer.state()==='finished'" [title]="timerTitle()">
+        <span class="tdot"></span>
+        <span class="mono tval">{{clock(timer.seconds())}}</span>
+        <span class="tlabel">{{timer.state()==='finished' ? 'concluída' : timer.state()==='paused' ? 'pausado' : 'em andamento'}}</span>
+        <span *ngIf="timer.stats()?.finished" class="tavg">média {{duration(timer.stats().avg_work_seconds)}}</span>
+      </div>
       <button class="btn-text" [class.active]="screen()==='settings'" (click)="go('settings')">⚙ Configurações</button>
       <button class="btn-text" (click)="logout()">⎋ Sair</button>
     </nav>
@@ -74,7 +81,16 @@ type Screen = 'evaluation' | 'new' | 'settings';
 .brand strong{display:block;font-size:15px;font-weight:700;color:var(--text)}
 .brand span{display:block;font-size:11px;color:var(--caption)}
 .logo{width:30px;height:30px;border-radius:8px;background:var(--primary);color:#fff!important;font-size:13px!important;font-weight:700;display:flex!important;align-items:center;justify-content:center;flex:none}
-nav{display:flex;gap:4px}
+nav{display:flex;gap:4px;align-items:center}
+.timer{display:flex;align-items:center;gap:8px;height:34px;padding:0 12px;margin-right:8px;border-radius:20px;background:var(--primary-soft);border:1px solid var(--primary-border);font-size:12px;color:var(--primary-text);cursor:default}
+.tdot{width:8px;height:8px;border-radius:50%;background:var(--ok-dot);animation:blink 1.6s infinite}
+.tval{font-size:14px;font-weight:600;color:var(--text)}
+.tavg{color:var(--caption);border-left:1px solid var(--primary-border);padding-left:8px}
+.timer.paused{background:var(--chip);border-color:var(--border-input);color:var(--text-3)}
+.timer.paused .tdot{background:var(--warn-dot);animation:none}
+.timer.finished .tdot{background:var(--primary);animation:none}
+@keyframes blink{50%{opacity:.3}}
+@media(max-width:900px){.tlabel,.tavg{display:none}}
 .shell{display:flex;height:calc(100vh - 60px)}
 .side{width:300px;flex:none;background:#fff;border-right:1px solid var(--border-card);padding:18px 16px;display:flex;flex-direction:column;gap:14px;overflow:hidden}
 .new-btn{height:42px;border:0;border-radius:9px;background:var(--primary);color:#fff;font:600 14px var(--font);cursor:pointer;flex:none}
@@ -104,7 +120,8 @@ nav{display:flex;gap:4px}
 })
 export class AppComponent {
   api = inject(Api);
-  STATUS = STATUS; brDate = brDate;
+  timer = inject(WorkTimer);
+  STATUS = STATUS; brDate = brDate; clock = clock; duration = duration;
   email = ''; password = '';
 
   // Open screen/evaluation survive a page reload (kept per browser tab).
@@ -131,7 +148,7 @@ export class AppComponent {
   count(f: 'all' | EvalStatus) { return f === 'all' ? this.evaluations().length : this.evaluations().filter(e => listStatus(e) === f).length; }
 
   async login() { try { await this.api.login(this.email, this.password); this.password = ''; await this.load(); } catch {} }
-  logout() { if (this.blocked()) return; this.api.logout(); this.selectedId.set(''); this.screen.set('evaluation'); try { sessionStorage.removeItem('nl_view'); } catch {} }
+  logout() { if (this.blocked()) return; this.timer.stop(); this.api.logout(); this.selectedId.set(''); this.screen.set('evaluation'); try { sessionStorage.removeItem('nl_view'); } catch {} }
   async load() {
     try {
       const list = await this.api.req<any[]>('GET', '/evaluations');
@@ -140,10 +157,16 @@ export class AppComponent {
     } catch {}
   }
 
+  timerTitle() {
+    const st = this.timer.stats(), s = this.timer.state();
+    const head = s === 'finished' ? 'Tempo total de trabalho nesta avaliação (concluída).' : s === 'paused' ? 'Pausado: ' + this.timer.pauseReason() + '.' : 'Tempo de trabalho nesta avaliação.';
+    const avg = st?.finished ? ` Média das ${st.finished} avaliações concluídas: ${duration(st.avg_work_seconds)} de trabalho, ${duration(st.avg_calendar_seconds)} do início ao fim.` : '';
+    return head + ' Conta só com a avaliação aberta; pausa com a aba escondida ou após 5 minutos sem uso.' + avg;
+  }
   private blocked() { if (this.generating) { this.api.notify('Aguarde a geração terminar.'); return true; } return false; }
-  go(s: Screen) { if (this.blocked()) return; this.autoGenerate = false; this.screen.set(s); }
+  go(s: Screen) { if (this.blocked()) return; this.autoGenerate = false; if (s !== 'evaluation') this.timer.stop(); this.screen.set(s); }
   goHome() { this.go('evaluation'); }
   open(id: string) { if (this.blocked()) return; this.autoGenerate = false; this.selectedId.set(id); this.screen.set('evaluation'); }
   async onCreated(e: {id: string; generate: boolean}) { await this.load(); this.autoGenerate = e.generate; this.selectedId.set(e.id); this.screen.set('evaluation'); }
-  async onDeleted() { this.selectedId.set(''); await this.load(); }
+  async onDeleted() { this.timer.stop(); this.selectedId.set(''); await this.load(); }
 }

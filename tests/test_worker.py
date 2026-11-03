@@ -106,4 +106,24 @@ class TestWorker(unittest.TestCase):
    z.writestr('word/document.xml','<w/>');z.writestr('big.bin',b'0'*(201*1024*1024))
   with self.assertRaises(AssertionError):run('inspect',str(self.base))
 
+ def test_fills_identification_values_only(self):
+  d=Document()
+  p=d.add_paragraph();p.add_run('Data de início da avaliação: ').bold=True;p.add_run('25/08/2026       Data da finalização do laudo: 00/11/2026')
+  d.add_paragraph('Nome: Fulano Antigo');d.add_paragraph('Data de Nascimento: -');d.add_paragraph('Idade: ')
+  d.add_paragraph('Escolaridade: 6º ano')
+  d.add_table(rows=1,cols=1).cell(0,0).text='DESCRIÇÃO DA DEMANDA'
+  d.add_paragraph('Nome: não deve mudar depois do primeiro título')
+  t=d.add_table(rows=1,cols=2);t.cell(0,0).text='Nome:';t.cell(0,1).text='123'
+  d.save(self.base)
+  self.assertEqual(run('inspect',str(self.base))['identification']['Nome'],'Fulano Antigo')
+  fields={'Nome':'Ciclana Fictícia','Data de Nascimento':'31/05/1993','Idade':'33 anos','Data de início da avaliação':'15/09/2026','Data da finalização do laudo':'19/10/2026'}
+  r=run('export',stdin={'base':str(self.base),'out':str(self.out),'sections':{},'fields':fields})
+  self.assertEqual(sorted(r['fields_filled']),sorted(fields))
+  out=Document(self.out);texts=[p.text for p in out.paragraphs]
+  self.assertEqual(texts[0],'Data de início da avaliação: 15/09/2026       Data da finalização do laudo: 19/10/2026')
+  self.assertTrue(out.paragraphs[0].runs[0].bold)
+  self.assertEqual(texts[1:5],['Nome: Ciclana Fictícia','Data de Nascimento: 31/05/1993','Idade: 33 anos','Escolaridade: 6º ano'])
+  self.assertEqual(texts[5],'Nome: não deve mudar depois do primeiro título')
+  self.assertEqual(out.tables[1].cell(0,1).text,'123')
+
 if __name__=='__main__':unittest.main()

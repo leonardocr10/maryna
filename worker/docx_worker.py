@@ -59,7 +59,7 @@ def inspect(path):
   txt=e['text'] if e['type']=='p' else ' '.join(x for row in e['rows'] for x in row)
   k=m.key(txt)
   if k:markers.append({'key':k,'index':i,'label':txt})
- return {'elements':elements,'markers':markers,'warnings':['Conferir visualmente a ordem dos marcadores e os resultados.']}
+ return {'elements':elements,'markers':markers,'identification':identification(d),'warnings':['Conferir visualmente a ordem dos marcadores e os resultados.']}
 
 def new_paragraph(text,bold=False,red=False):
  """Body paragraph matching the report layout: Arial 11, justified, 1.5 line spacing."""
@@ -101,10 +101,57 @@ def sha256(path):
  with open(path,'rb') as f:
   for chunk in iter(lambda:f.read(65536),b''):h.update(chunk)
  return h.hexdigest()
-def export(base,out,sections,highlight=False):
+# Identification fields at the top of the report ("Nome: ...", "Data de início da avaliação: ...   Data da finalização do laudo: ...").
+# Only the value after the colon is ever replaced; labels, other text, tables and scores are untouched.
+ID_LABELS=['Nome','Data de Nascimento','Idade','Sexo','Escolaridade','Data de início da avaliação','Data da finalização do laudo']
+def field_spans(text):
+ """{label:(start,end)} of each identification value in a paragraph; values end at 3+ spaces, a tab or line end."""
+ spans={}
+ for label in ID_LABELS:
+  m=re.search(r'(?<![\w])'+re.escape(label)+r'\s*:[  ]*(.*?)[  ]*(?=[  ]{3,}|\t|$)',text,re.I)
+  if m:spans[label]=(m.start(1),m.end(1))
+ return spans
+def identification(doc):
+ """Values currently written in the identification lines (before the first section heading)."""
+ out={};m=Markers()
+ for ch in doc.element.body.iterchildren():
+  if not ch.tag.endswith('}p'):
+   if ch.tag.endswith('}tbl') and m.key(element_text(ch,doc)):break
+   continue
+  text=Paragraph(ch,doc).text
+  for label,(a,b) in field_spans(text).items():out.setdefault(label,text[a:b].strip())
+ return out
+def replace_span(p,start,end,new):
+ """Replace characters [start,end) of a paragraph, keeping the formatting of the run where the value starts."""
+ runs=list(p.runs)
+ if ''.join(r.text for r in runs)!=p.text:return False  # hyperlinks/fields inside: leave untouched
+ pos=0;done=False
+ for r in runs:
+  rs,re_=pos,pos+len(r.text);pos=re_
+  if not done and rs<=start<=re_ and (start<re_ or end==start or re_==len(p.text)):
+   a=start-rs;b=min(end,re_)-rs;r.text=r.text[:a]+new+r.text[b:];done=True
+  elif done and rs<end:
+   b=min(end,re_)-rs;r.text=r.text[b:]
+ return done
+def fill_fields(doc,fields):
+ filled=[];m=Markers()
+ for ch in list(doc.element.body.iterchildren()):
+  if ch.tag.endswith('}tbl'):
+   if m.key(element_text(ch,doc)):break
+   continue
+  if not ch.tag.endswith('}p'):continue
+  p=Paragraph(ch,doc)
+  # right-to-left so earlier offsets stay valid
+  for label,(a,b) in sorted(field_spans(p.text).items(),key=lambda x:-x[1][0]):
+   value=fields.get(label)
+   if value is None or label in filled:continue
+   if p.text[a:b]==value or replace_span(p,a,b,value):filled.append(label)
+ return filled
+def export(base,out,sections,highlight=False,fields=None):
  if os.path.abspath(base)==os.path.abspath(out):raise SystemExit('out must differ from base')
  before=sha256(base)
  d=open_docx(base);seen=[];m=Markers()
+ filled=fill_fields(d,{k:clean(v) for k,v in (fields or {}).items() if clean(v)})
  for ch in list(d.element.body.iterchildren()):
   if not (ch.tag.endswith('}p') or ch.tag.endswith('}tbl')):continue
   k=m.key(element_text(ch,d))
@@ -113,12 +160,12 @@ def export(base,out,sections,highlight=False):
  d.save(out)
  after=sha256(base)
  if before!=after:raise SystemExit('base document changed during export')
- return {'inserted':seen,'missing':[k for k in sections if k not in seen],'base_sha256':before,'out_sha256':sha256(out)}
+ return {'inserted':seen,'missing':[k for k in sections if k not in seen],'fields_filled':filled,'base_sha256':before,'out_sha256':sha256(out)}
 def main():
  op=sys.argv[1]
  sys.stdout.reconfigure(encoding='utf-8')
  if op=='inspect': print(json.dumps(inspect(sys.argv[2]),ensure_ascii=False))
  elif op=='export':
-  spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(export(spec['base'],spec['out'],spec['sections'],spec.get('highlight',False)),ensure_ascii=False))
+  spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(export(spec['base'],spec['out'],spec['sections'],spec.get('highlight',False),spec.get('fields')),ensure_ascii=False))
  else: raise SystemExit('unknown operation')
 if __name__=='__main__':main()

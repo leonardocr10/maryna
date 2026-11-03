@@ -51,10 +51,19 @@ const SECTIONS = [
   <aside>
     <button style="width:100%" (click)="showNew=!showNew">{{showNew?'Cancelar':'+ Nova avaliação'}}</button>
     <div *ngIf="showNew" class="new-form">
-      <label>Nome do paciente</label><input [(ngModel)]="patientName" (keyup.enter)="create()">
-      <label>Data de nascimento</label><input type="date" [(ngModel)]="birthDate">
-      <button style="margin-top:12px;width:100%" [disabled]="patientName.trim().length<2" (click)="create()">Criar</button>
+      <div class="id-grid">
+        <div class="span2"><label>Nome do paciente *</label><input [(ngModel)]="newId.name" (keyup.enter)="create()"></div>
+        <div><label>Data de nascimento</label><input type="date" [(ngModel)]="newId.birth_date"></div>
+        <div><label>Idade</label><input [value]="age(newId.birth_date,newId.end_date)||'—'" disabled></div>
+        <div><label>Sexo</label><select [(ngModel)]="newId.sex"><option value="">—</option><option>Feminino</option><option>Masculino</option></select></div>
+        <div><label>Escolaridade</label><input [(ngModel)]="newId.schooling" list="schooling-options" placeholder="Ex.: 6º ano, Ensino médio completo"></div>
+        <div><label>Início da avaliação</label><input type="date" [(ngModel)]="newId.start_date"></div>
+        <div><label>Finalização do laudo</label><input type="date" [(ngModel)]="newId.end_date"></div>
+      </div>
+      <button style="margin-top:12px;width:100%" [disabled]="(newId.name||'').trim().length<2" (click)="create()">Criar</button>
+      <p class="muted small">Se deixar algo em branco, o sistema usa o que estiver escrito no arquivo base.</p>
     </div>
+    <datalist id="schooling-options"><option *ngFor="let s of schoolingOptions" [value]="s"></option></datalist>
     <p class="aside-title">Avaliações ({{evaluations.length}})</p>
     <p *ngIf="!evaluations.length" class="muted small">Nenhuma avaliação ainda.</p>
     <div *ngFor="let x of evaluations" class="eval-item" [class.active]="x.id===evaluationId && view==='evaluation'" (click)="select(x.id)">
@@ -77,6 +86,26 @@ const SECTIONS = [
         <h1>{{current.patient_name}}</h1>
         <span [class]="'badge '+current.status">{{statusLabel(current.status)}}</span>
       </div>
+
+      <!-- 0. Identification -->
+      <section class="card step">
+        <h2><span class="num ok">✎</span> Identificação <span class="muted small" style="font-weight:400">(entra no Word no lugar dos campos do arquivo base)</span></h2>
+        <fieldset [disabled]="locked()" class="plain">
+        <div class="id-grid">
+        <div class="span2"><label>Nome do paciente *</label><input [(ngModel)]="idForm.name" (keyup.enter)="saveIdentification()"></div>
+        <div><label>Data de nascimento</label><input type="date" [(ngModel)]="idForm.birth_date"></div>
+        <div><label>Idade</label><input [value]="age(idForm.birth_date,idForm.end_date)||'—'" disabled></div>
+        <div><label>Sexo</label><select [(ngModel)]="idForm.sex"><option value="">—</option><option>Feminino</option><option>Masculino</option></select></div>
+        <div><label>Escolaridade</label><input [(ngModel)]="idForm.schooling" list="schooling-options" placeholder="Ex.: 6º ano, Ensino médio completo"></div>
+        <div><label>Início da avaliação</label><input type="date" [(ngModel)]="idForm.start_date"></div>
+        <div><label>Finalização do laudo</label><input type="date" [(ngModel)]="idForm.end_date"></div>
+      </div>
+        </fieldset>
+        <div class="row" style="margin-top:12px" *ngIf="!locked()">
+          <button [disabled]="!idDirty()||(idForm.name||'').trim().length<2" (click)="saveIdentification()">Salvar identificação</button>
+          <span *ngIf="idDirty()" class="muted small">Alterações não salvas</span>
+        </div>
+      </section>
 
       <!-- 1. Files -->
       <section class="card step">
@@ -209,7 +238,9 @@ export class AppComponent {
   email = ''; password = ''; message = '';
   view: 'home' | 'evaluation' | 'settings' = 'home';
 
-  evaluations: any[] = []; showNew = false; patientName = ''; birthDate = '';
+  evaluations: any[] = []; showNew = false;
+  newId: any = this.emptyId(); idForm: any = this.emptyId(); idSaved = '';
+  schoolingOptions = ['Educação infantil', '1º ano', '2º ano', '3º ano', '4º ano', '5º ano', '6º ano', '7º ano', '8º ano', '9º ano', 'Ensino médio incompleto', 'Ensino médio completo', 'Ensino superior incompleto', 'Ensino superior completo', 'Pós-graduação'];
   evaluationId = ''; current: any = null; documents: any[] = []; sections: any[] = []; inspection: any = null;
   drafts: Record<string, string> = {}; warnings: Record<string, string[]> = {};
   dragOver = ''; uploading = '';
@@ -252,12 +283,33 @@ export class AppComponent {
   statusLabel(s: string) { return ({draft: 'rascunho', review: 'em revisão', approved: 'aprovada', generated: 'gerado', edited: 'editado'} as any)[s] || s; }
   async load() { try { this.evaluations = await this.req('GET', '/evaluations'); } catch {} }
   async create() {
-    if (this.patientName.trim().length < 2) return;
+    const v = this.newId;
+    if ((v.name || '').trim().length < 2) return;
     try {
-      const p = await this.req('POST', '/patients', {name: this.patientName.trim(), birth_date: this.birthDate || null});
-      const e = await this.req('POST', '/evaluations', {patient_id: p.id});
-      this.patientName = ''; this.birthDate = ''; this.showNew = false;
+      const p = await this.req('POST', '/patients', {name: v.name.trim(), birth_date: v.birth_date || null});
+      const e = await this.req('POST', '/evaluations', {patient_id: p.id, ...v});
+      this.newId = this.emptyId(); this.showNew = false;
       await this.load(); await this.select(e.id);
+    } catch {}
+  }
+
+  // ---- Identification ----
+  emptyId() { return {name: '', birth_date: '', sex: '', schooling: '', start_date: '', end_date: ''}; }
+  age(birth: string, at: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(birth || '')) return '';
+    const ref = /^\d{4}-\d{2}-\d{2}$/.test(at || '') ? at : new Date().toISOString().slice(0, 10);
+    const [by, bm, bd] = birth.split('-').map(Number), [ry, rm, rd] = ref.split('-').map(Number);
+    let y = ry - by; if (rm < bm || (rm === bm && rd < bd)) y--;
+    if (y < 0) return '';
+    if (y < 2) { const mo = (ry - by) * 12 + rm - bm - (rd < bd ? 1 : 0); return mo === 1 ? '1 mês' : `${mo} meses`; }
+    return `${y} anos`;
+  }
+  idDirty() { return JSON.stringify(this.idForm) !== this.idSaved; }
+  async saveIdentification() {
+    try {
+      await this.req('PUT', `/evaluations/${this.evaluationId}/identification`, this.idForm);
+      await this.refresh(); await this.load(); this.message = 'Identificação salva.';
+      if (this.hasDrafts() && this.reviewTab === 'preview') this.renderPreview();
     } catch {}
   }
   async select(id: string) {
@@ -272,6 +324,7 @@ export class AppComponent {
   async refresh() {
     const r = await this.req('GET', '/evaluations/' + this.evaluationId);
     this.current = r.evaluation; this.documents = r.documents || []; this.sections = r.sections || []; this.usage = r.usage;
+    const c = this.current; this.idForm = {name: c.patient_name || '', birth_date: c.birth_date || '', sex: c.sex || '', schooling: c.schooling || '', start_date: c.start_date || '', end_date: c.end_date || ''}; this.idSaved = JSON.stringify(this.idForm);
     this.drafts = Object.fromEntries(this.sections.map(s => [s.section_key, s.content]));
     for (const s of this.sections) if (s.source_summary && !this.warnings[s.section_key]) { try { this.warnings[s.section_key] = JSON.parse(s.source_summary); } catch {} }
     const i = this.evaluations.findIndex(x => x.id === this.evaluationId);
@@ -303,6 +356,7 @@ export class AppComponent {
       await this.req('POST', `/evaluations/${this.evaluationId}/upload/${kind}`, fd);
       await this.refresh(); this.message = '';
       if (this.docsReady()) await this.inspect();
+      if (kind === 'base') { await this.load(); this.message = 'Arquivo base enviado. Campos vazios da identificação foram preenchidos com o que estava nele.'; }
     } catch {} finally { this.uploading = ''; }
   }
   async inspect() { try { this.inspection = await this.req('POST', `/evaluations/${this.evaluationId}/inspect`); await this.loadPrivacy(); } catch {} }

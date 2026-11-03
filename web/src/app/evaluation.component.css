@@ -99,3 +99,5 @@
 
 @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } .col-side { position: static; } }
 @media (max-width: 760px) { .stepper { grid-template-columns: 1fr 1fr; } .st + .st { border-left: 0; } }
+
+.instr-box.guide { margin: 14px 0 4px; background: var(--primary-soft); border-color: var(--primary-border); }

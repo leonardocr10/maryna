@@ -7,6 +7,9 @@ import {DropZoneComponent} from './ui/drop-zone.component';
 import {Identity, IdentityFormComponent, emptyIdentity} from './ui/identity-form.component';
 import {SECTIONS, SECTION_STATE, STATUS, SectionState, ageText, brDate, brl, int, words} from './shared';
 
+/** Section the AI only writes from the psychologist's own guidance (never in "Gerar laudo"). */
+const MANUAL_KEY = 'conclusao';
+
 type Gen = 'pending' | 'running' | 'done' | 'error' | 'skipped';
 
 @Component({
@@ -25,7 +28,7 @@ export class EvaluationComponent implements OnDestroy {
   @Input() autoGenerate = false;
   @Input() set id(v: string) { if (v && v !== this.evaluationId) { this.evaluationId = v; this.load(true); } }
 
-  SECTIONS = SECTIONS; SECTION_STATE = SECTION_STATE; STATUS = STATUS; brDate = brDate; brl = brl; int = int; words = words;
+  MANUAL_KEY = MANUAL_KEY; SECTIONS = SECTIONS; SECTION_STATE = SECTION_STATE; STATUS = STATUS; brDate = brDate; brl = brl; int = int; words = words;
   steps = ['Identificação', 'Arquivos', 'Gerar com IA', 'Conferir e baixar'];
 
   evaluationId = '';
@@ -70,7 +73,7 @@ export class EvaluationComponent implements OnDestroy {
     try {
       const r = await this.api.req('GET', `/evaluations/${this.evaluationId}/instructions`);
       this.instructions = r.sections;
-      this.instrDraft = Object.fromEntries(r.sections.map((x: any) => [x.key, x.custom || x.default]));
+      this.instrDraft = Object.fromEntries(r.sections.map((x: any) => [x.key, x.custom || (x.key === MANUAL_KEY ? '' : x.default)]));
     } catch {}
   }
 
@@ -134,16 +137,18 @@ export class EvaluationComponent implements OnDestroy {
   }
 
   // ---------- step 3: generation ----------
+  autoKeys() { return this.available().map(s => s.id).filter(k => k !== MANUAL_KEY); }
+  hasConclusion() { return this.available().some(s => s.id === MANUAL_KEY); }
   genKeys() { return Object.keys(this.gen); }
   genDone() { return Object.values(this.gen).filter(g => g === 'done' || g === 'error' || g === 'skipped').length; }
   genPct() { const n = this.genKeys().length; return n ? Math.round(this.genDone() / n * 100) : 0; }
   dotClass(k: string) { const g = this.gen[k]; if (g === 'running') return 'warn pulse'; if (g === 'error') return 'err'; if (g === 'done') return 'ok'; return this.state(k) === 'ap' ? 'ok' : this.state(k) === 'gen' ? 'warn' : ''; }
-  rowLabel(k: string) { const g = this.gen[k]; if (g === 'running') return 'Gerando…'; if (g === 'pending') return 'Na fila'; if (g === 'error') return 'Erro'; if (g === 'skipped') return 'Não gerada'; return SECTION_STATE[this.state(k)].label; }
+  rowLabel(k: string) { if (k === MANUAL_KEY && !this.gen[k] && this.state(k) === 'pend') return 'Você gera na etapa 4'; const g = this.gen[k]; if (g === 'running') return 'Gerando…'; if (g === 'pending') return 'Na fila'; if (g === 'error') return 'Erro'; if (g === 'skipped') return 'Não gerada'; return SECTION_STATE[this.state(k)].label; }
 
   async generateAll(skipConfirm = false) {
     if (!this.aiReady) { this.api.notify('Geração pela API desligada. Ative em Configurações.'); return; }
     if (!skipConfirm && this.drafted() && !confirm('Gerar tudo de novo? Os textos atuais serão substituídos (as versões antigas ficam no histórico).')) return;
-    const keys = this.available().map(s => s.id);
+    const keys = this.autoKeys();
     this.gen = Object.fromEntries(keys.map(k => [k, 'pending' as Gen]));
     this.generating = true; this.generatingChange.emit(true);
     try {
@@ -153,7 +158,7 @@ export class EvaluationComponent implements OnDestroy {
         catch { this.gen[k] = 'error'; for (const r of keys) if (this.gen[r] === 'pending') this.gen[r] = 'skipped'; break; }
       }
     } finally { this.generating = false; this.generatingChange.emit(false); this.changed.emit(); }
-    if (!Object.values(this.gen).includes('error')) { this.api.notify('Textos gerados. Revise cada seção.'); this.step = 3; this.mode = 'secoes'; this.open = this.available()[0]?.id || ''; }
+    if (!Object.values(this.gen).includes('error')) { this.api.notify(this.hasConclusion() && this.state(MANUAL_KEY) === 'pend' ? 'Textos gerados. Revise cada seção; a Conclusão você gera com suas orientações.' : 'Textos gerados. Revise cada seção.'); this.step = 3; this.mode = 'secoes'; this.open = this.available()[0]?.id || ''; }
   }
 
   instruction(k: string) { return this.instructions.find(x => x.key === k); }
@@ -194,6 +199,12 @@ export class EvaluationComponent implements OnDestroy {
     try { await this.api.req('POST', `/evaluations/${this.evaluationId}/generate/${k}`, {notes: ''}); this.gen[k] = 'done'; await this.load(); this.sectionInstr = ''; this.api.notify('Seção regenerada. Revise o texto.'); }
     catch { this.gen[k] = 'error'; }
     finally { this.generating = false; this.generatingChange.emit(false); this.changed.emit(); }
+  }
+  async generateConclusion() {
+    const text = (this.instrDraft[MANUAL_KEY] || '').trim();
+    if (text.length < 10) { this.api.notify('Escreva suas orientações para a conclusão (o que você concluiu e quer destacar).'); return; }
+    if (this.state(MANUAL_KEY) !== 'pend' && !confirm('Gerar a conclusão de novo com estas orientações? O texto atual vai para o histórico.')) return;
+    await this.regenerate(MANUAL_KEY, true);
   }
   async approveAndNext(k: string) {
     try {

@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS evaluations(
   approved_by TEXT NULL,
   approved_at TEXT NULL,
   privacy_json TEXT NULL,
+  instructions_json TEXT NULL,
   sex TEXT NULL,
   schooling TEXT NULL,
   start_date TEXT NULL,

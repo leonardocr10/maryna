@@ -1,37 +1,16 @@
 services:
-  mysql:
-    image: mysql:8.4
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-localdevroot}
-      MYSQL_DATABASE: neurolaudos
-      MYSQL_USER: neurolaudos
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-localdevonly}
-    ports: ["127.0.0.1:3307:3306"]
-    volumes:
-      - mysql_data:/var/lib/mysql
-      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD"]
-      interval: 5s
-      retries: 20
   api:
     build: ./api
     restart: unless-stopped
-    depends_on:
-      mysql: {condition: service_healthy}
     ports: ["127.0.0.1:3001:3001"]
     env_file: ./api/.env
     environment:
-      DB_HOST: mysql
-      DB_NAME: neurolaudos
-      DB_USER: neurolaudos
-      DB_PASSWORD: ${MYSQL_PASSWORD:-localdevonly}
       PORT: 3001
       HOST: 0.0.0.0
       PYTHON_BIN: python3
+      DB_FILE: /app/data/neurolaudos.db
     volumes:
-      - ./storage:/app/storage
+      - ./api/storage:/app/storage
+      - ./api/data:/app/data
       - ./worker:/app/worker:ro
-volumes:
-  mysql_data:
+      - ./db:/app/db:ro

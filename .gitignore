@@ -12,3 +12,8 @@ templates/*PRIVADO*.docx
 .local/
 .angular/
 web/.angular/
+# Banco SQLite com dados de pacientes
+api/data/
+*.db
+*.db-wal
+*.db-shm

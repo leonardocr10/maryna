@@ -1,7 +1,6 @@
-// Starts the whole stack without Docker: database check, API (node) and Angular dev server.
+// Starts the whole stack: API (node, embedded SQLite) and Angular dev server.
 import {spawn,spawnSync} from 'node:child_process';
-import {existsSync,readFileSync} from 'node:fs';
-import net from 'node:net';
+import {existsSync} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -10,14 +9,8 @@ const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const win=process.platform==='win32';
 const ps=f=>spawnSync('powershell',['-NoProfile','-ExecutionPolicy','Bypass','-File',path.join(root,'scripts',f)],{stdio:'inherit'});
 
-if(!win){console.error('scripts/dev.mjs usa os scripts PowerShell do Windows; em outro SO rode MySQL e npm start em api/ e web/.');process.exit(1)}
+if(!win){console.error('scripts/dev.mjs usa os scripts PowerShell do Windows; em outro SO rode npm start em api/ e web/.');process.exit(1)}
 if(!existsSync(path.join(root,'api','.env'))&&ps('setup-env.ps1').status)process.exit(1);
-// Portable MariaDB only when api/.env points to it (port 3307); otherwise use the existing MySQL.
-const env=Object.fromEntries(readFileSync(path.join(root,'api','.env'),'utf8').split(/\r?\n/).map(l=>l.match(/^\s*([A-Z_]+)=(.*)$/)).filter(Boolean).map(m=>[m[1],m[2].trim()]));
-if(env.DB_PORT==='3307'&&ps('start-db.ps1').status)process.exit(1);
-const dbUp=await new Promise(r=>net.connect(Number(env.DB_PORT||3306),env.DB_HOST||'127.0.0.1').on('connect',function(){this.end();r(true)}).on('error',()=>r(false)));
-if(!dbUp){console.error(`MySQL não responde em ${env.DB_HOST}:${env.DB_PORT}. Inicie o serviço (ex.: net start MySQL80) e rode "npm --prefix api run db:init".`);process.exit(1)}
-
 const children=[];
 function run(name,cwd,script='start'){
  const p=spawn('npm',['run',script],{cwd:path.join(root,cwd),shell:true});
@@ -33,4 +26,4 @@ run('api','api');
 const lan=process.argv.includes('--lan');
 run('web','web',lan?'start:lan':'start');
 if(lan){const ips=Object.values(os.networkInterfaces()).flat().filter(i=>i&&i.family==='IPv4'&&!i.internal).map(i=>i.address);console.log('MODO REDE: outros computadores da mesma rede acessam em '+ips.map(ip=>`http://${ip}:4200`).join(' ou '))}
-console.log('API http://localhost:3001  •  UI http://localhost:4200  •  Ctrl+C para parar (o banco continua rodando)');
+console.log('API http://localhost:3001  •  UI http://localhost:4200  •  Ctrl+C para parar');

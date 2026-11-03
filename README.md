@@ -3,7 +3,7 @@
 **Status: base funcional de desenvolvimento (MVP técnico), NÃO validado para produção clínica.**
 
 ## Objetivo
-Aplicação Angular 19 + Node.js 22 / Express + MySQL 8.4 + OpenAI Responses API + `python-docx` para ajudar a psicóloga responsável a transformar dois DOCX obrigatórios em um laudo revisado.
+Aplicação Angular 19 + Node.js 22 / Express + SQLite embutido + OpenAI Responses API + `python-docx` para ajudar a psicóloga responsável a transformar dois DOCX obrigatórios em um laudo revisado.
 
 **Entradas obrigatórias a cada avaliação**
 1. `Arquivo base.docx`: preenchido pela estagiária, contendo identificação, tabelas, escores e classificações. **NUNCA modificar o original, pontuações ou textos preexistentes.**
@@ -15,43 +15,22 @@ Aplicação Angular 19 + Node.js 22 / Express + MySQL 8.4 + OpenAI Responses API
 - `api/src/server.mjs`: autenticação JWT, setup inicial, cadastro, upload DOCX criptografado AES-256-GCM, inspeção, IA, versionamento, aprovação, exportação.
 - `web/`: aplicação Angular 19 standalone com telas de avaliações, uploads, editor e configurações da IA.
 - `worker/docx_worker.py`: inspeção DOCX (inclui tabelas) e inserção sem sobrescrever documento original.
-- `db/schema.sql`: schema MySQL e logs de auditoria.
+- `db/schema.sql`: schema SQLite (aplicado automaticamente) e logs de auditoria.
+- `api/src/db.mjs`: acesso ao banco SQLite embutido (`node:sqlite`).
 - `docs/`: requisitos, segurança e backlog.
 - `templates/*PRIVADO*`: arquivos originais do usuário para conferência local; **excluídos do Git por .gitignore**. Não distribuir nem usar como fixture em CI.
 
-## Execução local no Windows (sem Docker, sem admin)
-Pré-requisitos: Node 22+, Python 3.11+.
-Atalho na raiz do projeto:
-```powershell
-npm run setup   # dependências npm + python-docx + api/.env
-npm run db:init # MySQL existente (porta 3306): pede a senha do root, cria banco/usuário e aplica o schema
-npm run dev     # banco + API (node) + web; Ctrl+C para parar
-npm test        # testes do worker + checagem da API + build web
-npm run dev:lan # igual ao dev, mas outros PCs da rede local acessam http://<IP-desta-máquina>:4200 (ou iniciar-rede.bat)
-```
-Passo a passo equivalente:
-```powershell
-python -m pip install python-docx==1.2.0
-powershell -ExecutionPolicy Bypass -File scripts\setup-env.ps1   # gera api/.env com segredos aleatórios
-cd api; npm run db:init                                          # MySQL já instalado (DB_PORT=3306 no api/.env)
-# ou, sem MySQL: scripts\start-db.ps1 (MariaDB portátil, use DB_PORT=3307)
-cd api; npm install; npm start                                   # API em http://localhost:3001
-cd web; npm install; npm start                                   # UI em http://localhost:4200 (proxy /api -> 3001)
-python -m unittest discover -s tests                             # testes do worker DOCX
-```
-`GET /api/health` retorna `db:true` quando o banco está acessível. A API recusa iniciar se `JWT_SECRET`, `FILE_ENCRYPTION_KEY` ou o worker estiverem ausentes.
+## Instalação e execução
+Requisitos no computador: **Node.js 22.13+** e **Python 3.11+**. Não precisa de banco de dados instalado: os dados ficam em `api/data/neurolaudos.db` (SQLite embutido no Node).
 
-## Execução local (Docker)
-1. Instalar Docker Compose, Node 22, Python 3.11+ e `python-docx` se quiser rodar API fora do Docker.
-2. Copiar `api/.env.example` para `api/.env`. Definir `JWT_SECRET` (32+ chars aleatórios), `FILE_ENCRYPTION_KEY` (64 caracteres hex), `DB_PASSWORD` e `CORS_ORIGIN`.
-3. `docker compose up --build -d` para MySQL + API. Porta API `http://localhost:3001` (local somente).
-4. `cd web && npm install && npm start` para interface `http://localhost:4200`.
-5. Na tela de login, usar *Primeiro acesso (setup)* apenas uma vez, informando e-mail real do administrador e senha forte com 14+ caracteres. Depois Entrar.
-6. Criar paciente, avaliação, anexar **ambos** os DOCX, clicar analisar.
-7. Configurar `OPENAI_API_KEY` no backend. Para habilitar IA, depois de verificar termos, privacidade e autorização: `AI_ENABLED=true`, `ALLOW_EXTERNAL_AI=true`, e habilitar no painel com modelo existente na conta API. Reiniciar API após editar `.env`.
-8. Gerar e aprovar **cada seção**. Aprovar a avaliação, exportar `.docx`.
+- Dois cliques em `iniciar.bat` (só neste PC) ou `iniciar-rede.bat` (outros PCs da rede local). Na primeira vez instala as dependências e cria `api/.env` com segredos aleatórios.
+- Equivalente pelo terminal, na raiz: `npm run setup` (uma vez), `npm run dev` ou `npm run dev:lan`, `npm test`.
 
-Sem chave e autorização explicitamente configuradas, a IA retorna bloqueio (503). O app não reutiliza sessões do ChatGPT Web: a API é contratada e faturada separadamente.
+**Levar para outro computador / backup:** copie a pasta do projeto inteira. O que importa são `api/data/` (banco), `api/storage/` (DOCX criptografados) e `api/.env` (contém `FILE_ENCRYPTION_KEY`; sem ele os DOCX não abrem). Esses três ficam fora do Git e contêm dados de pacientes: guarde com cuidado.
+
+**Vindo de uma versão com MySQL:** mantenha `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` e `DB_PASSWORD` no `api/.env` e rode `npm run db:migrar-mysql` uma vez. O MySQL só é lido, nunca alterado.
+
+Docker (opcional): `docker compose up --build -d` sobe só a API, com `api/data` e `api/storage` montados.
 
 ## Como usar (tela)
 1. Abra `iniciar.bat` (só neste PC) ou `iniciar-rede.bat` (rede local) e entre.
@@ -79,7 +58,7 @@ Custo: estimado a partir de `PRICES` em `api/src/server.mjs` (USD por 1M tokens,
 ## Limitações abertas antes de produção
 - Corrigir e validar o posicionamento visual de inserções para todos os diferentes modelos DOCX; preservar espaçamento, numeração de páginas e eventuais caixas de texto. Adicionar testes por modelos anonimizados.
 - Pseudonimização (`api/src/privacy.mjs`): nome, data de nascimento, autora, CRP, telefone, e-mail, clínica e nomes após palavras-guia (Dr., psi, pediatra, colégio…) viram marcadores como `[PACIENTE]` antes do envio e voltam no texto final. A psicóloga confere e completa a lista na tela. Nomes soltos sem palavra-guia podem escapar: a lista precisa ser revisada. Ainda faltam base legal, política de retenção e contrato antes de uso clínico.
-- Persistir somente arquivos criptografados, mas conteúdo de seções e dados do paciente estão no MySQL: implementar criptografia de banco, backup criptografado, monitoramento, rotação de segredos, segregação de funções e política de expurgo.
+- Persistir somente arquivos criptografados, mas conteúdo de seções e dados do paciente estão no arquivo SQLite sem criptografia: implementar criptografia de banco, backup criptografado, monitoramento, rotação de segredos, segregação de funções e política de expurgo.
 - Auth inicial não inclui MFA, renovação/invalidacão de tokens, criação de outros usuários nem recuperação de senha. Adicionar antes de liberar acesso remoto.
 - Aprovação registra usuário e horário (`approved_by`/`approved_at`), mas ainda não há política de completude por template nem bloqueio de versão por assinatura.
 - Não há geração de PDF operacional: adicionar conversor com validação visual.

@@ -90,6 +90,40 @@ function priceFor(model){if(process.env.OPENAI_PRICE_INPUT&&process.env.OPENAI_P
 function costUsd(model,u){const p=priceFor(model);if(!p)return null;const cached=Math.min(u.cached||0,u.input);return ((u.input-cached)*p[0]+cached*p[1]+u.output*p[2])/1e6}
 async function recordUsage(req,evaluationId,key,model,u){const usd=costUsd(model,u);await pool.execute('INSERT INTO ai_usage(evaluation_id,section_key,model,input_tokens,cached_tokens,output_tokens,cost_usd,usd_brl,actor_id) VALUES(?,?,?,?,?,?,?,?,?)',[evaluationId,key,model,u.input,u.cached,u.output,usd??0,USD_BRL,req.user?.id||null]);return {input_tokens:u.input,cached_tokens:u.cached,output_tokens:u.output,total_tokens:u.input+u.output,cost_usd:usd,cost_brl:usd===null?null:usd*USD_BRL,priced:usd!==null}}
 async function usageSummary(where,args){const [[r]]=await pool.query(`SELECT COUNT(*) calls,COALESCE(SUM(input_tokens),0) input_tokens,COALESCE(SUM(output_tokens),0) output_tokens,COALESCE(SUM(cost_usd),0) cost_usd,COALESCE(SUM(cost_usd*usd_brl),0) cost_brl FROM ai_usage WHERE ${where}`,args);return {calls:Number(r.calls),input_tokens:Number(r.input_tokens),output_tokens:Number(r.output_tokens),total_tokens:Number(r.input_tokens)+Number(r.output_tokens),cost_usd:Number(r.cost_usd),cost_brl:Number(r.cost_brl)}}
+// Breakdown of AI spending: per day, evaluation, section and model, plus the latest calls.
+app.get('/api/ai/usage/details',auth,wrap(async(req,res)=>{
+ const days=Math.min(Math.max(Number(req.query.days)||30,1),365);
+ const since=new Date(Date.now()-days*864e5).toISOString().slice(0,10);
+ const sum='COUNT(*) calls,COALESCE(SUM(u.input_tokens),0) input_tokens,COALESCE(SUM(u.cached_tokens),0) cached_tokens,COALESCE(SUM(u.output_tokens),0) output_tokens,COALESCE(SUM(u.cost_usd),0) cost_usd,COALESCE(SUM(u.cost_usd*u.usd_brl),0) cost_brl';
+ const q=async(sql,args=[since])=>(await pool.query(sql,args))[0].map(r=>({...r,total_tokens:Number(r.input_tokens)+Number(r.output_tokens)}));
+ res.json({days,since,usd_brl:USD_BRL,
+  byDay:await q(`SELECT date(u.created_at,'localtime') day,${sum} FROM ai_usage u WHERE u.created_at>=? GROUP BY day ORDER BY day DESC`),
+  byEvaluation:await q(`SELECT u.evaluation_id,p.name patient_name,${sum},MAX(u.created_at) last_at FROM ai_usage u LEFT JOIN evaluations e ON e.id=u.evaluation_id LEFT JOIN patients p ON p.id=e.patient_id WHERE u.created_at>=? GROUP BY u.evaluation_id ORDER BY cost_usd DESC`),
+  bySection:await q(`SELECT u.section_key,${sum} FROM ai_usage u WHERE u.created_at>=? GROUP BY u.section_key ORDER BY cost_usd DESC`),
+  byModel:await q(`SELECT u.model,${sum} FROM ai_usage u WHERE u.created_at>=? GROUP BY u.model ORDER BY cost_usd DESC`),
+  recent:(await pool.query(`SELECT u.created_at,u.section_key,u.model,u.input_tokens,u.cached_tokens,u.output_tokens,u.cost_usd,u.cost_usd*u.usd_brl cost_brl,p.name patient_name FROM ai_usage u LEFT JOIN evaluations e ON e.id=u.evaluation_id LEFT JOIN patients p ON p.id=e.patient_id ORDER BY u.id DESC LIMIT 50`))[0]});
+}));
+// Connection check: settings gates, key, model and a minimal paid call (no patient data) to confirm credit.
+app.post('/api/ai/test',auth,role('admin','psychologist'),authLimiter,wrap(async(req,res)=>{
+ const [[cfg]]=await pool.query('SELECT model,enabled FROM ai_settings WHERE id=1');
+ const model=String(req.body?.model||cfg.model);
+ const checks=[];const add=(name,ok,detail)=>checks.push({name,ok,detail});
+ add('Chave OPENAI_API_KEY no servidor',!!process.env.OPENAI_API_KEY,process.env.OPENAI_API_KEY?'Configurada no api/.env':'Coloque OPENAI_API_KEY no api/.env e reinicie');
+ add('Envio autorizado (AI_ENABLED e ALLOW_EXTERNAL_AI)',process.env.AI_ENABLED==='true'&&process.env.ALLOW_EXTERNAL_AI==='true','Variáveis no api/.env');
+ add('Geração habilitada no painel',!!cfg.enabled,cfg.enabled?'Ligada':'Ligue a chave "Habilitar geração pela API" e salve');
+ if(!process.env.OPENAI_API_KEY||process.env.ALLOW_EXTERNAL_AI!=='true')return res.json({ok:false,model,checks});
+ const client=new OpenAI({apiKey:process.env.OPENAI_API_KEY});
+ try{await client.models.retrieve(model);add(`Modelo ${model} disponível na conta`,true,'Encontrado')}
+ catch(err){add(`Modelo ${model} disponível na conta`,false,err?.status===404?'Não existe nesta conta':openAIError(err).message);return res.json({ok:false,model,checks})}
+ const t=Date.now();
+ try{
+  const r=await client.responses.create({model,store:false,input:'Responda apenas: ok',max_output_tokens:16},{timeout:30000,maxRetries:0});
+  const u=r.usage||{};const usage=await recordUsage(req,null,'teste_conexao',model,{input:u.input_tokens||0,cached:u.input_tokens_details?.cached_tokens||0,output:u.output_tokens||0});
+  add('Chamada de teste (verifica crédito)',true,`Respondeu em ${((Date.now()-t)/1000).toFixed(1)} s · ${usage.total_tokens} tokens · custo ≈ R$ ${(usage.cost_brl||0).toFixed(4).replace('.',',')}`);
+ }catch(err){add('Chamada de teste (verifica crédito)',false,openAIError(err).message)}
+ await audit(req,'ai_connection_test');
+ res.json({ok:checks.every(c=>c.ok),model,checks});
+}));
 app.get('/api/ai/usage',auth,wrap(async(req,res)=>{res.json({month:await usageSummary("created_at>=strftime('%Y-%m-01','now')",[]),total:await usageSummary('1=1',[]),usd_brl:USD_BRL})}));
 // ---- Per-evaluation instructions: custom text per section, falling back to the global/default prompt ----
 const WORD_LIMITS={demanda:110,anamnesis:250,inteligencia:150,percepcao:100,memoria:150,atencao:150,funcoes_executivas:150,comportamento:150,comportamento_diva:150,conclusao:200,recomendacoes:200};

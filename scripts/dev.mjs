@@ -12,10 +12,13 @@ const ps=f=>spawnSync('powershell',['-NoProfile','-ExecutionPolicy','Bypass','-F
 if(!win){console.error('scripts/dev.mjs usa os scripts PowerShell do Windows; em outro SO rode npm start em api/ e web/.');process.exit(1)}
 if(!existsSync(path.join(root,'api','.env'))&&ps('setup-env.ps1').status)process.exit(1);
 const children=[];
+// Opens the browser once the Angular dev server prints its address (no extra console window).
+let opened=process.argv.includes('--no-browser');
+function openBrowser(){opened=true;spawn('cmd',['/c','start','','http://localhost:4200'],{detached:true,stdio:'ignore',windowsHide:true}).unref()}
 function run(name,cwd,script='start'){
- const p=spawn('npm',['run',script],{cwd:path.join(root,cwd),shell:true});
+ const p=spawn(`npm run ${script}`,{cwd:path.join(root,cwd),shell:true});
  const tag=`[${name}] `;
- for(const s of [p.stdout,p.stderr])s.on('data',d=>process.stdout.write(String(d).replace(/^(?=.)/gm,tag)));
+ for(const s of [p.stdout,p.stderr])s.on('data',d=>{const text=String(d);process.stdout.write(text.replace(/^(?=.)/gm,tag));if(name==='web'&&!opened&&/Local:/.test(text))openBrowser()});
  p.on('exit',code=>{console.log(`${tag}encerrado (${code})`);shutdown(code||0)});
  children.push(p);
 }

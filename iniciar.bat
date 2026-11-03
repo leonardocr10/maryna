@@ -11,7 +11,6 @@ if not exist "api\node_modules" (
   call npm run setup || goto erro
 )
 
-start "" cmd /c "timeout /t 12 >nul & start http://localhost:4200"
 echo.
 echo Abrindo neste computador (http://localhost:4200) e na rede local (endereco mostrado abaixo).
 echo ATENCAO: outros computadores desta rede tambem conseguem acessar.

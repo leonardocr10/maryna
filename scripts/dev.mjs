@@ -25,5 +25,10 @@ process.on('SIGINT',()=>shutdown(0));
 run('api','api');
 const lan=process.argv.includes('--lan');
 run('web','web',lan?'start:lan':'start');
-if(lan){const ips=Object.values(os.networkInterfaces()).flat().filter(i=>i&&i.family==='IPv4'&&!i.internal).map(i=>i.address);console.log('MODO REDE: outros computadores da mesma rede acessam em '+ips.map(ip=>`http://${ip}:4200`).join(' ou '))}
+if(lan){
+ // Skip virtual adapters (VirtualBox, Hyper-V/WSL, VMware): other PCs cannot reach those addresses.
+ const ips=Object.entries(os.networkInterfaces()).filter(([name])=>!/virtualbox|vethernet|vmware|wsl|loopback|docker/i.test(name)).flatMap(([,list])=>list||[]).filter(i=>i.family==='IPv4'&&!i.internal).map(i=>i.address);
+ console.log('Neste computador: http://localhost:4200');
+ console.log(ips.length?'Outros computadores da rede: '+ips.map(ip=>`http://${ip}:4200`).join(' ou '):'Nenhuma rede local encontrada; acesso só neste computador.');
+}
 console.log('API http://localhost:3001  •  UI http://localhost:4200  •  Ctrl+C para parar');

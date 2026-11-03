@@ -23,7 +23,7 @@ Aplicação Angular 19 + Node.js 22 / Express + SQLite embutido + OpenAI Respons
 ## Instalação e execução
 Requisitos no computador: **Node.js 22.13+** e **Python 3.11+**. Não precisa de banco de dados instalado: os dados ficam em `api/data/neurolaudos.db` (SQLite embutido no Node).
 
-- Dois cliques em `iniciar.bat` (só neste PC) ou `iniciar-rede.bat` (outros PCs da rede local). Na primeira vez instala as dependências e cria `api/.env` com segredos aleatórios.
+- Dois cliques em `iniciar.bat`: abre neste PC (http://localhost:4200) e na rede local (http://<IP-desta-máquina>:4200). Na primeira vez instala as dependências e cria `api/.env` com segredos aleatórios.
 - Equivalente pelo terminal, na raiz: `npm run setup` (uma vez), `npm run dev` ou `npm run dev:lan`, `npm test`.
 
 **Levar para outro computador / backup:** copie a pasta do projeto inteira. O que importa são `api/data/` (banco), `api/storage/` (DOCX criptografados) e `api/.env` (contém `FILE_ENCRYPTION_KEY`; sem ele os DOCX não abrem). Esses três ficam fora do Git e contêm dados de pacientes: guarde com cuidado.
@@ -33,7 +33,7 @@ Requisitos no computador: **Node.js 22.13+** e **Python 3.11+**. Não precisa de
 Docker (opcional): `docker compose up --build -d` sobe só a API, com `api/data` e `api/storage` montados.
 
 ## Como usar (tela)
-1. Abra `iniciar.bat` (só neste PC) ou `iniciar-rede.bat` (rede local) e entre.
+1. Abra `iniciar.bat` e entre.
 2. À esquerda: **+ Nova avaliação** ou abra uma existente.
 3. **Arquivos:** arraste o arquivo base e a anamnese (DOCX). O sistema valida e encontra os pontos de inserção.
 4. **Gerar texto com IA:** um botão gera as 11 partes; mostra tokens e custo estimado em reais.

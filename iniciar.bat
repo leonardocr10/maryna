@@ -12,7 +12,13 @@ if not exist "api\node_modules" (
 )
 
 start "" cmd /c "timeout /t 12 >nul & start http://localhost:4200"
-call npm run dev
+echo.
+echo Abrindo neste computador (http://localhost:4200) e na rede local (endereco mostrado abaixo).
+echo ATENCAO: outros computadores desta rede tambem conseguem acessar.
+echo Use apenas em rede confiavel (clinica/casa), com senha forte e dados de teste.
+echo Se o Windows perguntar sobre o Firewall, permita somente em "Redes privadas".
+echo.
+call npm run dev:lan
 goto fim
 
 :erro

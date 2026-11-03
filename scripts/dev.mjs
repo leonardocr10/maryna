@@ -27,7 +27,7 @@ const lan=process.argv.includes('--lan');
 run('web','web',lan?'start:lan':'start');
 if(lan){
  // Skip virtual adapters (VirtualBox, Hyper-V/WSL, VMware): other PCs cannot reach those addresses.
- const ips=Object.entries(os.networkInterfaces()).filter(([name])=>!/virtualbox|vethernet|vmware|wsl|loopback|docker/i.test(name)).flatMap(([,list])=>list||[]).filter(i=>i.family==='IPv4'&&!i.internal).map(i=>i.address);
+ const ips=Object.entries(os.networkInterfaces()).filter(([name])=>!/virtualbox|vethernet|vmware|wsl|loopback|docker/i.test(name)).flatMap(([,list])=>list||[]).filter(i=>i.family==='IPv4'&&!i.internal&&!/^(192\.168\.56\.|169\.254\.)/.test(i.address)).map(i=>i.address); // 192.168.56.x = VirtualBox host-only default
  console.log('Neste computador: http://localhost:4200');
  console.log(ips.length?'Outros computadores da rede: '+ips.map(ip=>`http://${ip}:4200`).join(' ou '):'Nenhuma rede local encontrada; acesso só neste computador.');
 }

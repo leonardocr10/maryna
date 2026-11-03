@@ -51,7 +51,7 @@ type Screen = 'evaluation' | 'new' | 'settings';
 
     <main class="main">
       <div class="content">
-        <nl-new-evaluation *ngIf="screen()==='new'" (cancel)="goHome()" (created)="onCreated($event)"></nl-new-evaluation>
+        <nl-new-evaluation *ngIf="screen()==='new'" (closed)="goHome()" (created)="onCreated($event)"></nl-new-evaluation>
         <nl-settings *ngIf="screen()==='settings'"></nl-settings>
         <nl-evaluation *ngIf="screen()==='evaluation' && selectedId()" [id]="selectedId()" [autoGenerate]="autoGenerate"
           (changed)="load()" (deleted)="onDeleted()" (generatingChange)="generating=$event"></nl-evaluation>

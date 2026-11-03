@@ -30,7 +30,7 @@ import {Identity, IdentityFormComponent, emptyIdentity} from './ui/identity-form
     </section>
 
     <div class="actions">
-      <button class="btn btn-secondary" (click)="cancel.emit()" [disabled]="busy">Cancelar</button>
+      <button class="btn btn-secondary" (click)="closed.emit()" [disabled]="busy">Cancelar</button>
       <span class="spacer"></span>
       <button class="btn btn-secondary" [disabled]="!valid()||busy" (click)="create(false)">Salvar como rascunho</button>
       <button class="btn btn-primary" [disabled]="!valid()||busy" (click)="create(bothFiles())">{{busy?'Criando…':bothFiles()?'Criar e gerar com IA →':'Criar avaliação →'}}</button>
@@ -76,7 +76,8 @@ h1{font-size:26px;font-weight:700}
 })
 export class NewEvaluationComponent {
   private api = inject(Api);
-  @Output() cancel = new EventEmitter<void>();
+  // Not named 'cancel': the native file-dialog 'cancel' event bubbles and would trigger it.
+  @Output() closed = new EventEmitter<void>();
   @Output() created = new EventEmitter<{id: string; generate: boolean}>();
   id: Identity = emptyIdentity();
   base: File | null = null;

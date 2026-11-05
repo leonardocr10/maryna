@@ -12,6 +12,7 @@ const CATEGORY_RE = new RegExp([
   '\\bfaixa\\s+(?:et[aá]ria\\s+)?\\p{L}+',
   '\\bpercentis?\\b|\\bpercentil\\b',
   `\\b${PERFORMANCE}\\s+(?:muito\\s+)?(?:baix[oa]s?|alt[oa]s?|elevad[oa]s?|frac[oa]s?)\\b`,
+  `\\b(?:baix[oa]s?|alt[oa]s?|elevad[oa]s?|frac[oa]s?)\\s+${PERFORMANCE}\\b`,
 ].join('|'), 'giu');
 
 // Digits that are results; names such as WISC-IV, DIVA-5, "Teste dos 5 Dígitos", ages and [PESSOA_1] are fine.

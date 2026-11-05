@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import {categoryTerms, numberTerms, wordingProblems} from '../src/wording.mjs';
 
 test('catches performance categories, including single words', () => {
-  for (const t of ['A avalianda apresentou desempenho inferior em memória', 'desempenho superior em velocidade', 'resultado muito inferior', 'ficou na média', 'na faixa média', 'classificação limítrofe', 'rendimento deficitário', 'memória rebaixada', 'abaixo do esperado', 'acima da média', 'dentro do esperado', 'esperado para a idade', 'percentil elevado', 'desempenho baixo', 'pontuação alta', 'resultados elevados'])
+  for (const t of ['A avalianda apresentou desempenho inferior em memória', 'desempenho superior em velocidade', 'resultado muito inferior', 'ficou na média', 'na faixa média', 'classificação limítrofe', 'rendimento deficitário', 'memória rebaixada', 'abaixo do esperado', 'acima da média', 'dentro do esperado', 'esperado para a idade', 'percentil elevado', 'desempenho baixo', 'pontuação alta', 'resultados elevados', 'alta capacidade de reconhecimento', 'baixo desempenho'])
     assert.ok(categoryTerms(t).length, t);
 });
 
 test('keeps ordinary words that are not categories', () => {
-  for (const t of ['Cursa o ensino superior completo.', 'Tem formação superior.', 'nível superior', 'Dor nos membros inferiores.', 'Estuda no ensino médio.', 'Demonstrou dificuldade para reter informações verbais.', 'Recursos preservados, com maior facilidade em tarefas visuais.', 'Alta hospitalar após uma semana.'])
+  for (const t of ['Cursa o ensino superior completo.', 'Tem formação superior.', 'nível superior', 'Dor nos membros inferiores.', 'Estuda no ensino médio.', 'Demonstrou dificuldade para reter informações verbais.', 'Recursos preservados, com maior facilidade em tarefas visuais.', 'Alta hospitalar após uma semana.', 'A motivação é baixa em tarefas longas.'])
     assert.deepEqual(categoryTerms(t), [], t);
 });
 

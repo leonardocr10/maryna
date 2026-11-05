@@ -25,7 +25,7 @@ function run(name,cwd,script='start'){
 function shutdown(code){for(const p of children)if(p.exitCode===null)spawnSync('taskkill',['/pid',String(p.pid),'/T','/F']);process.exit(code)}
 process.on('SIGINT',()=>shutdown(0));
 
-run('api','api');
+run('api','api','dev');  // restarts itself when the API code changes, like the web server does
 const lan=process.argv.includes('--lan');
 run('web','web',lan?'start:lan':'start');
 if(lan){

@@ -10,6 +10,8 @@ import {SECTIONS, SECTION_STATE, STATUS, SectionState, ageText, brDate, brl, int
 
 /** Section the AI only writes from the psychologist's own guidance (never in "Gerar laudo"). */
 const MANUAL_KEY = 'conclusao';
+/** Copied from the base document as written; the AI only writes it when asked. */
+const DEMAND_KEY = 'demanda';
 
 type Gen = 'pending' | 'running' | 'done' | 'error' | 'skipped';
 
@@ -30,7 +32,7 @@ export class EvaluationComponent implements OnDestroy {
   @Input() autoGenerate = false;
   @Input() set id(v: string) { if (v && v !== this.evaluationId) { this.evaluationId = v; this.load(true); } }
 
-  MANUAL_KEY = MANUAL_KEY; SECTIONS = SECTIONS; SECTION_STATE = SECTION_STATE; STATUS = STATUS; brDate = brDate; brl = brl; int = int; words = words;
+  MANUAL_KEY = MANUAL_KEY; DEMAND_KEY = DEMAND_KEY; SECTIONS = SECTIONS; SECTION_STATE = SECTION_STATE; STATUS = STATUS; brDate = brDate; brl = brl; int = int; words = words;
   steps = ['Identificação', 'Arquivos', 'Gerar com IA', 'Conferir e baixar'];
 
   evaluationId = '';
@@ -61,12 +63,12 @@ export class EvaluationComponent implements OnDestroy {
         this.inspection = null; this.privacy = null; this.gen = {}; this.open = ''; this.editing = ''; this.mode = 'secoes';
         const s = await this.api.req('GET', '/ai/settings').catch(() => null);
         this.aiReady = !!(s && s.enabled && s.configured && s.privacy_gate);
-        this.step = !this.docsReady() ? 1 : !this.drafted() ? 2 : 3;
+        this.step = !this.docsReady() ? 1 : !this.autoDrafted() ? 2 : 3;
       }
       if (this.docsReady() && !this.inspection) await this.inspect();
       if (this.docsReady() && !this.instructions.length || first) await this.loadInstructions();
       this.loaded = true;
-      if (first && this.autoGenerate && this.docsReady() && !this.drafted()) { this.step = 2; this.generateAll(true); }
+      if (first && this.autoGenerate && this.docsReady() && !this.autoDrafted()) { this.step = 2; this.generateAll(true); }
     } catch {}
   }
   async inspect() {
@@ -87,7 +89,7 @@ export class EvaluationComponent implements OnDestroy {
   docCount() { return (this.docName('base') ? 1 : 0) + (this.docName('anamnesis') ? 1 : 0); }
   docsReady() { return this.docCount() === 2; }
   available() { const found = new Set((this.inspection?.markers || []).map((m: any) => m.key)); return this.inspection ? SECTIONS.filter(s => found.has(s.id)) : SECTIONS; }
-  withOldText() { return (this.inspection?.markers || []).filter((m: any) => m.existing_paragraphs > 0).map((m: any) => SECTIONS.find(s => s.id === m.key)?.name || m.key); }
+  withOldText() { return (this.inspection?.markers || []).filter((m: any) => m.existing_paragraphs > 0 && m.key !== DEMAND_KEY).map((m: any) => SECTIONS.find(s => s.id === m.key)?.name || m.key); }
   missing() { const ids = new Set(this.available().map(s => s.id)); return SECTIONS.filter(s => !ids.has(s.id)).map(s => s.name); }
   section(k: string) { return this.sections.find(s => s.section_key === k); }
   text(k: string) { return this.section(k)?.content || ''; }
@@ -96,17 +98,17 @@ export class EvaluationComponent implements OnDestroy {
   approved() { return this.available().filter(s => this.state(s.id) === 'ap').length; }
   total() { return this.available().length; }
   allApproved() { return this.locked() || (this.total() > 0 && this.approved() === this.total()); }
-  status() { return this.allApproved() ? STATUS.ap : this.drafted() ? STATUS.rv : STATUS.rs; }
+  status() { return this.allApproved() ? STATUS.ap : this.autoDrafted() ? STATUS.rv : STATUS.rs; }
   summary() {
     const c = this.current; if (!c) return '';
     return [ageText(c.birth_date, c.end_date), c.sex, c.schooling, c.start_date ? 'Início ' + brDate(c.start_date) : ''].filter(Boolean).join(' · ');
   }
   warnings(k: string): string[] { try { return JSON.parse(this.section(k)?.source_summary || '[]'); } catch { return []; } }
-  stepDone(i: number) { return [this.idModel.name.trim().length >= 2, this.docsReady(), this.total() > 0 && this.drafted() === this.total(), this.allApproved()][i]; }
+  stepDone(i: number) { return [this.idModel.name.trim().length >= 2, this.docsReady(), this.autoKeys().length > 0 && this.autoDrafted() === this.autoKeys().length, this.allApproved()][i]; }
   stepSub(i: number) {
     if (i === 0) return this.idModel.name.trim() ? 'Dados preenchidos' : 'Pendente';
     if (i === 1) return `${this.docCount()} de 2 enviados`;
-    if (i === 2) return this.generating ? `Gerando ${this.genDone()}/${this.genKeys().length}` : this.drafted() ? (this.drafted() === 1 ? '1 seção gerada' : `${this.drafted()} seções geradas`) : 'Pendente';
+    if (i === 2) return this.generating ? `Gerando ${this.genDone()}/${this.genKeys().length}` : this.autoDrafted() ? (this.autoDrafted() === 1 ? '1 seção gerada' : `${this.autoDrafted()} seções geradas`) : 'Pendente';
     return this.allApproved() ? 'Aprovada' : `${this.approved()}/${this.total()} aprovadas`;
   }
   paragraphs(t: string) { return (t || '').split(/\n\s*\n/).map(p => p.trim()).filter(Boolean).map(p => ({title: /^#{1,6}\s/.test(p) && p.split('\n').length === 1, text: p.replace(/^#{1,6}\s*/, '').replace(/\*\*(.+?)\*\*/g, '$1')})); }
@@ -142,17 +144,28 @@ export class EvaluationComponent implements OnDestroy {
   }
 
   // ---------- step 3: generation ----------
-  autoKeys() { return this.available().map(s => s.id).filter(k => k !== MANUAL_KEY); }
+  autoKeys() { return this.available().map(s => s.id).filter(k => k !== MANUAL_KEY && k !== DEMAND_KEY); }
+  autoDrafted() { return this.autoKeys().filter(k => this.state(k) !== 'pend').length; }
+  demandInFile() { return (this.inspection?.markers || []).find((m: any) => m.key === DEMAND_KEY)?.existing_text || ''; }
+  private same(a: string, b: string) { return (a || '').replace(/\s+/g, ' ').trim() === (b || '').replace(/\s+/g, ' ').trim(); }
+  demandIsFromFile() { return !!this.demandInFile() && this.same(this.text(DEMAND_KEY), this.demandInFile()); }
+  async useFileDemand() {
+    try { await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${DEMAND_KEY}`, {content: this.demandInFile()}); await this.load(); this.changed.emit(); this.api.notify('Agora a demanda é o texto do arquivo.'); } catch {}
+  }
+  generateDemand() {
+    if (this.state(DEMAND_KEY) !== 'pend' && !confirm('Trocar a demanda pelo texto gerado pela IA? O texto atual vai para o histórico.')) return;
+    this.regenerate(DEMAND_KEY);
+  }
   hasConclusion() { return this.available().some(s => s.id === MANUAL_KEY); }
   genKeys() { return Object.keys(this.gen); }
   genDone() { return Object.values(this.gen).filter(g => g === 'done' || g === 'error' || g === 'skipped').length; }
   genPct() { const n = this.genKeys().length; return n ? Math.round(this.genDone() / n * 100) : 0; }
   dotClass(k: string) { const g = this.gen[k]; if (g === 'running') return 'warn pulse'; if (g === 'error') return 'err'; if (g === 'done') return 'ok'; return this.state(k) === 'ap' ? 'ok' : this.state(k) === 'gen' ? 'warn' : ''; }
-  rowLabel(k: string) { if (k === MANUAL_KEY && !this.gen[k] && this.state(k) === 'pend') return 'Você gera na etapa 4'; const g = this.gen[k]; if (g === 'running') return 'Gerando…'; if (g === 'pending') return 'Na fila'; if (g === 'error') return 'Erro'; if (g === 'skipped') return 'Não gerada'; return SECTION_STATE[this.state(k)].label; }
+  rowLabel(k: string) { if (k === DEMAND_KEY && !this.gen[k]) return this.state(k) === 'pend' ? 'Sem texto no arquivo' : this.demandIsFromFile() ? 'Do arquivo enviado' : SECTION_STATE[this.state(k)].label; if (k === MANUAL_KEY && !this.gen[k] && this.state(k) === 'pend') return 'Você gera na etapa 4'; const g = this.gen[k]; if (g === 'running') return 'Gerando…'; if (g === 'pending') return 'Na fila'; if (g === 'error') return 'Erro'; if (g === 'skipped') return 'Não gerada'; return SECTION_STATE[this.state(k)].label; }
 
   async generateAll(skipConfirm = false) {
     if (!this.aiReady) { this.api.notify('Geração pela API desligada. Ative em Configurações.'); return; }
-    if (!skipConfirm && this.drafted() && !confirm('Gerar tudo de novo? Os textos atuais serão substituídos (as versões antigas ficam no histórico).')) return;
+    if (!skipConfirm && this.autoDrafted() && !confirm('Gerar tudo de novo? Os textos atuais serão substituídos (as versões antigas ficam no histórico).')) return;
     const keys = this.autoKeys();
     this.gen = Object.fromEntries(keys.map(k => [k, 'pending' as Gen]));
     this.generating = true; this.generatingChange.emit(true);

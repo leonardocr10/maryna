@@ -176,4 +176,15 @@ class TestWorker(unittest.TestCase):
   old=[e['text'] for e in r['elements'] if e.get('replaceable')]
   self.assertIn('Memória antiga.',old);self.assertNotIn('Tabela 3. Legenda fixa.',old);self.assertNotIn('REFERÊNCIAS:',old)
 
+ def test_text_identical_to_document_keeps_original_paragraph(self):
+  d=Document();d.add_table(rows=1,cols=1).cell(0,0).text='DESCRIÇÃO DA DEMANDA'
+  d.add_paragraph('Primeira parte.').runs[0].italic=True;d.add_paragraph('Segunda parte.');d.save(self.base)
+  marker=run('inspect',str(self.base))['markers'][0]
+  self.assertEqual(marker['existing_text'],'Primeira parte.'+chr(10)+chr(10)+'Segunda parte.')
+  r=run('export',stdin={'base':str(self.base),'out':str(self.out),'sections':{'demanda':marker['existing_text']},'highlight':True})
+  self.assertEqual((r['missing'],r['replaced']),([],{}))
+  ps=Document(self.out).paragraphs
+  self.assertEqual([p.text for p in ps],['Primeira parte.','Segunda parte.'])
+  self.assertTrue(ps[0].runs[0].italic);self.assertIsNone(ps[0].runs[0].font.color.rgb)
+
 if __name__=='__main__':unittest.main()

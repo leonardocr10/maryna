@@ -101,3 +101,4 @@
 @media (max-width: 760px) { .stepper { grid-template-columns: 1fr 1fr; } .st + .st { border-left: 0; } }
 
 .instr-box.guide { margin: 14px 0 4px; background: var(--primary-soft); border-color: var(--primary-border); }
+.from-file { margin-top: 2px; }

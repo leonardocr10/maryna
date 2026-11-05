@@ -57,14 +57,14 @@
             </ng-container>
 
             <ng-container *ngIf="docsReady()">
-              <ng-container *ngIf="!generating && !drafted() && !locked()">
+              <ng-container *ngIf="!generating && !autoDrafted() && !locked()">
                 <p class="muted">A IA redige {{autoKeys().length}} seções a partir do arquivo base e da anamnese, usando as instruções abaixo. Nomes e dados pessoais são ocultados antes do envio. Tudo é rascunho para sua revisão.</p>
-                <p *ngIf="hasConclusion()" class="caption">A Conclusão não é gerada aqui: na etapa 4 você escreve suas orientações e a IA redige a partir delas.</p>
+                <p class="caption">A Descrição da demanda vem direto do arquivo enviado, sem IA.<ng-container *ngIf="hasConclusion()"> A Conclusão também não é gerada aqui: na etapa 4 você escreve suas orientações e a IA redige a partir delas.</ng-container></p>
                 <p *ngIf="!aiReady" class="warn-note">A geração pela API está desligada. Ative em Configurações → IA e custos.</p>
                 <div class="foot"><button class="btn btn-primary" (click)="generateAll()">Gerar laudo com IA</button></div>
               </ng-container>
 
-              <ng-container *ngIf="generating || genKeys().length || drafted()">
+              <ng-container *ngIf="generating || genKeys().length || autoDrafted()">
                 <p *ngIf="generating" class="gen-title">Gerando seções… {{genDone()}}/{{genKeys().length}}</p>
                 <div *ngIf="generating" class="bar"><div [style.width.%]="genPct()"></div></div>
                 <ul class="gen-list">
@@ -72,7 +72,7 @@
                 </ul>
                 <div *ngIf="!generating" class="foot">
                   <ng-container *ngIf="!locked()">
-                    <button class="btn btn-primary" [disabled]="!drafted()" (click)="goStep(3)">Conferir seções →</button>
+                    <button class="btn btn-primary" [disabled]="!autoDrafted()" (click)="goStep(3)">Conferir seções →</button>
                     <button class="btn btn-secondary" (click)="generateAll()">Regenerar tudo</button>
                   </ng-container>
                   <p *ngIf="locked()" class="muted">Avaliação aprovada: textos travados.</p>
@@ -99,7 +99,7 @@
         <section *ngIf="docsReady() && !locked() && instructions.length" class="card">
           <div class="card-head"><h2>Instruções desta avaliação</h2><span class="caption">{{customCount()===1?"1 personalizada":customCount()+" personalizadas"}}</span></div>
           <div class="acc">
-            <div *ngFor="let s of available(); let i=index" class="acc-row" [class.open]="instrOpen===s.id" [hidden]="s.id===MANUAL_KEY">
+            <div *ngFor="let s of available(); let i=index" class="acc-row" [class.open]="instrOpen===s.id" [hidden]="!autoKeys().includes(s.id)">
               <button class="acc-head" (click)="instrOpen = instrOpen===s.id ? '' : s.id">
                 <span class="mono n">{{(i+1).toString().padStart(2,'0')}}</span><span class="acc-name">{{s.name}}</span>
                 <span class="tag" [class.custom]="isCustom(s.id)">{{isCustom(s.id)?'Personalizada':'Padrão'}}</span>
@@ -142,14 +142,17 @@
                     <button class="btn btn-primary btn-sm" [disabled]="generating" (click)="generateConclusion()">{{gen[s.id]==='running'?'Gerando…':state(s.id)==='pend'?'Gerar conclusão com a IA':'Gerar de novo com estas orientações'}}</button></div>
                 </div>
                 <div *ngIf="text(s.id)" class="sec-text"><p *ngFor="let p of paragraphs(text(s.id))" [class.ptitle]="p.title">{{p.text}}</p></div>
-                <p *ngIf="!text(s.id)" class="muted">{{s.id===MANUAL_KEY ? 'Ainda sem conclusão. Escreva suas orientações acima ou use Editar para escrever você mesma.' : 'Sem texto ainda.'}}</p>
+                <p *ngIf="!text(s.id)" class="muted">{{s.id===MANUAL_KEY ? 'Ainda sem conclusão. Escreva suas orientações acima ou use Editar para escrever você mesma.' : s.id===DEMAND_KEY ? 'O arquivo base não tem texto nesta parte. Escreva em Editar ou gere com a IA.' : 'Sem texto ainda.'}}</p>
+                <p *ngIf="s.id===DEMAND_KEY && demandIsFromFile()" class="caption from-file">Texto do arquivo enviado, sem alteração e sem IA.</p>
                 <div class="sec-actions">
                   <span class="caption mono">{{words(text(s.id))}} palavras</span>
                   <span class="spacer"></span>
                   <ng-container *ngIf="!locked()">
                     <button *ngIf="s.id!==MANUAL_KEY" class="btn btn-secondary btn-sm" (click)="openInstr(s.id)">Instrução</button>
                     <button class="btn btn-secondary btn-sm" (click)="startEdit(s.id)">Editar</button>
-                    <button *ngIf="s.id!==MANUAL_KEY" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="regenerate(s.id)">{{gen[s.id]==='running'?'Gerando…':'Regenerar'}}</button>
+                    <button *ngIf="s.id===DEMAND_KEY && demandInFile() && !demandIsFromFile()" class="btn btn-secondary btn-sm" (click)="useFileDemand()">Usar o texto do arquivo</button>
+                    <button *ngIf="s.id===DEMAND_KEY" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="generateDemand()">{{gen[s.id]==='running'?'Gerando…':'Gerar com IA'}}</button>
+                    <button *ngIf="s.id!==MANUAL_KEY && s.id!==DEMAND_KEY" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="regenerate(s.id)">{{gen[s.id]==='running'?'Gerando…':'Regenerar'}}</button>
                     <button *ngIf="state(s.id)==='gen'" class="btn btn-primary btn-sm" (click)="approveAndNext(s.id)">Aprovar e próxima</button>
                   </ng-container>
                 </div>

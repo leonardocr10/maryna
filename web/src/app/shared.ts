@@ -51,7 +51,7 @@ export const STATUS: Record<EvalStatus, {label: string; css: string}> = {rs: {la
 export function listStatus(e: any): EvalStatus {
   if (e.status === 'approved') return 'ap';
   if (e.drafted_count > 0 && e.approved_count >= e.drafted_count && e.drafted_count >= e.section_total) return 'ap';
-  return e.drafted_count > 0 ? 'rv' : 'rs';
+  return e.generated_count > 0 ? 'rv' : 'rs';  // demand copied from the file alone is still a draft
 }
 
 export type SectionState = 'pend' | 'gen' | 'ap';

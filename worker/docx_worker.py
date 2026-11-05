@@ -115,7 +115,7 @@ def inspect(path):
    old=existing_narrative(children[i],d)
    # old text is flagged so it is never sent to the AI as if it were evidence
    for ch in old:elements[position[ch]]['replaceable']=k
-   markers.append({'key':k,'index':i,'label':txt,'existing_paragraphs':sum(1 for ch in old if clean(Paragraph(ch,d).text))})
+   markers.append({'key':k,'index':i,'label':txt,'existing_paragraphs':sum(1 for ch in old if clean(Paragraph(ch,d).text)),'existing_text':'\n\n'.join(t for t in (Paragraph(ch,d).text.strip() for ch in old) if t)})
  return {'elements':elements,'markers':markers,'identification':identification(d),'warnings':['Conferir visualmente a ordem dos marcadores e os resultados.']}
 
 REPORT_FONT='Arial';REPORT_HALF_POINTS='22'  # Arial 11 pt
@@ -219,10 +219,13 @@ def export(base,out,sections,highlight=False,fields=None):
   if not (ch.tag.endswith('}p') or ch.tag.endswith('}tbl')) or ch.getparent() is None:continue
   k=m.key(element_text(ch,d))
   if k in sections and clean(sections[k]) and k not in seen:
-   for old in existing_narrative(ch,d):
+   current=existing_narrative(ch,d);seen.append(k)
+   # same text as the document (e.g. demand copied from the file): keep the original paragraphs and formatting
+   if clean(' '.join(Paragraph(o,d).text for o in current))==clean(sections[k]):continue
+   for old in current:
     if clean(Paragraph(old,d).text):replaced[k]=replaced.get(k,0)+1
     old.getparent().remove(old)
-   insert_after(ch,sections[k],highlight);seen.append(k)
+   insert_after(ch,sections[k],highlight)
  d.save(out)
  after=sha256(base)
  if before!=after:raise SystemExit('base document changed during export')

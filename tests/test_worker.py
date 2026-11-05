@@ -187,4 +187,32 @@ class TestWorker(unittest.TestCase):
   self.assertEqual([p.text for p in ps],['Primeira parte.','Segunda parte.'])
   self.assertTrue(ps[0].runs[0].italic);self.assertIsNone(ps[0].runs[0].font.color.rgb)
 
+ def test_tables_belong_to_their_section_even_after_the_field(self):
+  d=Document()
+  d.add_table(rows=1,cols=1).cell(0,0).text='HABILIDADES INTELECTUAIS E DE INTELIGÊNCIA:'
+  d.add_table(rows=2,cols=2).cell(0,0).text='WISC'
+  d.add_paragraph('Interpretação Clínica:')
+  d.add_table(rows=2,cols=2).cell(0,0).text='Subtestes WISC'
+  d.add_table(rows=1,cols=1).cell(0,0).text='PERCEPÇÃO E NOÇÕES BÁSICAS:'
+  d.add_table(rows=2,cols=2).cell(0,0).text='Percepção'
+  d.add_table(rows=1,cols=1).cell(0,0).text='Interpretação e Observações Clínicas:'
+  d.add_table(rows=1,cols=1).cell(0,0).text='COMPORTAMENTO:'
+  d.add_table(rows=1,cols=1).cell(0,0).text='Interpretação e Observações Clínicas:'
+  d.add_table(rows=2,cols=2).cell(0,0).text='DIVA'
+  d.add_table(rows=1,cols=1).cell(0,0).text='Interpretação e Observações Clínicas:'
+  d.add_table(rows=1,cols=1).cell(0,0).text='CONCLUSÃO'
+  d.save(self.base)
+  r=run('inspect',str(self.base));els=r['elements']
+  firsts={m['key']:[e['rows'][0][0] for e in els[m['section_start']:m['section_end']] if e['type']=='table' and len(e['rows'])>1] for m in r['markers'] if 'section_start' in m}
+  self.assertEqual(firsts,{'inteligencia':['WISC','Subtestes WISC'],'percepcao':['Percepção'],'comportamento':[],'comportamento_diva':['DIVA']})
+
+ def test_grid_keeps_merged_cells_once(self):
+  d=Document();t=d.add_table(rows=3,cols=3)
+  t.cell(0,0).merge(t.cell(0,2)).text='Título'
+  t.cell(1,0).merge(t.cell(2,0)).text='Bloco'
+  for r,c,v in [(1,1,'A'),(1,2,'Média'),(2,1,'B'),(2,2,'Média')]:t.cell(r,c).text=v
+  d.save(self.base)
+  g=[e for e in run('inspect',str(self.base))['elements'] if e['type']=='table'][0]['grid']
+  self.assertEqual(g,[[{'text':'Título','rowspan':1,'colspan':3}],[{'text':'Bloco','rowspan':2,'colspan':1},{'text':'A','rowspan':1,'colspan':1},{'text':'Média','rowspan':1,'colspan':1}],[{'text':'B','rowspan':1,'colspan':1},{'text':'Média','rowspan':1,'colspan':1}]])
+
 if __name__=='__main__':unittest.main()

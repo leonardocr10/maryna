@@ -56,6 +56,7 @@ Custo: estimado a partir de `PRICES` em `api/src/server.mjs` (USD por 1M tokens,
 - `GET/POST /api/evaluations` · `GET/DELETE /api/evaluations/:id`
 - `POST /api/evaluations/:id/upload/base|anamnesis` (multipart `file`, DOCX validado)
 - `POST /api/evaluations/:id/inspect`
+- `GET /api/evaluations/:id/references` (tabelas que cada seção usa, as mesmas enviadas à IA)
 - `POST /api/evaluations/:id/generate/:key` (IA pela API; registra tokens e custo)
 - `POST /api/evaluations/:id/prompt/:key` (pedido pronto para o modo manual com ChatGPT)
 - `PUT /api/evaluations/:id/sections/:key` body `{content,approve}`

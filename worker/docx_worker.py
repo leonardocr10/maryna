@@ -47,12 +47,14 @@ def domain_of(text):
 class Markers:
  """Maps marker labels to section keys. An interpretation takes the domain of the title before it,
  or the next free slot in document order when there is no such title."""
- def __init__(self):self.used=set();self.domain=None
+ def __init__(self):self.used=set();self.domain=None;self.last=None
  def _slot(self):
   k=self.domain;self.domain=None
-  if k=='comportamento' and k in self.used:k='comportamento_diva'
+  # a second field in the behaviour section (same title, or a new one like BATERIA FATORIAL) is the DIVA slot
+  if (k is None and self.last=='comportamento') or (k=='comportamento' and k in self.used):k='comportamento_diva'
   if k is None or k in self.used:k=next((s for s in SLOTS if s not in self.used),None)
   if k:self.used.add(k)
+  self.last=k
   return k
  def key(self,text):
   label=clean(text).upper()
@@ -98,12 +100,40 @@ def open_docx(path):
   if len(infos)>MAX_ENTRIES or sum(i.file_size for i in infos)>MAX_UNZIPPED:raise SystemExit('docx too large when uncompressed')
   if 'word/document.xml' not in z.namelist():raise SystemExit('not a Word document')
  return Document(path)
+def table_grid(table):
+ """Rows of {text,rowspan,colspan} for display: merged cells appear once, as in the document."""
+ grid=[];cells={}
+ for row in table.rows:
+  line=[];new=set();counted=set()
+  for c in row.cells:
+   tc=c._tc
+   if tc in new:cells[tc]['colspan']+=1
+   elif tc in cells:
+    if tc not in counted:cells[tc]['rowspan']+=1;counted.add(tc)
+   else:
+    cells[tc]={'text':clean(c.text),'rowspan':1,'colspan':1};new.add(tc);line.append(cells[tc])
+  grid.append(line)
+ return grid
 def all_elements(doc):
  for ch in doc.element.body.iterchildren():
   if ch.tag.endswith('}p'):
    yield {'type':'p','text':clean(Paragraph(ch,doc).text)}
   elif ch.tag.endswith('}tbl'):
-   yield {'type':'table','rows':[[clean(c.text) for c in row.cells] for row in Table(ch,doc).rows]}
+   t=Table(ch,doc);yield {'type':'table','rows':[[clean(c.text) for c in row.cells] for row in t.rows],'grid':table_grid(t)}
+def section_ranges(elements,markers):
+ """Elements that belong to each interpretation: from its section title to the next title, so tables placed
+ after the interpretation field still count. A section with another interpretation ahead ends at its own field."""
+ text=lambda e:e['text'] if e['type']=='p' else ' '.join(x for row in e['rows'] for x in row)
+ fields=[m['index'] for m in markers if m['key'] in SLOTS]
+ titles=sorted({i for i,e in enumerate(elements) if domain_of(text(e))}|{m['index'] for m in markers if m['key'] not in SLOTS})
+ for m in markers:
+  if m['key'] not in SLOTS:continue
+  i=m['index']
+  start=max([t for t in titles if t<i]+[f for f in fields if f<i]+[-1])+1
+  next_title=min([t for t in titles if t>i],default=None);next_field=min([f for f in fields if f>i],default=None)
+  if next_field is not None and (next_title is None or next_field<next_title):end=i
+  else:end=next_title if next_title is not None else len(elements)
+  m['section_start'],m['section_end']=start,end
 def inspect(path):
  d=open_docx(path);elements=list(all_elements(d));markers=[];m=Markers()
  children=[ch for ch in d.element.body.iterchildren() if ch.tag.endswith('}p') or ch.tag.endswith('}tbl')]
@@ -116,6 +146,7 @@ def inspect(path):
    # old text is flagged so it is never sent to the AI as if it were evidence
    for ch in old:elements[position[ch]]['replaceable']=k
    markers.append({'key':k,'index':i,'label':txt,'existing_paragraphs':sum(1 for ch in old if clean(Paragraph(ch,d).text)),'existing_text':'\n\n'.join(t for t in (Paragraph(ch,d).text.strip() for ch in old) if t)})
+ section_ranges(elements,markers)
  return {'elements':elements,'markers':markers,'identification':identification(d),'warnings':['Conferir visualmente a ordem dos marcadores e os resultados.']}
 
 REPORT_FONT='Arial';REPORT_HALF_POINTS='22'  # Arial 11 pt

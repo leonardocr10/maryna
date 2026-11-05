@@ -102,3 +102,10 @@
 
 .instr-box.guide { margin: 14px 0 4px; background: var(--primary-soft); border-color: var(--primary-border); }
 .from-file { margin-top: 2px; }
+.refs { margin-top: 12px; padding: 14px; background: #f5f8f7; border: 1px solid var(--border-card); border-radius: 10px; display: flex; flex-direction: column; gap: 14px; }
+.ref-scroll { overflow-x: auto; }
+.ref-table table { border-collapse: collapse; width: 100%; background: #fff; font-size: 12.5px; }
+.ref-table th, .ref-table td { border: 1px solid #c9d8d3; padding: 6px 10px; text-align: center; vertical-align: middle; }
+.ref-table th { background: #d3e0d6; font-weight: 700; }
+.ref-table td:first-child { text-align: left; font-weight: 500; }
+.ref-table .caption { margin-top: 4px; }

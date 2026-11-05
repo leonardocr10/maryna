@@ -38,6 +38,7 @@ export class EvaluationComponent implements OnDestroy {
   evaluationId = '';
   loaded = false;
   current: any = null; documents: any[] = []; sections: any[] = []; usage: any = null; inspection: any = null;
+  references: Record<string, any[]> = {}; refOpen = '';
   instructions: any[] = []; instrDraft: Record<string, string> = {}; instrOpen = '';
   privacy: any = null; newTerm = '';
   idModel: Identity = emptyIdentity(); private idTimer: any; idSaving = false;
@@ -74,7 +75,9 @@ export class EvaluationComponent implements OnDestroy {
   async inspect() {
     try { this.inspection = await this.api.req('POST', `/evaluations/${this.evaluationId}/inspect`); } catch { this.inspection = null; }
     try { this.privacy = await this.api.req('GET', `/evaluations/${this.evaluationId}/privacy`); } catch {}
+    try { this.references = await this.api.req('GET', `/evaluations/${this.evaluationId}/references`); } catch { this.references = {}; }
   }
+  refs(k: string) { return this.references[k] || []; }
   async loadInstructions() {
     try {
       const r = await this.api.req('GET', `/evaluations/${this.evaluationId}/instructions`);
@@ -206,7 +209,7 @@ export class EvaluationComponent implements OnDestroy {
   removeTerm(v: string) { this.savePrivacy(this.extraTerms().filter((x: string) => x !== v), this.ignoredTerms()); }
 
   // ---------- step 4: review ----------
-  toggle(k: string) { this.open = this.open === k ? '' : k; this.editing = ''; this.sectionInstr = ''; }
+  toggle(k: string) { this.refOpen = ''; this.open = this.open === k ? '' : k; this.editing = ''; this.sectionInstr = ''; }
   startEdit(k: string) { this.editing = k; this.editText = this.text(k); this.sectionInstr = ''; }
   async saveEdit(k: string) {
     if (!this.editText.trim()) { this.api.notify('O texto não pode ficar vazio.'); return; }

@@ -43,7 +43,7 @@ Arquivo base já preenchido: no Word final, o texto antigo de um destino é troc
 
 Descrição da demanda: copiada do arquivo base como está, sem IA, e no Word permanece o parágrafo original. Se o arquivo não tiver esse texto, escreva em Editar ou use Gerar com IA.
 
-Custo: estimado a partir de `PRICES` em `api/src/server.mjs` (USD por 1M tokens, sobrescreva com `OPENAI_PRICE_INPUT`/`_CACHED`/`_OUTPUT`) e do câmbio `USD_BRL` no `api/.env`. O valor cobrado de fato está no painel da OpenAI. `GENERATED_TEXT_RED=true` deixa o texto gerado em vermelho no Word (modo teste).
+Custo: estimado a partir de `PRICES` em `api/src/server.mjs` (USD por 1M tokens, sobrescreva com `OPENAI_PRICE_INPUT`/`_CACHED`/`_OUTPUT`) e do câmbio `USD_BRL` no `api/.env`. O valor cobrado de fato está no painel da OpenAI. Na pré-visualização, o texto inserido aparece em vermelho (`GENERATED_TEXT_RED=false` desliga); o Word baixado sai sempre na cor normal.
 
 ## Endpoints
 - `GET /api/health`

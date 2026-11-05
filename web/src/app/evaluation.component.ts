@@ -167,6 +167,7 @@ export class EvaluationComponent implements OnDestroy {
     if (!this.aiReady) { this.api.notify('Geração pela API desligada. Ative em Configurações.'); return; }
     if (!skipConfirm && this.autoDrafted() && !confirm('Gerar tudo de novo? Os textos atuais serão substituídos (as versões antigas ficam no histórico).')) return;
     const keys = this.autoKeys();
+    for (const k of keys) if (!await this.saveInstruction(k)) return;
     this.gen = Object.fromEntries(keys.map(k => [k, 'pending' as Gen]));
     this.generating = true; this.generatingChange.emit(true);
     try {
@@ -182,14 +183,16 @@ export class EvaluationComponent implements OnDestroy {
   instruction(k: string) { return this.instructions.find(x => x.key === k); }
   isCustom(k: string) { return !!this.instruction(k)?.custom; }
   customCount() { return this.instructions.filter(x => x.custom).length; }
+  /** Returns false when the instruction could not be saved, so nothing is generated with an old one. */
   async saveInstruction(k: string, text = this.instrDraft[k]) {
-    const ins = this.instruction(k); if (!ins || this.locked()) return;
+    const ins = this.instruction(k); if (!ins || this.locked()) return true;
     const value = (text || '').trim();
-    if ((ins.custom || ins.default) === value) return;
+    if ((ins.custom || (k === MANUAL_KEY ? '' : ins.default)) === value) return true;
     try {
       const r = await this.api.req('PUT', `/evaluations/${this.evaluationId}/instructions/${k}`, {prompt: value && value !== ins.default ? value : null});
-      ins.custom = r.custom; this.instrDraft[k] = r.custom || ins.default;
-    } catch {}
+      ins.custom = r.custom; this.instrDraft[k] = r.custom || (k === MANUAL_KEY ? '' : ins.default);
+      return true;
+    } catch { return false; }
   }
   async resetInstruction(k: string) { const ins = this.instruction(k); if (!ins) return; this.instrDraft[k] = ins.default; await this.saveInstruction(k, ins.default); }
 
@@ -212,7 +215,7 @@ export class EvaluationComponent implements OnDestroy {
   openInstr(k: string) { this.sectionInstr = this.sectionInstr === k ? '' : k; this.editing = ''; }
   async regenerate(k: string, withInstruction = false) {
     if (!this.aiReady) { this.api.notify('Geração pela API desligada. Ative em Configurações.'); return; }
-    if (withInstruction) await this.saveInstruction(k);
+    if (withInstruction && !await this.saveInstruction(k)) return;
     this.gen = {[k]: 'running'}; this.generating = true; this.generatingChange.emit(true);
     try { await this.api.req('POST', `/evaluations/${this.evaluationId}/generate/${k}`, {notes: ''}); this.gen[k] = 'done'; await this.load(); this.sectionInstr = ''; this.api.notify('Seção regenerada. Revise o texto.'); }
     catch { this.gen[k] = 'error'; }

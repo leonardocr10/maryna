@@ -45,6 +45,8 @@ Descrição da demanda: copiada do arquivo base como está, sem IA, e no Word pe
 
 Texto da IA: as seções não usam categorias de desempenho (inferior, superior, média, limítrofe etc.), e as interpretações também não trazem números. Uma conferência automática refaz a seção uma vez se encontrar algum desses termos e, se ainda sobrar, mostra um aviso. A Anamnese fica de fora para seguir o relato.
 
+Instrução da psicóloga: tem prioridade sobre as regras padrão (extensão, formato, vocabulário, categorias, números). As regras padrão só valem no que ela não disser o contrário, e a conferência não refaz o texto contra o pedido; apenas avisa. Continua valendo: não inventar dados nem acrescentar diagnóstico que ela não tenha indicado.
+
 Custo: estimado a partir de `PRICES` em `api/src/server.mjs` (USD por 1M tokens, sobrescreva com `OPENAI_PRICE_INPUT`/`_CACHED`/`_OUTPUT`) e do câmbio `USD_BRL` no `api/.env`. O valor cobrado de fato está no painel da OpenAI. Na pré-visualização, o texto inserido aparece em vermelho (`GENERATED_TEXT_RED=false` desliga); o Word baixado sai sempre na cor normal.
 
 ## Endpoints

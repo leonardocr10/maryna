@@ -27,7 +27,10 @@ type Screen = 'evaluation' | 'new' | 'settings';
 
 <ng-container *ngIf="api.loggedIn()">
   <header class="top">
+    <div class="top-left">
+    <button class="side-toggle" type="button" (click)="toggleSide()" [title]="sideClosed() ? 'Mostrar lista de avaliações' : 'Recolher lista de avaliações'" [attr.aria-label]="sideClosed() ? 'Mostrar lista de avaliações' : 'Recolher lista de avaliações'" [attr.aria-expanded]="!sideClosed()">{{sideClosed() ? '☰' : '◂'}}</button>
     <button class="brand" type="button" (click)="goHome()"><span class="logo">NL</span><div><strong>NeuroLaudos IA</strong><span>Elaboração assistida de laudos</span></div></button>
+    </div>
     <nav>
       <div *ngIf="screen()==='evaluation' && timer.evalId()" class="timer" [class.paused]="timer.state()==='paused'" [class.finished]="timer.state()==='finished'" [title]="timerTitle()">
         <span class="tdot"></span>
@@ -41,7 +44,7 @@ type Screen = 'evaluation' | 'new' | 'settings';
   </header>
 
   <div class="shell">
-    <aside class="side">
+    <aside *ngIf="!sideClosed()" class="side">
       <button class="new-btn" [class.active]="screen()==='new'" (click)="go('new')">+ Nova avaliação</button>
       <input class="search" [(ngModel)]="search" placeholder="Buscar paciente…" (ngModelChange)="searchSig.set($event)">
       <div class="chips">
@@ -77,6 +80,9 @@ type Screen = 'evaluation' | 'new' | 'settings';
   styles: [`
 :host{display:block;height:100vh}
 .top{height:60px;background:#fff;border-bottom:1px solid var(--border-card);padding:0 24px;display:flex;align-items:center;justify-content:space-between}
+.top-left{display:flex;align-items:center;gap:10px}
+.side-toggle{width:34px;height:34px;border:1px solid var(--border-input);border-radius:8px;background:#fff;color:var(--text-2);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.side-toggle:hover{background:var(--chip)}
 .brand{display:flex;align-items:center;gap:10px;background:none;border:0;padding:0;cursor:pointer;text-align:left;font-family:var(--font)}
 .brand strong{display:block;font-size:15px;font-weight:700;color:var(--text)}
 .brand span{display:block;font-size:11px;color:var(--caption)}
@@ -128,6 +134,7 @@ export class AppComponent {
   private saved = (() => { try { return JSON.parse(sessionStorage.getItem('nl_view') || '{}'); } catch { return {}; } })();
   screen = signal<Screen>(['evaluation', 'new', 'settings'].includes(this.saved.screen) ? this.saved.screen : 'evaluation');
   evaluations = signal<any[]>([]);
+  sideClosed = signal((() => { try { return localStorage.getItem('nl_side_closed') === '1'; } catch { return false; } })());
   selectedId = signal<string>(this.saved.id || '');
   filter = signal<'all' | EvalStatus>('all');
   search = ''; searchSig = signal('');
@@ -144,6 +151,7 @@ export class AppComponent {
     effect(() => { try { sessionStorage.setItem('nl_view', JSON.stringify({screen: this.screen(), id: this.selectedId()})); } catch {} });
   }
 
+  toggleSide() { const v = !this.sideClosed(); this.sideClosed.set(v); try { localStorage.setItem('nl_side_closed', v ? '1' : '0'); } catch {} }
   st(e: any) { return listStatus(e); }
   count(f: 'all' | EvalStatus) { return f === 'all' ? this.evaluations().length : this.evaluations().filter(e => listStatus(e) === f).length; }
 

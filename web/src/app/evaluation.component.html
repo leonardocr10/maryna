@@ -10,6 +10,7 @@
   <div class="head-actions">
     <button class="btn btn-secondary" (click)="showDocument()" [disabled]="!docName('base')">Pré-visualizar</button>
     <button class="btn btn-primary" [class.half]="!allApproved()" (click)="download()">↓ Baixar Word</button>
+    <button class="btn btn-secondary panel-toggle" (click)="togglePanel()" [attr.aria-expanded]="!panelClosed">{{panelClosed ? '◂ Painel · ' + approved() + '/' + total() + ' · ' + brl(usage?.cost_brl||0) : 'Recolher painel ▸'}}</button>
   </div>
 
   <!-- Stepper -->
@@ -20,7 +21,7 @@
     </button>
   </nav>
 
-  <div class="grid">
+  <div class="grid" [class.closed]="panelClosed">
     <div class="col-main">
 
       <!-- 1. Identificação -->
@@ -130,7 +131,23 @@
               <span class="mono n">{{(i+1).toString().padStart(2,'0')}}</span><span class="sec-name">{{s.name}}</span>
               <span [class]="'badge '+SECTION_STATE[state(s.id)].css">{{SECTION_STATE[state(s.id)].label}}</span>
             </button>
-            <div *ngIf="open===s.id" class="sec-body">
+            <div *ngIf="open===s.id" class="sec-body" [class.split]="refOpen===s.id">
+              <!-- Reference tables on the left, text on the right, also while editing -->
+              <aside *ngIf="refOpen===s.id" class="refs">
+                <div class="refs-head"><p class="label-caps">Tabelas usadas pela IA ({{refs(s.id).length}})</p><button class="link" (click)="closeRefs()">Ocultar</button></div>
+                <div *ngFor="let t of refs(s.id)" class="ref-table">
+                  <div class="ref-scroll"><table>
+                    <tr *ngFor="let row of t.grid; let r=index">
+                      <ng-container *ngFor="let c of row">
+                        <th *ngIf="r===0" [attr.rowspan]="c.rowspan" [attr.colspan]="c.colspan">{{c.text}}</th>
+                        <td *ngIf="r>0" [attr.rowspan]="c.rowspan" [attr.colspan]="c.colspan">{{c.text}}</td>
+                      </ng-container>
+                    </tr>
+                  </table></div>
+                  <p *ngIf="t.caption" class="caption">{{t.caption}}</p>
+                </div>
+              </aside>
+              <div class="sec-main">
               <p *ngFor="let w of warnings(s.id)" class="warn-note">⚠ {{w}}</p>
 
               <ng-container *ngIf="editing!==s.id">
@@ -146,7 +163,7 @@
                 <p *ngIf="s.id===DEMAND_KEY && demandIsFromFile()" class="caption from-file">Texto do arquivo enviado, sem alteração e sem IA.</p>
                 <div class="sec-actions">
                   <span class="caption mono">{{words(text(s.id))}} palavras</span>
-                  <button *ngIf="refs(s.id).length" class="link" (click)="refOpen = refOpen===s.id ? '' : s.id">{{refOpen===s.id ? 'Ocultar tabelas' : 'Ver tabelas de referência (' + refs(s.id).length + ')'}}</button>
+                  <button *ngIf="refs(s.id).length" class="link" (click)="toggleRefs(s.id)">{{refOpen===s.id ? 'Ocultar tabelas' : 'Ver tabelas de referência (' + refs(s.id).length + ')'}}</button>
                   <span class="spacer"></span>
                   <ng-container *ngIf="!locked()">
                     <button *ngIf="s.id!==MANUAL_KEY" class="btn btn-secondary btn-sm" (click)="openInstr(s.id)">Instrução</button>
@@ -156,20 +173,6 @@
                     <button *ngIf="s.id!==MANUAL_KEY && s.id!==DEMAND_KEY" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="regenerate(s.id)">{{gen[s.id]==='running'?'Gerando…':'Regenerar'}}</button>
                     <button *ngIf="state(s.id)==='gen'" class="btn btn-primary btn-sm" (click)="approveAndNext(s.id)">Aprovar e próxima</button>
                   </ng-container>
-                </div>
-                <div *ngIf="refOpen===s.id" class="refs">
-                  <p class="label-caps">Tabelas usadas pela IA nesta seção</p>
-                  <div *ngFor="let t of refs(s.id)" class="ref-table">
-                    <div class="ref-scroll"><table>
-                      <tr *ngFor="let row of t.grid; let r=index">
-                        <ng-container *ngFor="let c of row">
-                          <th *ngIf="r===0" [attr.rowspan]="c.rowspan" [attr.colspan]="c.colspan">{{c.text}}</th>
-                          <td *ngIf="r>0" [attr.rowspan]="c.rowspan" [attr.colspan]="c.colspan">{{c.text}}</td>
-                        </ng-container>
-                      </tr>
-                    </table></div>
-                    <p *ngIf="t.caption" class="caption">{{t.caption}}</p>
-                  </div>
                 </div>
                 <div *ngIf="sectionInstr===s.id" class="instr-box">
                   <p class="label-caps">Instrução desta avaliação</p>
@@ -186,10 +189,12 @@
                 <div class="sec-actions">
                   <button class="link" (click)="copyPrompt(s.id)">Modo manual: copiar pedido para o ChatGPT</button>
                   <button class="link" (click)="pasteAnswer()">Colar resposta</button>
+                  <button *ngIf="refs(s.id).length" class="link" (click)="toggleRefs(s.id)">{{refOpen===s.id ? 'Ocultar tabelas' : 'Ver tabelas de referência (' + refs(s.id).length + ')'}}</button>
                   <span class="spacer"></span>
                   <button class="btn btn-secondary btn-sm" (click)="editing=''">Cancelar</button>
                   <button class="btn btn-primary btn-sm" (click)="saveEdit(s.id)">Salvar</button>
                 </div>
+              </div>
               </div>
             </div>
           </div>
@@ -206,22 +211,25 @@
     </div>
 
     <!-- Side column -->
-    <aside class="col-side">
+    <aside *ngIf="!panelClosed" class="col-side">
       <section class="card card-pad">
         <p class="label-caps">Progresso</p>
         <p class="big-num">{{approved()}} <span>de {{total()}} seções aprovadas</span></p>
         <div class="bar small"><div [style.width.%]="total() ? approved()/total()*100 : 0"></div></div>
       </section>
-      <section class="card card-pad">
-        <p class="label-caps">Custo da IA</p>
-        <p class="cost">{{brl(usage?.cost_brl||0)}}</p>
-        <p class="mono tokens">{{int(usage?.total_tokens||0)}} tokens · {{usage?.calls||0}} chamadas</p>
-        <p class="note">Estimativa pela tabela de preços do modelo e câmbio do servidor. O valor exato fica no painel da OpenAI.</p>
+      <section class="card fold">
+        <button class="fold-btn" (click)="costOpen=!costOpen" [attr.aria-expanded]="costOpen"><span class="label-caps">Custo da IA</span><span class="fold-val">{{brl(usage?.cost_brl||0)}}</span><span class="chev">{{costOpen?'▴':'▾'}}</span></button>
+        <div *ngIf="costOpen" class="fold-body">
+          <p class="mono tokens">{{int(usage?.total_tokens||0)}} tokens · {{usage?.calls||0}} chamadas</p>
+          <p class="note">Estimativa pela tabela de preços do modelo e câmbio do servidor. O valor exato fica no painel da OpenAI.</p>
+        </div>
       </section>
-      <section class="card card-pad">
-        <p class="label-caps">Arquivos</p>
-        <button class="file-line" (click)="goStep(1)"><span [class.ok]="docName('base')">{{docName('base')?'✓':'○'}}</span><span class="mono">{{docName('base')||'Arquivo base'}}</span></button>
-        <button class="file-line" (click)="goStep(1)"><span [class.ok]="docName('anamnesis')">{{docName('anamnesis')?'✓':'○'}}</span><span class="mono">{{docName('anamnesis')||'Anamnese'}}</span></button>
+      <section class="card fold">
+        <button class="fold-btn" (click)="filesOpen=!filesOpen" [attr.aria-expanded]="filesOpen"><span class="label-caps">Arquivos</span><span class="fold-val">{{docCount()}} de 2</span><span class="chev">{{filesOpen?'▴':'▾'}}</span></button>
+        <div *ngIf="filesOpen" class="fold-body">
+          <button class="file-line" (click)="goStep(1)"><span [class.ok]="docName('base')">{{docName('base')?'✓':'○'}}</span><span class="mono">{{docName('base')||'Arquivo base'}}</span></button>
+          <button class="file-line" (click)="goStep(1)"><span [class.ok]="docName('anamnesis')">{{docName('anamnesis')?'✓':'○'}}</span><span class="mono">{{docName('anamnesis')||'Anamnese'}}</span></button>
+        </div>
       </section>
       <button class="link-danger" (click)="remove()">Excluir avaliação</button>
     </aside>

@@ -39,6 +39,10 @@ export class EvaluationComponent implements OnDestroy {
   loaded = false;
   current: any = null; documents: any[] = []; sections: any[] = []; usage: any = null; inspection: any = null;
   references: Record<string, any[]> = {}; refOpen = '';
+  costOpen = false; filesOpen = false;
+  // Right column: the user's choice is remembered; opening the tables folds it only while they are open.
+  panelClosed = (() => { try { return localStorage.getItem('nl_panel_closed') === '1'; } catch { return false; } })();
+  private panelFoldedByTables = false;
   instructions: any[] = []; instrDraft: Record<string, string> = {}; instrOpen = '';
   privacy: any = null; newTerm = '';
   idModel: Identity = emptyIdentity(); private idTimer: any; idSaving = false;
@@ -61,7 +65,7 @@ export class EvaluationComponent implements OnDestroy {
       if (first) {
         const c = this.current;
         this.idModel = {name: c.patient_name || '', birth_date: c.birth_date || '', sex: c.sex || '', schooling: c.schooling || '', start_date: c.start_date || '', end_date: c.end_date || ''};
-        this.inspection = null; this.privacy = null; this.gen = {}; this.open = ''; this.editing = ''; this.mode = 'secoes';
+        this.closeRefs(); this.inspection = null; this.privacy = null; this.gen = {}; this.open = ''; this.editing = ''; this.mode = 'secoes';
         const s = await this.api.req('GET', '/ai/settings').catch(() => null);
         this.aiReady = !!(s && s.enabled && s.configured && s.privacy_gate);
         this.step = !this.docsReady() ? 1 : !this.autoDrafted() ? 2 : 3;
@@ -209,7 +213,20 @@ export class EvaluationComponent implements OnDestroy {
   removeTerm(v: string) { this.savePrivacy(this.extraTerms().filter((x: string) => x !== v), this.ignoredTerms()); }
 
   // ---------- step 4: review ----------
-  toggle(k: string) { this.refOpen = ''; this.open = this.open === k ? '' : k; this.editing = ''; this.sectionInstr = ''; }
+  togglePanel() {
+    this.panelClosed = !this.panelClosed; this.panelFoldedByTables = false;
+    try { localStorage.setItem('nl_panel_closed', this.panelClosed ? '1' : '0'); } catch {}
+  }
+  toggleRefs(k: string) {
+    if (this.refOpen === k) { this.closeRefs(); return; }
+    if (!this.panelClosed) { this.panelClosed = true; this.panelFoldedByTables = true; }
+    this.refOpen = k;
+  }
+  closeRefs() {
+    this.refOpen = '';
+    if (this.panelFoldedByTables) { this.panelClosed = false; this.panelFoldedByTables = false; }
+  }
+  toggle(k: string) { this.closeRefs(); this.open = this.open === k ? '' : k; this.editing = ''; this.sectionInstr = ''; }
   startEdit(k: string) { this.editing = k; this.editText = this.text(k); this.sectionInstr = ''; }
   async saveEdit(k: string) {
     if (!this.editText.trim()) { this.api.notify('O texto não pode ficar vazio.'); return; }
@@ -236,6 +253,7 @@ export class EvaluationComponent implements OnDestroy {
       await this.load(); this.changed.emit();
       const list = this.available(), i = list.findIndex(s => s.id === k);
       const next = [...list.slice(i + 1), ...list.slice(0, i)].find(s => this.state(s.id) !== 'ap');
+      if (this.refOpen) { if (next && this.refs(next.id).length) this.refOpen = next.id; else this.closeRefs(); }
       this.open = next?.id || ''; this.editing = ''; this.sectionInstr = '';
       if (!next && this.allApproved()) this.api.notify('Todas as seções aprovadas. Já dá para baixar o Word.');
     } catch {}
@@ -256,7 +274,7 @@ export class EvaluationComponent implements OnDestroy {
       this.api.notify('Word baixado.');
     } catch {}
   }
-  showDocument() { this.step = 3; this.mode = 'documento'; setTimeout(() => this.renderPreview()); }
+  showDocument() { this.closeRefs(); this.step = 3; this.mode = 'documento'; setTimeout(() => this.renderPreview()); }
   async renderPreview() {
     const box = this.previewBox?.nativeElement; if (!box) return;
     if (!this.docName('base')) { box.innerHTML = ''; return; }
@@ -275,6 +293,6 @@ export class EvaluationComponent implements OnDestroy {
     if (!confirm(`Excluir a avaliação de ${this.current?.patient_name}?\n\nOs documentos enviados e os textos serão apagados definitivamente.`)) return;
     try { await this.api.req('DELETE', '/evaluations/' + this.evaluationId); this.api.notify('Avaliação excluída.'); this.deleted.emit(); } catch {}
   }
-  goStep(i: number) { this.step = i; if (i === 3 && this.mode === 'documento') setTimeout(() => this.renderPreview()); }
-  setMode(m: 'secoes' | 'documento') { this.mode = m; if (m === 'documento') setTimeout(() => this.renderPreview()); }
+  goStep(i: number) { if (i !== 3) this.closeRefs(); this.step = i; if (i === 3 && this.mode === 'documento') setTimeout(() => this.renderPreview()); }
+  setMode(m: 'secoes' | 'documento') { if (m !== 'secoes') this.closeRefs(); this.mode = m; if (m === 'documento') setTimeout(() => this.renderPreview()); }
 }

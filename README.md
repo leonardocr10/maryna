@@ -39,6 +39,8 @@ Docker (opcional): `docker compose up --build -d` sobe só a API, com `api/data`
 4. **Gerar texto com IA:** um botão gera as 11 partes; mostra tokens e custo estimado em reais.
 5. **Conferir e baixar:** pré-visualize o Word no navegador, edite qualquer parte (ou use o modo manual com o ChatGPT) e clique em **Aprovar e baixar Word**.
 
+Arquivo base já preenchido: no Word final, o texto antigo de um destino é trocado pelo texto novo daquela parte. Param a troca e nunca mudam: tabelas, gráficos, quebras de página, títulos e textos fixos (Salienta-se, Referências etc.). Partes sem texto novo mantêm o que já havia, e o arquivo enviado fica guardado como está. O texto antigo não é enviado à IA como evidência. As interpretações são localizadas pelo título da seção; sem título, pela ordem no documento.
+
 Custo: estimado a partir de `PRICES` em `api/src/server.mjs` (USD por 1M tokens, sobrescreva com `OPENAI_PRICE_INPUT`/`_CACHED`/`_OUTPUT`) e do câmbio `USD_BRL` no `api/.env`. O valor cobrado de fato está no painel da OpenAI. `GENERATED_TEXT_RED=true` deixa o texto gerado em vermelho no Word (modo teste).
 
 ## Endpoints

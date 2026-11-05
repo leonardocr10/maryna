@@ -82,9 +82,10 @@ function sourceFor(key,base,ana,sections){
  const identification=els.slice(0,at('demanda')??20).filter(x=>x.type==='p'&&x.text).map(x=>x.text);
  if(key==='demanda')return {identificacao:identification,anotacoes_anamnese:anamnesis};
  if(INTERPRETATION_KEYS.includes(key)){
-  const pos=INTERPRETATION_KEYS.indexOf(key),end=at(key);if(end===undefined)throw fail(409,`Marcador da seção ${key} não encontrado no arquivo base`);
-  const prev=pos?at(INTERPRETATION_KEYS[pos-1]):at('anamnesis');
-  return {identificacao:identification,trecho_da_secao:els.slice((prev??0)+1,end),anamnese:sections.anamnesis||anamnesis};
+  const end=at(key);if(end===undefined)throw fail(409,`Marcador da seção ${key} não encontrado no arquivo base`);
+  // Between the previous destination and this one; text the AI will replace is not evidence.
+  const prev=Math.max(-1,...markers.map(m=>m.index).filter(i=>i<end));
+  return {identificacao:identification,trecho_da_secao:els.slice(prev+1,end).filter(x=>!x.replaceable),anamnese:sections.anamnesis||anamnesis};
  }
  const results=els.slice((at('anamnesis')??0)+1,at('conclusao')??els.length).filter(x=>x.type==='table');
  return {identificacao:identification,anamnese:sections.anamnesis||anamnesis,interpretacoes:Object.fromEntries(INTERPRETATION_KEYS.filter(k=>sections[k]).map(k=>[k,sections[k]])),conclusao:sections.conclusao||null,tabelas_de_resultados:results};

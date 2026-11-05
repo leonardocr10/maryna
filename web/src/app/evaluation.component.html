@@ -40,6 +40,7 @@
             <nl-drop-zone title="Arquivo base (estagiária)" [filename]="docName('base')" [busy]="uploading==='base'" [disabled]="locked()" (file)="upload('base',$event)"></nl-drop-zone>
             <nl-drop-zone title="Anamnese (psicóloga)" [filename]="docName('anamnesis')" [busy]="uploading==='anamnesis'" [disabled]="locked()" (file)="upload('anamnesis',$event)"></nl-drop-zone>
           </div>
+          <p *ngIf="withOldText().length" class="warn-note">Este arquivo já tem texto em: {{withOldText().join(', ')}}. No Word final, esse texto será trocado pelo gerado em cada parte. Tabelas, gráficos e referências não mudam, e o arquivo enviado fica guardado como está.</p>
           <p *ngIf="inspection && missing().length" class="warn-note">Sem lugar no arquivo base para: {{missing().join(', ')}}. Essas seções serão ignoradas.</p>
           <div class="foot"><button class="btn btn-primary" [disabled]="!docsReady()" (click)="goStep(2)">Continuar para geração →</button></div>
         </div>

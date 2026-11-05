@@ -2,7 +2,8 @@
 """Isolated DOCX reader / conservative content inserter. Never overwrites the original.
 
 Inserted text becomes new body paragraphs placed right after each destination marker
-(heading box or "Interpretação Clínica:" line). Existing elements are never edited.
+(heading box or "Interpretação Clínica:" line). Old narrative already sitting in that destination
+is replaced; everything else (tables, charts, fixed text, references) is never edited.
 Section content format: blank line separates paragraphs; a line starting with "## " is a bold topic title.
 """
 import sys,json,re,os,hashlib,zipfile
@@ -27,17 +28,67 @@ def element_text(ch,doc):
  return ''
 def is_interpretation(label):
  return len(label)<130 and ('INTERPRETAÇÃO E OBSERVAÇÕES CLÍNICAS' in label or label=='INTERPRETAÇÃO CLÍNICA:')
+# Section titles that say which domain the next interpretation marker belongs to (templates differ in order).
+DOMAINS=[
+ ('inteligencia',('HABILIDADES INTELECTUAIS',)),
+ ('percepcao',('PERCEPÇÃO',)),
+ ('memoria',('MEMÓRIA',)),
+ ('atencao',('PROCESSOS ATENCIONAIS','ATENÇÃO')),
+ ('funcoes_executivas',('FUNÇÕES EXECUTIVAS',)),
+ ('comportamento',('COMPORTAMENTO','BATERIA FATORIAL')),
+]
+def domain_of(text):
+ """Domain key when the text is an all-caps section title, else None."""
+ t=clean(text)
+ if len(t)>80 or t!=t.upper():return None
+ for k,prefixes in DOMAINS:
+  if t.startswith(prefixes):return k
+ return None
 class Markers:
- """Maps marker labels to section keys; interpretation markers are numbered in document order."""
- def __init__(self):self.n=0;self.used=set()
+ """Maps marker labels to section keys. An interpretation takes the domain of the title before it,
+ or the next free slot in document order when there is no such title."""
+ def __init__(self):self.used=set();self.domain=None
+ def _slot(self):
+  k=self.domain;self.domain=None
+  if k=='comportamento' and k in self.used:k='comportamento_diva'
+  if k is None or k in self.used:k=next((s for s in SLOTS if s not in self.used),None)
+  if k:self.used.add(k)
+  return k
  def key(self,text):
   label=clean(text).upper()
-  if is_interpretation(label):
-   k=SLOTS[self.n] if self.n<len(SLOTS) else None;self.n+=1;return k
+  if is_interpretation(label):return self._slot()
   if len(label)>80:return None
   for k,prefixes in FIXED:
    if k not in self.used and any(label.rstrip(':').startswith(p) for p in prefixes):self.used.add(k);return k
+  self.domain=domain_of(text) or self.domain
   return None
+
+# ---- Old narrative inside a destination ----
+# Fixed report text that follows some destinations and must survive the replacement.
+KEEP_RE=re.compile(r'^(REFER[ÊE]NCIAS|HIP[ÓO]TESE|TABELA\b|SUBTESTES D|BASE CONCEITUAL|SALIENTA-SE|À EQUIPE|LAUDO REALIZADO|_{3,})')
+def is_boundary(text):
+ """True for a paragraph that starts other content: replacement stops before it."""
+ label=clean(text).upper()
+ if KEEP_RE.match(label) or is_interpretation(label):return True
+ if len(label)>80:return False
+ # a title is all caps or ends with a colon; "Conclusão antiga." is still narrative
+ looks_like_title=clean(text)==label or label.endswith(':')
+ return domain_of(text) is not None or (looks_like_title and any(label.rstrip(':').startswith(p) for _,ps in FIXED for p in ps))
+def has_protected_content(p):
+ """Charts, images, section breaks and manual page breaks are layout, not narrative."""
+ W='{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+ return any(True for tag in ('drawing','pict','object','sectPr') for _ in p.iter(W+tag)) or any(b.get(W+'type')=='page' for b in p.iter(W+'br'))
+def existing_narrative(marker,doc):
+ """Paragraphs with old text right after a marker, up to the next table, chart or fixed text.
+ Trailing blank lines stay, so the spacing of the template is kept."""
+ run=[];last=-1;sib=marker.getnext()
+ while sib is not None and sib.tag.endswith('}p') and not has_protected_content(sib):
+  text=clean(Paragraph(sib,doc).text)
+  if text and is_boundary(Paragraph(sib,doc).text):break
+  run.append(sib)
+  if text:last=len(run)-1
+  sib=sib.getnext()
+ return run[:last+1]
 
 MAX_UNZIPPED=200*1024*1024;MAX_ENTRIES=5000
 def open_docx(path):
@@ -55,10 +106,16 @@ def all_elements(doc):
    yield {'type':'table','rows':[[clean(c.text) for c in row.cells] for row in Table(ch,doc).rows]}
 def inspect(path):
  d=open_docx(path);elements=list(all_elements(d));markers=[];m=Markers()
+ children=[ch for ch in d.element.body.iterchildren() if ch.tag.endswith('}p') or ch.tag.endswith('}tbl')]
+ position={ch:i for i,ch in enumerate(children)}
  for i,e in enumerate(elements):
   txt=e['text'] if e['type']=='p' else ' '.join(x for row in e['rows'] for x in row)
   k=m.key(txt)
-  if k:markers.append({'key':k,'index':i,'label':txt})
+  if k:
+   old=existing_narrative(children[i],d)
+   # old text is flagged so it is never sent to the AI as if it were evidence
+   for ch in old:elements[position[ch]]['replaceable']=k
+   markers.append({'key':k,'index':i,'label':txt,'existing_paragraphs':sum(1 for ch in old if clean(Paragraph(ch,d).text))})
  return {'elements':elements,'markers':markers,'identification':identification(d),'warnings':['Conferir visualmente a ordem dos marcadores e os resultados.']}
 
 REPORT_FONT='Arial';REPORT_HALF_POINTS='22'  # Arial 11 pt
@@ -156,17 +213,20 @@ def fill_fields(doc,fields):
 def export(base,out,sections,highlight=False,fields=None):
  if os.path.abspath(base)==os.path.abspath(out):raise SystemExit('out must differ from base')
  before=sha256(base)
- d=open_docx(base);seen=[];m=Markers()
+ d=open_docx(base);seen=[];m=Markers();replaced={}
  filled=fill_fields(d,{k:clean(v) for k,v in (fields or {}).items() if clean(v)})
  for ch in list(d.element.body.iterchildren()):
-  if not (ch.tag.endswith('}p') or ch.tag.endswith('}tbl')):continue
+  if not (ch.tag.endswith('}p') or ch.tag.endswith('}tbl')) or ch.getparent() is None:continue
   k=m.key(element_text(ch,d))
   if k in sections and clean(sections[k]) and k not in seen:
+   for old in existing_narrative(ch,d):
+    if clean(Paragraph(old,d).text):replaced[k]=replaced.get(k,0)+1
+    old.getparent().remove(old)
    insert_after(ch,sections[k],highlight);seen.append(k)
  d.save(out)
  after=sha256(base)
  if before!=after:raise SystemExit('base document changed during export')
- return {'inserted':seen,'missing':[k for k in sections if k not in seen],'fields_filled':filled,'base_sha256':before,'out_sha256':sha256(out)}
+ return {'inserted':seen,'missing':[k for k in sections if k not in seen],'fields_filled':filled,'replaced':replaced,'base_sha256':before,'out_sha256':sha256(out)}
 def main():
  op=sys.argv[1]
  sys.stdout.reconfigure(encoding='utf-8')

@@ -138,4 +138,42 @@ class TestWorker(unittest.TestCase):
     sz=p._p.pPr.find('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}rPr').find('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}sz')
     self.assertEqual(sz.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val'),'22')
 
+ def filled_report(self):
+  """Report already written by someone: old narrative, chart, fixed text and references around the destinations."""
+  d=Document()
+  d.add_table(rows=1,cols=1).cell(0,0).text='DESCRIÇÃO DA DEMANDA';d.add_paragraph('');d.add_paragraph('Demanda antiga.');d.add_paragraph('')
+  d.add_table(rows=1,cols=1).cell(0,0).text='ANAMNESE:';d.add_paragraph('Identificação');d.add_paragraph('Anamnese antiga.')
+  d.add_table(rows=1,cols=1).cell(0,0).text='MEMÓRIA E APRENDIZAGEM:'
+  t=d.add_table(rows=1,cols=2);t.cell(0,0).text='RAVLT';t.cell(0,1).text='42'
+  d.add_table(rows=1,cols=1).cell(0,0).text='Interpretação e observações clínicas:'
+  d.add_paragraph('Memória antiga.')
+  chart=d.add_paragraph();chart._p.get_or_add_pPr();r=chart.add_run();from docx.oxml import OxmlElement;r._r.append(OxmlElement('w:drawing'))
+  d.add_paragraph('Tabela 3. Legenda fixa.')
+  d.add_table(rows=1,cols=1).cell(0,0).text='CONCLUSÃO:';d.add_paragraph('Conclusão antiga.');d.add_paragraph('Salienta-se que a avaliação é um retrato do momento.')
+  d.add_table(rows=1,cols=1).cell(0,0).text='Indicações e Recomendações Clínicas:';d.add_paragraph('Psicoterapia: antiga.');d.add_paragraph('REFERÊNCIAS:');d.add_paragraph('AUTOR, Fictício. Livro. 2020.')
+  d.save(self.base)
+
+ def test_old_text_is_replaced_and_fixed_content_survives(self):
+  self.filled_report()
+  sections={'demanda':'Demanda nova.','anamnesis':'## Sono'+chr(10)+chr(10)+'Anamnese nova.','memoria':'Memória nova.','conclusao':'Conclusão nova.','recomendacoes':'Psicoterapia: nova.'}
+  r=run('export',stdin={'base':str(self.base),'out':str(self.out),'sections':sections})
+  self.assertEqual(r['missing'],[]);self.assertEqual(r['replaced'],{'demanda':1,'anamnesis':2,'memoria':1,'conclusao':1,'recomendacoes':1})
+  out=Document(self.out);texts=[p.text for p in out.paragraphs if p.text]
+  self.assertEqual(texts,['Demanda nova.','Sono','Anamnese nova.','Memória nova.','Tabela 3. Legenda fixa.','Conclusão nova.','Salienta-se que a avaliação é um retrato do momento.','Psicoterapia: nova.','REFERÊNCIAS:','AUTOR, Fictício. Livro. 2020.'])
+  self.assertEqual(out.tables[3].cell(0,1).text,'42')
+  self.assertEqual(len(out.element.body.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing')),1)
+
+ def test_section_without_new_text_keeps_old_text(self):
+  self.filled_report()
+  run('export',stdin={'base':str(self.base),'out':str(self.out),'sections':{'demanda':'Demanda nova.'}})
+  texts=[p.text for p in Document(self.out).paragraphs]
+  self.assertIn('Conclusão antiga.',texts);self.assertIn('Memória antiga.',texts);self.assertNotIn('Demanda antiga.',texts)
+
+ def test_inspect_flags_old_text_and_maps_interpretation_by_title(self):
+  self.filled_report()
+  r=run('inspect',str(self.base));by={m['key']:m for m in r['markers']}
+  self.assertEqual(by['memoria']['existing_paragraphs'],1);self.assertNotIn('inteligencia',by)
+  old=[e['text'] for e in r['elements'] if e.get('replaceable')]
+  self.assertIn('Memória antiga.',old);self.assertNotIn('Tabela 3. Legenda fixa.',old);self.assertNotIn('REFERÊNCIAS:',old)
+
 if __name__=='__main__':unittest.main()

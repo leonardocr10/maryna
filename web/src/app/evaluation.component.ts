@@ -87,6 +87,7 @@ export class EvaluationComponent implements OnDestroy {
   docCount() { return (this.docName('base') ? 1 : 0) + (this.docName('anamnesis') ? 1 : 0); }
   docsReady() { return this.docCount() === 2; }
   available() { const found = new Set((this.inspection?.markers || []).map((m: any) => m.key)); return this.inspection ? SECTIONS.filter(s => found.has(s.id)) : SECTIONS; }
+  withOldText() { return (this.inspection?.markers || []).filter((m: any) => m.existing_paragraphs > 0).map((m: any) => SECTIONS.find(s => s.id === m.key)?.name || m.key); }
   missing() { const ids = new Set(this.available().map(s => s.id)); return SECTIONS.filter(s => !ids.has(s.id)).map(s => s.name); }
   section(k: string) { return this.sections.find(s => s.section_key === k); }
   text(k: string) { return this.section(k)?.content || ''; }

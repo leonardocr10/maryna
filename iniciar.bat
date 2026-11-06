@@ -48,31 +48,39 @@ goto fim
 
 rem =====================================================================
 :ensure_node
-where node >nul 2>&1 && node -e "const [a,b]=process.versions.node.split('.').map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)" >nul 2>&1 && exit /b 0
-echo Node.js 22.13 ou mais novo nao encontrado. Instalando o Node.js LTS...
-call :need_winget "https://nodejs.org" || exit /b 1
-winget install -e --id OpenJS.NodeJS.LTS --silent --accept-package-agreements --accept-source-agreements
-set "PATH=%ProgramFiles%\nodejs;%APPDATA%\npm;%PATH%"
-node -e "const [a,b]=process.versions.node.split('.').map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)" >nul 2>&1 && exit /b 0
-echo Nao foi possivel instalar o Node.js. Instale pelo site https://nodejs.org e abra este arquivo de novo.
+rem A Node installed by this script lives in the user's folder: put it first.
+set "NODEDIR=%LOCALAPPDATA%\Programs\nodejs"
+if exist "%NODEDIR%\node.exe" set "PATH=%NODEDIR%;%PATH%"
+call :node_ok && exit /b 0
+echo Node.js 22.13 ou mais novo nao encontrado. Baixando e instalando (nodejs.org)...
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install-tools.ps1 -Node
+if exist "%NODEDIR%\node.exe" set "PATH=%NODEDIR%;%PATH%"
+call :node_ok && exit /b 0
+echo Nao foi possivel instalar o Node.js. Instale o "Windows Installer (.msi)" de https://nodejs.org e abra este arquivo de novo.
 exit /b 1
+
+:node_ok
+where node >nul 2>&1 || exit /b 1
+node -e "const [a,b]=process.versions.node.split('.').map(Number);process.exit(a>22||(a===22&&b>=13)?0:1)" >nul 2>&1
+exit /b %errorlevel%
 
 :ensure_python
 set "PY="
+for /d %%D in ("%LOCALAPPDATA%\Programs\Python\Python3*") do call :try_python "%%~fD\python.exe"
 call :try_python python
 call :try_python py
-for /d %%D in ("%LOCALAPPDATA%\Programs\Python\Python3*") do call :try_python "%%~fD\python.exe"
 if defined PY exit /b 0
-echo Python 3.11 ou mais novo nao encontrado. Instalando o Python 3.12...
-call :need_winget "https://www.python.org/downloads/" || exit /b 1
-winget install -e --id Python.Python.3.12 --scope user --silent --accept-package-agreements --accept-source-agreements
+echo Python 3.11 ou mais novo nao encontrado. Baixando e instalando o Python 3.12 (python.org)...
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install-tools.ps1 -Python
 for /d %%D in ("%LOCALAPPDATA%\Programs\Python\Python3*") do call :try_python "%%~fD\python.exe"
-if defined PY (
-  for %%F in ("%PY%") do set "PATH=%%~dpF;%%~dpFScripts;%PATH%"
-  exit /b 0
-)
-echo Nao foi possivel instalar o Python. Instale pelo site https://www.python.org/downloads/
-echo (marque "Add python.exe to PATH") e abra este arquivo de novo.
+rem No parentheses block here: %PATH% may contain "(x86)" and would break it.
+if not defined PY goto py_fail
+for %%F in ("%PY%") do set "PYDIR=%%~dpF"
+set "PATH=%PYDIR%;%PYDIR%Scripts;%PATH%"
+exit /b 0
+:py_fail
+echo Nao foi possivel instalar o Python. Baixe o "Windows installer (64-bit)" (arquivo .exe, nao o .msix)
+echo em https://www.python.org/downloads/windows/ , marque "Add python.exe to PATH" e abra este arquivo de novo.
 exit /b 1
 
 :try_python
@@ -80,13 +88,6 @@ rem Accepts a command only if it really runs Python 3.11+ (the Microsoft Store s
 if defined PY exit /b 0
 "%~1" -c "import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)" >nul 2>&1 && set "PY=%~1"
 exit /b 0
-
-:need_winget
-where winget >nul 2>&1 && exit /b 0
-echo O instalador do Windows (winget) nao esta disponivel neste computador.
-echo Abrindo a pagina de download: %~1
-start "" "%~1"
-exit /b 1
 
 rem =====================================================================
 :erro

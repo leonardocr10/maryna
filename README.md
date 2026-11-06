@@ -21,7 +21,7 @@ Aplicação Angular 19 + Node.js 22 / Express + SQLite embutido + OpenAI Respons
 - `templates/*PRIVADO*`: arquivos originais do usuário para conferência local; **excluídos do Git por .gitignore**. Não distribuir nem usar como fixture em CI.
 
 ## Instalação e execução
-Requisitos no computador: **Node.js 22.13+** e **Python 3.11+**. Se faltarem, o `iniciar.bat` instala os dois pelo winget (instalador do Windows), além dos pacotes Python, da voz local e do `api/.env`. Não precisa de banco de dados instalado: os dados ficam em `api/data/neurolaudos.db` (SQLite embutido no Node).
+Requisitos no computador: **Node.js 22.13+** e **Python 3.11+**. Se faltarem, o `iniciar.bat` baixa e instala os dois sozinho (sites oficiais nodejs.org e python.org, conferidos antes de usar; sem winget e sem administrador, funciona também no Windows Server), além dos pacotes Python, da voz local e do `api/.env`. Não precisa de banco de dados instalado: os dados ficam em `api/data/neurolaudos.db` (SQLite embutido no Node).
 
 - Dois cliques em `iniciar.bat`: abre neste PC (http://localhost:9091) e na rede local (http://<IP-desta-máquina>:9091). Na primeira vez instala as dependências e cria `api/.env` com segredos aleatórios.
 - Equivalente pelo terminal, na raiz: `npm run setup` (uma vez), `npm run dev` ou `npm run dev:lan`, `npm test`.

@@ -6,7 +6,7 @@ import {Api} from './api.service';
 import {WorkTimer} from './work-timer.service';
 import {DropZoneComponent} from './ui/drop-zone.component';
 import {Identity, IdentityFormComponent, emptyIdentity} from './ui/identity-form.component';
-import {SECTIONS, SECTION_STATE, STATUS, SectionState, ageText, brDate, brl, int, words} from './shared';
+import {PERCEPTION_MAX_AGE, SECTIONS, SECTION_STATE, STATUS, SectionState, ageText, ageYears, brDate, brl, int, words} from './shared';
 
 /** Section the AI only writes from the psychologist's own guidance (never in "Gerar laudo"). */
 const MANUAL_KEY = 'conclusao';
@@ -95,9 +95,14 @@ export class EvaluationComponent implements OnDestroy {
   docName(kind: string) { return this.documents.filter(d => d.kind === kind).at(-1)?.filename || ''; }
   docCount() { return (this.docName('base') ? 1 : 0) + (this.docName('anamnesis') ? 1 : 0); }
   docsReady() { return this.docCount() === 2; }
-  available() { const found = new Set((this.inspection?.markers || []).map((m: any) => m.key)); return this.inspection ? SECTIONS.filter(s => found.has(s.id)) : SECTIONS; }
+  /** Sections this person needs. Percepção is for under 17; text already written stays visible. Unknown age: kept. */
+  applicable() {
+    const age = ageYears(this.idModel.birth_date, this.idModel.end_date);
+    return SECTIONS.filter(s => !(s.id === 'percepcao' && age !== null && age >= PERCEPTION_MAX_AGE && !this.text(s.id).trim()));
+  }
+  available() { const found = new Set((this.inspection?.markers || []).map((m: any) => m.key)); return this.inspection ? this.applicable().filter(s => found.has(s.id)) : this.applicable(); }
   withOldText() { return (this.inspection?.markers || []).filter((m: any) => m.existing_paragraphs > 0 && m.key !== DEMAND_KEY).map((m: any) => SECTIONS.find(s => s.id === m.key)?.name || m.key); }
-  missing() { const ids = new Set(this.available().map(s => s.id)); return SECTIONS.filter(s => !ids.has(s.id)).map(s => s.name); }
+  missing() { const ids = new Set(this.available().map(s => s.id)); return this.applicable().filter(s => !ids.has(s.id)).map(s => s.name); }
   isMissing(k: string) { return !!this.inspection && !this.available().some(s => s.id === k); }
   /** Why a section has no place in the base document. */
   missingWhy(k: string) {
@@ -105,7 +110,7 @@ export class EvaluationComponent implements OnDestroy {
     return (this.inspection?.titled_domains || []).includes(domain) ? 'O título existe no arquivo, mas falta o campo "Interpretação" dessa seção.' : 'Essa seção não existe no arquivo base.';
   }
   /** Missing sections stay visible in the review list, in their place. */
-  reviewRows() { return this.inspection ? SECTIONS : this.available(); }
+  reviewRows() { return this.inspection ? this.applicable() : this.available(); }
   section(k: string) { return this.sections.find(s => s.section_key === k); }
   text(k: string) { return this.section(k)?.content || ''; }
   state(k: string): SectionState { const s = this.section(k); return !s?.content?.trim() ? 'pend' : s.status === 'approved' ? 'ap' : 'gen'; }

@@ -45,6 +45,17 @@ export function ageText(birth: string, at?: string) {
   return `${Math.floor(months / 12)} anos`;
 }
 
+/** Whole years at the reference date (today when empty); null when the birth date is unknown. */
+export function ageYears(birth: string, at?: string): number | null {
+  if (!ISO.test(birth || '')) return null;
+  const ref = ISO.test(at || '') ? at! : todayISO();
+  const [by, bm, bd] = birth.split('-').map(Number), [ry, rm, rd] = ref.split('-').map(Number);
+  const months = (ry - by) * 12 + rm - bm - (rd < bd ? 1 : 0);
+  return months < 0 ? null : Math.floor(months / 12);
+}
+/** Percepção is only for people under this age. */
+export const PERCEPTION_MAX_AGE = 17;
+
 export type EvalStatus = 'rs' | 'rv' | 'ap';
 export const STATUS: Record<EvalStatus, {label: string; css: string}> = {rs: {label: 'Rascunho', css: 'idle'}, rv: {label: 'Em revisão', css: 'warn'}, ap: {label: 'Aprovada', css: 'ok'}};
 /** Derived status: all sections approved → Aprovada; some drafted → Em revisão; none → Rascunho. */

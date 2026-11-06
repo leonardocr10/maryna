@@ -98,6 +98,14 @@ export class EvaluationComponent implements OnDestroy {
   available() { const found = new Set((this.inspection?.markers || []).map((m: any) => m.key)); return this.inspection ? SECTIONS.filter(s => found.has(s.id)) : SECTIONS; }
   withOldText() { return (this.inspection?.markers || []).filter((m: any) => m.existing_paragraphs > 0 && m.key !== DEMAND_KEY).map((m: any) => SECTIONS.find(s => s.id === m.key)?.name || m.key); }
   missing() { const ids = new Set(this.available().map(s => s.id)); return SECTIONS.filter(s => !ids.has(s.id)).map(s => s.name); }
+  isMissing(k: string) { return !!this.inspection && !this.available().some(s => s.id === k); }
+  /** Why a section has no place in the base document. */
+  missingWhy(k: string) {
+    const domain = k === 'comportamento_diva' ? 'comportamento' : k;
+    return (this.inspection?.titled_domains || []).includes(domain) ? 'O título existe no arquivo, mas falta o campo "Interpretação" dessa seção.' : 'Essa seção não existe no arquivo base.';
+  }
+  /** Missing sections stay visible in the review list, in their place. */
+  reviewRows() { return this.inspection ? SECTIONS : this.available(); }
   section(k: string) { return this.sections.find(s => s.section_key === k); }
   text(k: string) { return this.section(k)?.content || ''; }
   state(k: string): SectionState { const s = this.section(k); return !s?.content?.trim() ? 'pend' : s.status === 'approved' ? 'ap' : 'gen'; }
@@ -146,7 +154,7 @@ export class EvaluationComponent implements OnDestroy {
         this.idModel = {...this.idModel, birth_date: this.idModel.birth_date || c.birth_date || '', sex: this.idModel.sex || c.sex || '', schooling: this.idModel.schooling || c.schooling || '', start_date: this.idModel.start_date || c.start_date || '', end_date: this.idModel.end_date || c.end_date || ''};
       }
       this.changed.emit();
-      this.api.notify(kind === 'base' ? 'Arquivo base enviado.' : 'Anamnese enviada.');
+      this.api.notify(this.missing().length && this.inspection ? 'Atenção: faltam no documento: ' + this.missing().join(', ') + '.' : kind === 'base' ? 'Arquivo base enviado.' : 'Anamnese enviada.');
     } catch {} finally { this.uploading = ''; }
   }
 
@@ -159,6 +167,8 @@ export class EvaluationComponent implements OnDestroy {
   async useFileDemand() {
     try { await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${DEMAND_KEY}`, {content: this.demandInFile()}); await this.load(); this.changed.emit(); this.api.notify('Agora a demanda é o texto do arquivo.'); } catch {}
   }
+  pendingAuto() { return this.autoKeys().filter(k => this.state(k) === 'pend'); }
+  generatePending() { return this.generateAll(true, this.pendingAuto()); }
   generateDemand() {
     if (this.state(DEMAND_KEY) !== 'pend' && !confirm('Trocar a demanda pelo texto gerado pela IA? O texto atual vai para o histórico.')) return;
     this.regenerate(DEMAND_KEY);
@@ -170,10 +180,10 @@ export class EvaluationComponent implements OnDestroy {
   dotClass(k: string) { const g = this.gen[k]; if (g === 'running') return 'warn pulse'; if (g === 'error') return 'err'; if (g === 'done') return 'ok'; return this.state(k) === 'ap' ? 'ok' : this.state(k) === 'gen' ? 'warn' : ''; }
   rowLabel(k: string) { if (k === DEMAND_KEY && !this.gen[k]) return this.state(k) === 'pend' ? 'Sem texto no arquivo' : this.demandIsFromFile() ? 'Do arquivo enviado' : SECTION_STATE[this.state(k)].label; if (k === MANUAL_KEY && !this.gen[k] && this.state(k) === 'pend') return 'Você gera na etapa 4'; const g = this.gen[k]; if (g === 'running') return 'Gerando…'; if (g === 'pending') return 'Na fila'; if (g === 'error') return 'Erro'; if (g === 'skipped') return 'Não gerada'; return SECTION_STATE[this.state(k)].label; }
 
-  async generateAll(skipConfirm = false) {
+  async generateAll(skipConfirm = false, only?: string[]) {
     if (!this.aiReady) { this.api.notify('Geração pela API desligada. Ative em Configurações.'); return; }
     if (!skipConfirm && this.autoDrafted() && !confirm('Gerar tudo de novo? Os textos atuais serão substituídos (as versões antigas ficam no histórico).')) return;
-    const keys = this.autoKeys();
+    const keys = only || this.autoKeys();
     for (const k of keys) if (!await this.saveInstruction(k)) return;
     this.gen = Object.fromEntries(keys.map(k => [k, 'pending' as Gen]));
     this.generating = true; this.generatingChange.emit(true);
@@ -266,6 +276,7 @@ export class EvaluationComponent implements OnDestroy {
   }
   async download() {
     if (!this.allApproved()) { this.api.notify('Aprove todas as seções para baixar o Word.'); return; }
+    if (this.inspection && this.missing().length && !confirm('O Word NÃO terá estas seções, porque elas faltam no arquivo base:\n\n' + this.missing().join('\n') + '\n\nBaixar assim mesmo?')) return;
     try {
       if (!this.locked()) { await this.api.req('POST', `/evaluations/${this.evaluationId}/approve`, {approveSections: true}); await this.load(); this.changed.emit(); }
       const data = await this.api.blob(`/evaluations/${this.evaluationId}/export`);

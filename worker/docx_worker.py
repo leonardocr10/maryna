@@ -147,7 +147,8 @@ def inspect(path):
    for ch in old:elements[position[ch]]['replaceable']=k
    markers.append({'key':k,'index':i,'label':txt,'existing_paragraphs':sum(1 for ch in old if clean(Paragraph(ch,d).text)),'existing_text':'\n\n'.join(t for t in (Paragraph(ch,d).text.strip() for ch in old) if t)})
  section_ranges(elements,markers)
- return {'elements':elements,'markers':markers,'identification':identification(d),'warnings':['Conferir visualmente a ordem dos marcadores e os resultados.']}
+ titled=sorted({domain_of(e['text'] if e['type']=='p' else ' '.join(x for row in e['rows'] for x in row)) for e in elements}-{None})
+ return {'elements':elements,'markers':markers,'titled_domains':titled,'identification':identification(d),'warnings':['Conferir visualmente a ordem dos marcadores e os resultados.']}
 
 REPORT_FONT='Arial';REPORT_HALF_POINTS='22'  # Arial 11 pt
 def run_props(bold=False,red=False):

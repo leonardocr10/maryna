@@ -215,4 +215,11 @@ class TestWorker(unittest.TestCase):
   g=[e for e in run('inspect',str(self.base))['elements'] if e['type']=='table'][0]['grid']
   self.assertEqual(g,[[{'text':'Título','rowspan':1,'colspan':3}],[{'text':'Bloco','rowspan':2,'colspan':1},{'text':'A','rowspan':1,'colspan':1},{'text':'Média','rowspan':1,'colspan':1}],[{'text':'B','rowspan':1,'colspan':1},{'text':'Média','rowspan':1,'colspan':1}]])
 
+ def test_inspect_reports_titles_without_field(self):
+  d=Document();d.add_paragraph('HABILIDADES INTELECTUAIS E DE INTELIGÊNCIA');d.add_paragraph('MEMÓRIA E APRENDIZAGEM:')
+  d.add_table(rows=1,cols=1).cell(0,0).text='Interpretação e observações clínicas:';d.save(self.base)
+  r=run('inspect',str(self.base))
+  self.assertEqual([m['key'] for m in r['markers']],['memoria'])
+  self.assertEqual(r['titled_domains'],['inteligencia','memoria'])
+
 if __name__=='__main__':unittest.main()

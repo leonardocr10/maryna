@@ -24,6 +24,16 @@
   <div class="grid" [class.closed]="panelClosed">
     <div class="col-main">
 
+      <!-- Sections that have no place in the base document -->
+      <section *ngIf="inspection && missing().length" class="card missing-banner" role="alert">
+        <div>
+          <strong>Faltam no documento: {{missing().join(', ')}}</strong>
+          <p *ngIf="!locked()">Essas seções não serão geradas e não entrarão no Word. Para incluir, envie o arquivo base de novo com elas.</p>
+          <p *ngIf="locked()">Essas seções não entraram no Word. A avaliação está aprovada; para incluí-las, crie uma nova avaliação com o arquivo corrigido.</p>
+        </div>
+        <button *ngIf="!locked() && step!==1" class="btn btn-secondary btn-sm" (click)="goStep(1)">Enviar arquivo corrigido</button>
+      </section>
+
       <!-- 1. Identificação -->
       <section *ngIf="step===0" class="card">
         <div class="card-head"><h2>Identificação</h2><span class="caption">{{idSaving ? 'Salvando…' : locked() ? 'Travada (avaliação aprovada)' : 'Salva automaticamente'}}</span></div>
@@ -42,7 +52,6 @@
             <nl-drop-zone title="Anamnese (psicóloga)" [filename]="docName('anamnesis')" [busy]="uploading==='anamnesis'" [disabled]="locked()" (file)="upload('anamnesis',$event)"></nl-drop-zone>
           </div>
           <p *ngIf="withOldText().length" class="warn-note">Este arquivo já tem texto em: {{withOldText().join(', ')}}. No Word final, esse texto será trocado pelo gerado em cada parte. Tabelas, gráficos e referências não mudam, e o arquivo enviado fica guardado como está.</p>
-          <p *ngIf="inspection && missing().length" class="warn-note">Sem lugar no arquivo base para: {{missing().join(', ')}}. Essas seções serão ignoradas.</p>
           <div class="foot"><button class="btn btn-primary" [disabled]="!docsReady()" (click)="goStep(2)">Continuar para geração →</button></div>
         </div>
       </section>
@@ -59,7 +68,7 @@
 
             <ng-container *ngIf="docsReady()">
               <ng-container *ngIf="!generating && !autoDrafted() && !locked()">
-                <p class="muted">A IA redige {{autoKeys().length}} seções a partir do arquivo base e da anamnese, usando as instruções abaixo. Nomes e dados pessoais são ocultados antes do envio. Tudo é rascunho para sua revisão.</p>
+                <p class="muted">A IA redige {{autoKeys().length}} {{autoKeys().length===1?'seção':'seções'}} a partir do arquivo base e da anamnese, usando as instruções abaixo. Nomes e dados pessoais são ocultados antes do envio. Tudo é rascunho para sua revisão.</p>
                 <p class="caption">A Descrição da demanda vem direto do arquivo enviado, sem IA.<ng-container *ngIf="hasConclusion()"> A Conclusão também não é gerada aqui: na etapa 4 você escreve suas orientações e a IA redige a partir delas.</ng-container></p>
                 <p *ngIf="!aiReady" class="warn-note">A geração pela API está desligada. Ative em Configurações → IA e custos.</p>
                 <div class="foot"><button class="btn btn-primary" (click)="generateAll()">Gerar laudo com IA</button></div>
@@ -73,7 +82,8 @@
                 </ul>
                 <div *ngIf="!generating" class="foot">
                   <ng-container *ngIf="!locked()">
-                    <button class="btn btn-primary" [disabled]="!autoDrafted()" (click)="goStep(3)">Conferir seções →</button>
+                    <button *ngIf="pendingAuto().length" class="btn btn-primary" [disabled]="!aiReady" (click)="generatePending()">Gerar as que faltam ({{pendingAuto().length}})</button>
+                    <button class="btn" [class.btn-primary]="!pendingAuto().length" [class.btn-secondary]="pendingAuto().length" [disabled]="!autoDrafted()" (click)="goStep(3)">Conferir seções →</button>
                     <button class="btn btn-secondary" (click)="generateAll()">Regenerar tudo</button>
                   </ng-container>
                   <p *ngIf="locked()" class="muted">Avaliação aprovada: textos travados.</p>
@@ -126,7 +136,11 @@
 
         <div *ngIf="mode==='secoes'" class="card-body sections">
           <p *ngIf="!drafted()" class="muted">Ainda não há textos. <button class="link" (click)="goStep(2)">Gerar com IA</button></p>
-          <div *ngFor="let s of available(); let i=index" class="sec" [class.open]="open===s.id">
+          <ng-container *ngFor="let s of reviewRows(); let i=index">
+          <div *ngIf="isMissing(s.id)" class="sec sec-missing">
+            <div class="sec-head"><span class="mono n">{{(i+1).toString().padStart(2,'0')}}</span><span class="sec-name">{{s.name}}<small>{{missingWhy(s.id)}}</small></span><span class="badge missing">Falta no documento</span></div>
+          </div>
+          <div *ngIf="!isMissing(s.id)" class="sec" [class.open]="open===s.id">
             <button class="sec-head" (click)="toggle(s.id)">
               <span class="mono n">{{(i+1).toString().padStart(2,'0')}}</span><span class="sec-name">{{s.name}}</span>
               <span [class]="'badge '+SECTION_STATE[state(s.id)].css">{{SECTION_STATE[state(s.id)].label}}</span>
@@ -198,6 +212,7 @@
               </div>
             </div>
           </div>
+          </ng-container>
         </div>
 
         <div [hidden]="mode!=='documento'" class="doc-wrap">

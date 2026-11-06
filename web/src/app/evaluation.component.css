@@ -123,3 +123,10 @@
 .fold-body .tokens { margin-top: 0; }
 .fold-body .file-line:first-child { padding-top: 0; }
 @media (max-width: 1100px) { .sec-body.split { grid-template-columns: minmax(0, 1fr); } .refs { position: static; max-height: none; } }
+.missing-banner { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 14px 18px; background: #fdf3f1; border-color: #efc9c1; }
+.missing-banner strong { font-size: 14px; color: var(--danger); }
+.missing-banner p { font-size: 13px; color: var(--text-2); margin-top: 3px; }
+.sec-missing { background: #fdf8f7; border-style: dashed; border-color: #e3b9b0; }
+.sec-missing .sec-head { cursor: default; }
+.sec-missing .sec-name small { display: block; font-size: 12px; font-weight: 400; color: var(--text-3); }
+.badge.missing { background: #fbe4df; color: var(--danger); }

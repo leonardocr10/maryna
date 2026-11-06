@@ -1,6 +1,4 @@
 import {Injectable, NgZone, inject} from '@angular/core';
-import {HttpClient, HttpHeaders} from '@angular/common/http';
-import {firstValueFrom} from 'rxjs';
 
 /**
  * Reads a section aloud. No AI and nothing leaves the computer:
@@ -12,7 +10,6 @@ import {firstValueFrom} from 'rxjs';
 @Injectable({providedIn: 'root'})
 export class Reader {
   private zone = inject(NgZone);
-  private http = inject(HttpClient);
   readonly rates = [1, 1.5, 2];
   key = '';            // section being read
   paused = false;
@@ -45,25 +42,56 @@ export class Reader {
     this.key = key; this.paused = false; this.loading = true;
     const run = this.run;
     try {
-      let url = this.cache.get(text);
-      if (!url) {
-        const blob = await firstValueFrom(this.http.post('/api/tts', {text}, {headers: new HttpHeaders({Authorization: 'Bearer ' + sessionStorage.getItem('token')}), responseType: 'blob'}));
-        url = URL.createObjectURL(blob);
-        if (this.cache.size > 20) { const [k, u] = this.cache.entries().next().value!; URL.revokeObjectURL(u); this.cache.delete(k); }
-        this.cache.set(text, url);
-      }
-      if (run !== this.run) return;   // stopped while loading
-      const a = new Audio(url);
-      a.playbackRate = this.rate; a.preservesPitch = true;
-      a.ontimeupdate = () => this.zone.run(() => { this.pos = a.duration ? a.currentTime / a.duration : 0; });
-      a.onended = () => this.zone.run(() => { if (this.audio === a) this.stop(); });
-      this.audio = a; this.loading = false;
-      await a.play();
+      const cached = this.cache.get(text);
+      if (cached) { await this.play(new Audio(cached), text); return; }
+      const res = await fetch('/api/tts', {method: 'POST', headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('token')}, body: JSON.stringify({text})});
+      if (!res.ok || !res.body) throw new Error('tts ' + res.status);
+      if (run !== this.run) { res.body.cancel(); return; }   // stopped while loading
+      const type = res.headers.get('Content-Type') || '';
+      // Online voice (MP3) arrives in pieces: play from the first piece instead of waiting for the whole file.
+      if (/audio\/mpeg/.test(type) && typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported('audio/mpeg')) await this.stream(res.body, text, run);
+      else { const url = URL.createObjectURL(await res.blob()); this.remember(text, url); if (run === this.run) await this.play(new Audio(url), text); }
     } catch {
       if (run !== this.run) return;
       this.loading = false;
       this.startBrowserVoice(key, text);   // local API voice missing: Windows voice instead
     }
+  }
+  private remember(text: string, url: string) {
+    if (this.cache.size > 20) { const [k, u] = this.cache.entries().next().value!; URL.revokeObjectURL(u); this.cache.delete(k); }
+    this.cache.set(text, url);
+  }
+  /** Seconds of speech expected for a text at 1x (used for the progress bar while the length is still unknown). */
+  private estimate(text: string) { return Math.max(2, text.split(/\s+/).filter(Boolean).length / 2.4); }
+  private async play(a: HTMLAudioElement, text: string) {
+    const guess = this.estimate(text);
+    a.playbackRate = this.rate; a.preservesPitch = true;
+    a.ontimeupdate = () => this.zone.run(() => { const d = Number.isFinite(a.duration) && a.duration > 0 ? a.duration : guess; this.pos = Math.min(1, a.currentTime / d); });
+    a.onended = () => this.zone.run(() => { if (this.audio === a) this.stop(); });
+    this.audio = a; this.loading = false;
+    await a.play();
+  }
+  /** Feeds the MP3 pieces to the audio element as they arrive; the full file is kept for the next playback. */
+  private async stream(body: ReadableStream<Uint8Array>, text: string, run: number) {
+    const ms = new MediaSource();
+    const a = new Audio(URL.createObjectURL(ms));
+    await new Promise<void>(r => ms.addEventListener('sourceopen', () => r(), {once: true}));
+    const sb = ms.addSourceBuffer('audio/mpeg');
+    const appended = () => new Promise<void>(r => sb.addEventListener('updateend', () => r(), {once: true}));
+    const reader = body.getReader(), parts: Uint8Array[] = [];
+    let started = false;
+    while (true) {
+      const {done, value} = await reader.read();
+      if (run !== this.run) { reader.cancel(); URL.revokeObjectURL(a.src); return; }
+      if (done) break;
+      if (!value?.length) continue;
+      parts.push(value);
+      sb.appendBuffer(value as BufferSource); await appended();
+      if (!started) { started = true; await this.play(a, text); }
+    }
+    if (ms.readyState === 'open') ms.endOfStream();
+    if (!started) throw new Error('empty audio');
+    this.remember(text, URL.createObjectURL(new Blob(parts as BlobPart[], {type: 'audio/mpeg'})));
   }
   pause() {
     this.paused = true;

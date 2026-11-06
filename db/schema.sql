@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS evaluations(
   schooling TEXT NULL,
   start_date TEXT NULL,
   end_date TEXT NULL,
+  model_id TEXT NULL,
   created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 CREATE TABLE IF NOT EXISTS documents(
@@ -97,4 +98,31 @@ CREATE TABLE IF NOT EXISTS audit_logs(
   evaluation_id TEXT,
   action TEXT NOT NULL,
   created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+-- Report models: blank base documents (no patient data) kept as versioned, encrypted files.
+CREATE TABLE IF NOT EXISTS report_models(
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  audience TEXT NOT NULL DEFAULT 'geral' CHECK(audience IN ('infantil','adulto','idoso','geral')),
+  tags_json TEXT NOT NULL DEFAULT '[]',
+  active INTEGER NOT NULL DEFAULT 1,
+  instructions_json TEXT NULL,
+  created_by TEXT,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE TABLE IF NOT EXISTS report_model_versions(
+  id TEXT PRIMARY KEY,
+  model_id TEXT NOT NULL REFERENCES report_models(id),
+  version INTEGER NOT NULL,
+  filename TEXT NOT NULL,
+  storage_path TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  report_json TEXT NOT NULL,
+  structure_json TEXT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  created_by TEXT,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  UNIQUE(model_id,version)
 );

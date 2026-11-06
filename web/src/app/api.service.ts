@@ -36,6 +36,16 @@ export class Api {
     }
   }
 
+  /** GET a file (e.g. a model DOCX) with the session token. */
+  async getBlob(url: string): Promise<Blob> {
+    try { return await firstValueFrom(this.http.get('/api' + url, {...this.opts(), responseType: 'blob'})); }
+    catch (e: any) {
+      let msg = 'Não foi possível baixar o arquivo.';
+      try { msg = JSON.parse(await (e.error as Blob).text()).error || msg; } catch {}
+      this.notify(msg); throw e;
+    }
+  }
+
   async login(email: string, password: string) {
     const x = await this.req<any>('POST', '/login', {email, password});
     sessionStorage.setItem('token', x.token); this.loggedIn.set(true);

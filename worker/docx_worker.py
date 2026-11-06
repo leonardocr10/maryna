@@ -239,11 +239,20 @@ def sha256(path):
 # Only the value after the colon is ever replaced; labels, other text, tables and scores are untouched.
 ID_LABELS=['Nome','Data de Nascimento','Idade','Sexo','Escolaridade','Data de início da avaliação','Data da finalização do laudo']
 def field_spans(text):
- """{label:(start,end)} of each identification value in a paragraph; values end at 3+ spaces, a tab or line end."""
+ """{label:(start,end)} of each identification value in a paragraph; values end at 3+ spaces, a tab, the next label
+ of the same line or line end."""
  spans={}
+ starts=sorted(x.start() for l in ID_LABELS for x in re.finditer(r'(?<![\w])'+re.escape(l)+r'\s*:',text,re.I))
  for label in ID_LABELS:
   m=re.search(r'(?<![\w])'+re.escape(label)+r'\s*:[  ]*(.*?)[  ]*(?=[  ]{3,}|\t|$)',text,re.I)
-  if m:spans[label]=(m.start(1),m.end(1))
+  if not m:continue
+  a,b=m.start(1),m.end(1)
+  # a second label on the same line ends this value ("Data de início da avaliação: - Data da finalização do laudo: -")
+  nxt=next((x for x in starts if a<=x<b),None)
+  if nxt is not None:
+   b=nxt
+   while b>a and text[b-1].isspace():b-=1
+  spans[label]=(a,b)
  return spans
 def identification(doc):
  """Values currently written in the identification lines (before the first section heading)."""

@@ -36,7 +36,9 @@ function namesAfterCue(line, cues, {anyCase}) {
       const lower = strip(word.toLowerCase());
       if (cues.some(c => strip(c) === lower)) continue; // "pediatra Dr Joel"
       if (!word || word.length < 3 || NOT_NAMES.has(lower) || /\d/.test(word)) break;
-      if (!anyCase && !/^\p{Lu}/u.test(word)) break;
+      // Lower-case words end the name, except a last word right after a name ("Dra. Ana borges" at line end):
+      // notes are often typed without capitals, and a surname there must not leave unmasked.
+      if (!anyCase && !/^\p{Lu}/u.test(word)) { if (words.length && j === tokens.length - 1 && /^\p{L}+$/u.test(word)) words.push(word); break; }
       words.push(word);
       if (/[.,;:!?)]$/.test(raw)) break;
     }

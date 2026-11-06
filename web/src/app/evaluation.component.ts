@@ -2,9 +2,13 @@ import {Component, ElementRef, EventEmitter, Input, OnDestroy, Output, ViewChild
 import {CommonModule} from '@angular/common';
 import {FormsModule} from '@angular/forms';
 import {renderAsync} from 'docx-preview';
+import {tablesToPng} from './table-image';
 import {Api} from './api.service';
 import {WorkTimer} from './work-timer.service';
 import {Reader} from './reader.service';
+import {ConfirmService} from './confirm.service';
+import {IconComponent} from './ui/icon.component';
+import {FilterSelectComponent} from './ui/filter-select.component';
 import {DropZoneComponent} from './ui/drop-zone.component';
 import {Identity, IdentityFormComponent, emptyIdentity} from './ui/identity-form.component';
 import {CONCLUSION_GUIDANCE, OPTIONAL_SECTIONS, PERCEPTION_MAX_AGE, SECTIONS, SECTION_STATE, STATUS, SectionState, ageText, ageYears, brDate, brl, int, words} from './shared';
@@ -30,7 +34,7 @@ async function writeClipboard(text: string): Promise<boolean> {
 @Component({
   selector: 'nl-evaluation',
   standalone: true,
-  imports: [CommonModule, FormsModule, DropZoneComponent, IdentityFormComponent],
+  imports: [CommonModule, FormsModule, DropZoneComponent, IdentityFormComponent, IconComponent, FilterSelectComponent],
   templateUrl: './evaluation.component.html',
   styleUrl: './evaluation.component.css',
 })
@@ -38,9 +42,11 @@ export class EvaluationComponent implements OnDestroy {
   private api = inject(Api);
   private timer = inject(WorkTimer);
   reader = inject(Reader);
+  private confirm = inject(ConfirmService);
   @ViewChild('previewBox') previewBox?: ElementRef<HTMLDivElement>;
   @Output() changed = new EventEmitter<void>();
   @Output() deleted = new EventEmitter<void>();
+  @Output() back = new EventEmitter<void>();
   @Output() generatingChange = new EventEmitter<boolean>();
   @Input() autoGenerate = false;
   @Input() set id(v: string) { if (v && v !== this.evaluationId) { this.evaluationId = v; this.load(true); } }
@@ -53,9 +59,6 @@ export class EvaluationComponent implements OnDestroy {
   current: any = null; documents: any[] = []; sections: any[] = []; usage: any = null; inspection: any = null;
   references: Record<string, any[]> = {}; refOpen = '';
   costOpen = false; filesOpen = false;
-  // Right column: the user's choice is remembered; opening the tables folds it only while they are open.
-  panelClosed = (() => { try { return localStorage.getItem('nl_panel_closed') === '1'; } catch { return false; } })();
-  private panelFoldedByTables = false;
   instructions: any[] = []; instrDraft: Record<string, string> = {}; instrOpen = '';
   privacy: any = null; newTerm = '';
   idModel: Identity = emptyIdentity(); private idTimer: any; idSaving = false;
@@ -79,6 +82,7 @@ export class EvaluationComponent implements OnDestroy {
         const c = this.current;
         this.idModel = {name: c.patient_name || '', birth_date: c.birth_date || '', sex: c.sex || '', schooling: c.schooling || '', start_date: c.start_date || '', end_date: c.end_date || ''};
         this.closeRefs(); this.inspection = null; this.privacy = null; this.gen = {}; this.open = ''; this.editing = ''; this.mode = 'secoes';
+        this.loadModels();
         const s = await this.api.req('GET', '/ai/settings').catch(() => null);
         this.aiReady = !!(s && s.enabled && s.configured && s.privacy_gate);
         this.step = !this.docsReady() ? 1 : !this.autoDrafted() ? 2 : 3;
@@ -103,8 +107,8 @@ export class EvaluationComponent implements OnDestroy {
   async loadInstructions() {
     try {
       const r = await this.api.req('GET', `/evaluations/${this.evaluationId}/instructions`);
-      this.instructions = r.sections;
-      this.instrDraft = Object.fromEntries(r.sections.map((x: any) => [x.key, x.custom || (x.key === MANUAL_KEY ? CONCLUSION_GUIDANCE : x.default)]));
+      this.instructions = r.sections; this.instrModel = r.model || null;
+      this.instrDraft = Object.fromEntries(r.sections.map((x: any) => [x.key, x.custom || this.inherited(x)]));
     } catch {}
   }
 
@@ -148,7 +152,7 @@ export class EvaluationComponent implements OnDestroy {
   status() { return this.allApproved() ? STATUS.ap : this.autoDrafted() ? STATUS.rv : STATUS.rs; }
   summary() {
     const c = this.current; if (!c) return '';
-    return [ageText(c.birth_date, c.end_date), c.sex, c.schooling, c.start_date ? 'Início ' + brDate(c.start_date) : ''].filter(Boolean).join(' · ');
+    return [ageText(c.birth_date, c.end_date), c.sex, c.schooling].filter(Boolean).join(' · ');
   }
   warnings(k: string): string[] { try { return JSON.parse(this.section(k)?.source_summary || '[]'); } catch { return []; } }
   stepDone(i: number) { return [this.idModel.name.trim().length >= 2, this.docsReady(), this.autoKeys().length > 0 && this.autoDrafted() === this.autoKeys().length, this.allApproved()][i]; }
@@ -212,9 +216,11 @@ export class EvaluationComponent implements OnDestroy {
   }
   pendingAuto() { return this.autoKeys().filter(k => this.state(k) === 'pend'); }
   generatePending() { return this.generateAll(true, this.pendingAuto()); }
-  generateDemand() {
-    if (this.state(DEMAND_KEY) !== 'pend' && !confirm('Trocar a demanda pelo texto gerado pela IA? O texto atual vai para o histórico.')) return;
-    this.regenerate(DEMAND_KEY);
+  async generateDemand() {
+    if (this.state(DEMAND_KEY) !== 'pend' && !await this.confirm.ask({tone: 'review', title: 'Trocar a demanda pelo texto da IA?',
+      body: 'A Descrição da demanda atual será substituída por um texto gerado pela IA a partir da anamnese.',
+      facts: ['O texto atual vai para o histórico', 'A seção volta para revisão'], ok: 'Gerar com IA'})) return;
+    this.regenerate(DEMAND_KEY, false, true);
   }
   hasConclusion() { return this.available().some(s => s.id === MANUAL_KEY); }
   genKeys() { return Object.keys(this.gen); }
@@ -225,7 +231,9 @@ export class EvaluationComponent implements OnDestroy {
 
   async generateAll(skipConfirm = false, only?: string[]) {
     if (!this.aiReady) { this.api.notify('Geração pela API desligada. Ative em Configurações.'); return; }
-    if (!skipConfirm && this.autoDrafted() && !confirm('Gerar tudo de novo? Os textos atuais serão substituídos (as versões antigas ficam no histórico).')) return;
+    if (!skipConfirm && this.autoDrafted() && !await this.confirm.ask({tone: 'review', title: 'Gerar tudo de novo?',
+      body: 'Os textos atuais de todas as seções geradas pela IA serão substituídos por novas versões. Edições feitas nelas serão perdidas.',
+      facts: ['As versões anteriores ficam no histórico', 'Todas as seções voltam para revisão', 'O custo entra em Custo da IA desta avaliação'], ok: 'Regenerar tudo'})) return;
     const keys = only || this.autoKeys();
     for (const k of keys) if (!await this.saveInstruction(k)) return;
     this.gen = Object.fromEntries(keys.map(k => [k, 'pending' as Gen]));
@@ -241,20 +249,43 @@ export class EvaluationComponent implements OnDestroy {
   }
 
   instruction(k: string) { return this.instructions.find(x => x.key === k); }
+  /** Model of this evaluation (name for the screen), from the instructions answer. */
+  instrModel: {id: string; name: string} | null = null;
+  /** What applies when this evaluation has no instruction of its own: the model's, else the system default. */
+  inherited(x: any) { return x?.model || (x?.key === MANUAL_KEY ? CONCLUSION_GUIDANCE : x?.default) || ''; }
   isCustom(k: string) { return !!this.instruction(k)?.custom; }
+  isFromModel(k: string) { const x = this.instruction(k); return !x?.custom && !!x?.model; }
+  hasDanger(mc: any) { return (mc?.items || []).some((i: any) => i.level === 'danger'); }
   customCount() { return this.instructions.filter(x => x.custom).length; }
   /** Returns false when the instruction could not be saved, so nothing is generated with an old one. */
   async saveInstruction(k: string, text = this.instrDraft[k]) {
     const ins = this.instruction(k); if (!ins || this.locked()) return true;
     const value = (text || '').trim();
-    if ((ins.custom || (k === MANUAL_KEY ? '' : ins.default)) === value) return true;
+    if ((ins.custom || this.inherited(ins)) === value) return true;
     try {
-      const r = await this.api.req('PUT', `/evaluations/${this.evaluationId}/instructions/${k}`, {prompt: value && value !== ins.default ? value : null});
-      ins.custom = r.custom; this.instrDraft[k] = r.custom || (k === MANUAL_KEY ? CONCLUSION_GUIDANCE : ins.default);
+      const r = await this.api.req('PUT', `/evaluations/${this.evaluationId}/instructions/${k}`, {prompt: value && value !== this.inherited(ins) ? value : null});
+      ins.custom = r.custom; this.instrDraft[k] = r.custom || this.inherited(ins);
       return true;
     } catch { return false; }
   }
-  async resetInstruction(k: string) { const ins = this.instruction(k); if (!ins) return; this.instrDraft[k] = ins.default; await this.saveInstruction(k, ins.default); }
+  async resetInstruction(k: string) { const ins = this.instruction(k); if (!ins) return; this.instrDraft[k] = this.inherited(ins); await this.saveInstruction(k, this.inherited(ins)); }
+
+  // ---------- report model of this evaluation ----------
+  models: {value: string; label: string}[] = [];
+  async loadModels() {
+    try { const list: any[] = await this.api.req('GET', '/models'); this.models = [{value: '', label: 'Sem modelo'}, ...list.filter(m => m.active || m.id === this.current?.model_id).map(m => ({value: m.id, label: m.name}))]; } catch {}
+  }
+  /** Changing the model changes the default instructions and the comparison of the base document. */
+  async setModel(id: string) {
+    if ((this.current?.model_id || '') === id) return;
+    try {
+      await this.api.req('PUT', `/evaluations/${this.evaluationId}/model`, {model_id: id || null});
+      this.current.model_id = id || null;
+      await this.loadInstructions();
+      if (this.docsReady()) await this.inspect();
+      this.api.notify(id ? 'Modelo definido. As instruções dele passam a valer nesta avaliação.' : 'Avaliação sem modelo.');
+    } catch {}
+  }
 
   // privacy (pseudonymisation list)
   privacyList() { const seen = new Set<string>(); return (this.privacy?.terms || []).filter((t: any) => { const key = t.ignored ? 'off:' + t.value : t.placeholder; if (seen.has(key)) return false; seen.add(key); return true; }); }
@@ -266,28 +297,38 @@ export class EvaluationComponent implements OnDestroy {
   removeTerm(v: string) { this.savePrivacy(this.extraTerms().filter((x: string) => x !== v), this.ignoredTerms()); }
 
   // ---------- step 4: review ----------
-  togglePanel() {
-    this.panelClosed = !this.panelClosed; this.panelFoldedByTables = false;
-    try { localStorage.setItem('nl_panel_closed', this.panelClosed ? '1' : '0'); } catch {}
+  // Reference tables open below the section text (read-only, from the base document).
+  toggleRefs(k: string) { this.refOpen = this.refOpen === k ? '' : k; }
+  closeRefs() { this.refOpen = ''; }
+  /** Section shown in the review editor: the chosen one, or the first in the list. */
+  cur() { const rows = this.reviewRows(); return rows.some(s => s.id === this.open) ? this.open : rows[0]?.id || ''; }
+  select(k: string) { if (this.cur() !== k) this.toggle(k); }
+  sourceLabel(k: string) {
+    if (k === DEMAND_KEY || k === 'anamnesis') return 'escrita a partir da anamnese';
+    if (k === MANUAL_KEY) return 'escrita a partir das seções de resultados';
+    if (k === 'recomendacoes') return 'escrita a partir das seções do laudo';
+    return 'escrita a partir das tabelas do arquivo base';
   }
-  toggleRefs(k: string) {
-    if (this.refOpen === k) { this.closeRefs(); return; }
-    if (!this.panelClosed) { this.panelClosed = true; this.panelFoldedByTables = true; }
-    this.refOpen = k;
-  }
-  closeRefs() {
-    this.refOpen = '';
-    if (this.panelFoldedByTables) { this.panelClosed = false; this.panelFoldedByTables = false; }
-  }
-  toggle(k: string) { this.reader.stop(); this.closeRefs(); this.open = this.open === k ? '' : k; this.editing = ''; this.sectionInstr = ''; }
-  startEdit(k: string) { this.reader.stop(); this.editing = k; this.editText = this.text(k); this.sectionInstr = ''; }
+  toggle(k: string) { this.reader.stop(); this.closeRefs(); this.gptOpen = ''; this.open = this.open === k ? '' : k; this.editing = ''; this.sectionInstr = ''; }
+  startEdit(k: string) { this.reader.stop(); this.editing = k; this.editText = this.text(k); this.sectionInstr = ''; setTimeout(() => (document.querySelector('textarea.draft.editing') as HTMLTextAreaElement | null)?.focus()); }
   async saveEdit(k: string) {
     if (!this.editText.trim()) { this.api.notify('O texto não pode ficar vazio.'); return; }
     try { await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content: this.editText}); this.editing = ''; await this.load(); this.changed.emit(); this.api.notify('Texto salvo. A seção voltou para revisão.'); } catch {}
   }
   openInstr(k: string) { this.sectionInstr = this.sectionInstr === k ? '' : k; this.editing = ''; }
-  async regenerate(k: string, withInstruction = false) {
+  async regenerate(k: string, withInstruction = false, skipConfirm = false) {
     if (!this.aiReady) { this.api.notify('Geração pela API desligada. Ative em Configurações.'); return; }
+    if (!skipConfirm && this.state(k) !== 'pend') {
+      const name = this.available().find(x => x.id === k)?.name || 'esta seção';
+      const instr = (this.instrDraft[k] || '').trim();
+      const ok = await this.confirm.ask({tone: 'review',
+        title: withInstruction ? 'Regenerar com a sua instrução?' : 'Regenerar esta seção?',
+        body: `O texto atual de "${name}" será substituído por uma nova versão gerada pela IA. Edições feitas nesta seção serão perdidas e ela volta para revisão.`,
+        quote: withInstruction && instr ? {label: 'Instrução', text: instr.length > 400 ? instr.slice(0, 400) + '…' : instr} : undefined,
+        facts: ['Usa só os dados desta seção no arquivo base', 'A versão anterior fica no histórico', 'O custo entra em Custo da IA desta avaliação'],
+        ok: withInstruction ? 'Regenerar com instrução' : 'Regenerar'});
+      if (!ok) return;
+    }
     if (withInstruction && !await this.saveInstruction(k)) return;
     this.gen = {[k]: 'running'}; this.generating = true; this.generatingChange.emit(true);
     try { await this.api.req('POST', `/evaluations/${this.evaluationId}/generate/${k}`, {notes: ''}); this.gen[k] = 'done'; await this.load(); this.sectionInstr = ''; this.api.notify('Seção regenerada. Revise o texto.'); }
@@ -297,8 +338,11 @@ export class EvaluationComponent implements OnDestroy {
   async generateConclusion() {
     const text = (this.instrDraft[MANUAL_KEY] || '').trim();
     if (text.length < 10) { this.api.notify('Escreva suas orientações para a conclusão (o que você concluiu e quer destacar).'); return; }
-    if (this.state(MANUAL_KEY) !== 'pend' && !confirm('Gerar a conclusão de novo com estas orientações? O texto atual vai para o histórico.')) return;
-    await this.regenerate(MANUAL_KEY, true);
+    if (this.state(MANUAL_KEY) !== 'pend' && !await this.confirm.ask({tone: 'review', title: 'Gerar a conclusão de novo?',
+      body: 'A conclusão atual será substituída por uma nova versão escrita a partir das suas orientações e dos textos das seções de resultados.',
+      quote: {label: 'Suas orientações', text: text.length > 400 ? text.slice(0, 400) + '…' : text},
+      facts: ['O texto atual vai para o histórico', 'A conclusão volta para revisão'], ok: 'Gerar de novo'})) return;
+    await this.regenerate(MANUAL_KEY, true, true);
   }
   async approveAndNext(k: string) {
     try {
@@ -314,32 +358,78 @@ export class EvaluationComponent implements OnDestroy {
   async approveAll() {
     const pending = this.available().filter(s => this.state(s.id) === 'pend');
     if (pending.length) { this.api.notify('Gere ou escreva todas as seções antes de aprovar: ' + pending.map(s => s.name).join(', ')); return; }
-    if (!confirm('Aprovar todas as seções? Confirme que você revisou o laudo. Depois de aprovado, os textos ficam travados.')) return;
+    if (!await this.confirm.ask({title: 'Aprovar todas as seções?', body: 'Confirme que você revisou o laudo inteiro. Depois de aprovado, os textos ficam travados e o Word pode ser baixado.', ok: 'Aprovar todas'})) return;
     try { await this.api.req('POST', `/evaluations/${this.evaluationId}/approve`, {approveSections: true}); await this.load(); this.changed.emit(); this.api.notify('Todas as seções aprovadas. Já dá para baixar o Word.'); } catch {}
   }
-  async download() {
-    if (!this.allApproved()) { this.api.notify('Aprove todas as seções para baixar o Word.'); return; }
-    if (this.inspection && this.missing().length && !confirm('O Word NÃO terá estas seções, porque elas faltam no arquivo base:\n\n' + this.missing().join('\n') + '\n\nBaixar assim mesmo?')) return;
+  /** Word or PDF of the approved report (the PDF is the same Word converted on this computer). */
+  exporting: '' | 'docx' | 'pdf' = '';
+  async download(format: 'docx' | 'pdf' = 'docx') {
+    if (this.exporting) return;
+    if (!this.allApproved()) { this.api.notify(format === 'pdf' ? 'Aprove todas as seções para baixar o PDF.' : 'Aprove todas as seções para baixar o Word.'); return; }
+    if (this.inspection && this.missing().length && !await this.confirm.ask({tone: 'danger', title: 'Baixar sem estas seções?',
+      body: 'O Word não terá as seções abaixo, porque elas faltam no arquivo base.', facts: this.missing(), ok: 'Baixar assim mesmo'})) return;
+    this.exporting = format;
     try {
       if (!this.locked()) { await this.api.req('POST', `/evaluations/${this.evaluationId}/approve`, {approveSections: true}); await this.load(); this.changed.emit(); }
-      const data = await this.api.blob(`/evaluations/${this.evaluationId}/export`);
+      if (format === 'pdf') this.api.notify('Gerando o PDF…');
+      const data = await this.api.blob(`/evaluations/${this.evaluationId}/${format === 'pdf' ? 'export.pdf' : 'export'}`);
       const url = URL.createObjectURL(data), a = document.createElement('a');
-      a.href = url; a.download = 'laudo-' + (this.current?.patient_name || 'revisado').replace(/[^\p{L}\p{N}]+/gu, '-') + '.docx'; a.click(); URL.revokeObjectURL(url);
-      this.api.notify('Word baixado.');
-    } catch {}
+      a.href = url; a.download = 'laudo-' + (this.current?.patient_name || 'revisado').replace(/[^\p{L}\p{N}]+/gu, '-') + '.' + format; a.click(); URL.revokeObjectURL(url);
+      this.api.notify(format === 'pdf' ? 'PDF baixado.' : 'Word baixado.');
+    } catch {} finally { this.exporting = ''; }
   }
+  // Document preview zoom (50–150%) and page count from the rendered Word.
+  zoom = 0.8; pageCount = 0;
+  setZoom(d: number) { this.zoom = Math.min(1.5, Math.max(0.5, Math.round((this.zoom + d) * 10) / 10)); }
+  /** Approving this one leaves nothing else to review. */
+  isLastPending(k: string) { return !this.available().some(s => s.id !== k && this.state(s.id) !== 'ap'); }
   showDocument() { this.closeRefs(); this.step = 3; this.mode = 'documento'; setTimeout(() => this.renderPreview()); }
   async renderPreview() {
     const box = this.previewBox?.nativeElement; if (!box) return;
     if (!this.docName('base')) { box.innerHTML = ''; return; }
     this.previewLoading = true;
-    try { const data = await this.api.blob(`/evaluations/${this.evaluationId}/preview`); box.innerHTML = ''; await renderAsync(data, box, undefined, {className: 'docx', inWrapper: true, ignoreLastRenderedPageBreak: true}); }
+    try { const data = await this.api.blob(`/evaluations/${this.evaluationId}/preview`); box.innerHTML = ''; await renderAsync(data, box, undefined, {className: 'docx', inWrapper: true, ignoreLastRenderedPageBreak: true}); this.pageCount = box.querySelectorAll('section.docx').length; }
     catch {} finally { this.previewLoading = false; }
   }
-  // manual mode (ChatGPT web)
-  async copyPrompt(k: string) {
-    try { const r = await this.api.req('POST', `/evaluations/${this.evaluationId}/prompt/${k}`, k === MANUAL_KEY ? {notes: (this.instrDraft[k] || '').trim()} : {}); await writeClipboard(r.text); window.open('https://chatgpt.com/', 'chatgpt'); this.api.notify(`Pedido copiado (${r.hidden} dados ocultados). Cole no ChatGPT.`); } catch {}
+  // ---------- ChatGPT (manual mode) ----------
+  // The request carries this section's own tables/text and the instruction, with names replaced by markers (API side).
+  gptOpen = ''; gptText = ''; gptHidden = 0; gptLoading = ''; gptCopied = false;
+  /** Builds the request, copies it, opens ChatGPT and shows the panel to copy again or paste the answer back. */
+  async openGpt(k: string) {
+    if (this.gptLoading) return;
+    this.gptLoading = k;
+    try {
+      // An instruction typed but not saved yet must go in the request.
+      if (k !== MANUAL_KEY && !await this.saveInstruction(k)) return;
+      const r = await this.api.req('POST', `/evaluations/${this.evaluationId}/prompt/${k}`, k === MANUAL_KEY ? {notes: (this.instrDraft[k] || '').trim()} : {});
+      this.gptOpen = k; this.gptText = r.text; this.gptHidden = r.hidden || 0;
+      this.gptCopied = await writeClipboard(r.text);
+      const w = window.open('https://chatgpt.com/', 'chatgpt');
+      this.api.notify(this.gptCopied ? (w ? 'Pedido copiado. No ChatGPT, cole com Ctrl+V.' : 'Pedido copiado. O navegador bloqueou a nova aba: use Abrir ChatGPT.') : 'Não deu para copiar sozinho: use Copiar pedido.');
+    } catch {} finally { this.gptLoading = ''; }
   }
+  async copyGpt() { this.gptCopied = await writeClipboard(this.gptText); this.api.notify(this.gptCopied ? 'Pedido copiado.' : 'Não foi possível copiar. Selecione o texto e use Ctrl+C.'); }
+  goGpt() { window.open('https://chatgpt.com/', 'chatgpt'); }
+  /** Reference tables as one PNG in the clipboard (to paste into ChatGPT as an image); saved as a file if copying images is blocked. */
+  async copyTablesImage(k: string) {
+    const png = tablesToPng(this.refs(k));
+    try {
+      await navigator.clipboard.write([new ClipboardItem({'image/png': png.then(b => { if (!b) throw new Error('empty'); return b; })})]);
+      this.api.notify('Tabelas copiadas como imagem. No ChatGPT, cole com Ctrl+V junto com o pedido.');
+    } catch {
+      const b = await png.catch(() => null); if (!b) { this.api.notify('Não foi possível montar a imagem das tabelas.'); return; }
+      const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'tabelas-da-secao.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      this.api.notify('O navegador não deixou copiar a imagem: ela foi baixada. Arraste o arquivo para o ChatGPT.');
+    }
+  }
+  /** Opens the editor with the answer from the clipboard (or empty, to paste with Ctrl+V). */
+  async pasteGptAnswer(k: string) {
+    this.startEdit(k);
+    try { const t = (await navigator.clipboard.readText()).trim(); if (t && t !== this.gptText.trim()) { this.editText = t; this.api.notify('Resposta colada. Revise e salve a edição.'); return; } } catch {}
+    setTimeout(() => (document.querySelector('textarea.draft.editing') as HTMLTextAreaElement | null)?.select(), 30);
+    this.api.notify('Cole a resposta do ChatGPT com Ctrl+V (substitui o texto) e salve a edição.');
+  }
+
   /** Copies the section text ready to paste in Word: topic titles without "##", paragraphs separated by a blank line. */
   copied = ''; private copiedTimer: any;
   async copyText(k: string) { await this.copy(k, this.paragraphs(this.text(k)).map(p => p.text).join('\n\n')); }
@@ -356,7 +446,7 @@ export class EvaluationComponent implements OnDestroy {
 
   async remove() {
     if (this.generating) return;
-    if (!confirm(`Excluir a avaliação de ${this.current?.patient_name}?\n\nOs documentos enviados e os textos serão apagados definitivamente.`)) return;
+    if (!await this.confirm.ask({tone: 'danger', title: 'Excluir esta avaliação?', body: `A avaliação de ${this.current?.patient_name || 'este paciente'} será apagada definitivamente.`, facts: ['Os documentos enviados serão apagados', 'Os textos e o histórico serão apagados', 'Não é possível desfazer'], ok: 'Excluir avaliação'})) return;
     try { await this.api.req('DELETE', '/evaluations/' + this.evaluationId); this.api.notify('Avaliação excluída.'); this.deleted.emit(); } catch {}
   }
   goStep(i: number) { if (i !== 3) this.closeRefs(); this.step = i; if (i === 3 && this.mode === 'documento') setTimeout(() => this.renderPreview()); }

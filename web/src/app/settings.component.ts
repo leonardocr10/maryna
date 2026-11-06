@@ -5,21 +5,40 @@ import {Api} from './api.service';
 import {FilterSelectComponent} from './ui/filter-select.component';
 import {MODEL_OPTIONS, SECTIONS, brDate, brl, int, withCurrent} from './shared';
 import {WorkTimer, duration} from './work-timer.service';
+import {ThemeService} from './theme.service';
+import {IconComponent} from './ui/icon.component';
 
 /** Settings with vertical tabs: Minha conta / IA e custos. */
 @Component({
   selector: 'nl-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule, FilterSelectComponent],
+  imports: [CommonModule, FormsModule, FilterSelectComponent, IconComponent],
   template: `
-<p class="crumb">Configurações</p>
-<h1>Configurações</h1>
+<div class="pagehead"><span class="hicon"><nl-icon name="gear"/></span><div><h1>Configurações</h1><p>Conta, inteligência artificial, custos, tempo de trabalho e aparência.</p></div></div>
 <div class="layout">
-  <nav class="tabs">
-    <button [class.on]="tab==='conta'" (click)="tab='conta'"><strong>Minha conta</strong><span>Senha de acesso</span></button>
-    <button [class.on]="tab==='ia'" (click)="tab='ia';load()"><strong>IA e custos</strong><span>Modelo, geração e gastos</span></button>
-    <button [class.on]="tab==='tempo'" (click)="tab='tempo';timer.loadStats()"><strong>Tempo</strong><span>Média por avaliação</span></button>
+  <nav class="tabs card" role="tablist" aria-label="Seções das configurações">
+    <button type="button" role="tab" [attr.aria-selected]="tab==='conta'" [class.on]="tab==='conta'" (click)="tab='conta'"><span class="vi"><nl-icon name="user"/></span><span><strong>Minha conta</strong><span>Senha de acesso</span></span></button>
+    <button type="button" role="tab" [attr.aria-selected]="tab==='ia'" [class.on]="tab==='ia'" (click)="tab='ia';load()"><span class="vi"><nl-icon name="spark"/></span><span><strong>IA e custos</strong><span>Modelo, geração e gastos</span></span></button>
+    <button type="button" role="tab" [attr.aria-selected]="tab==='tempo'" [class.on]="tab==='tempo'" (click)="tab='tempo';timer.loadStats()"><span class="vi"><nl-icon name="clock"/></span><span><strong>Tempo</strong><span>Média por avaliação</span></span></button>
+    <button type="button" role="tab" [attr.aria-selected]="tab==='aparencia'" [class.on]="tab==='aparencia'" (click)="tab='aparencia'"><span class="vi"><nl-icon name="sun"/></span><span><strong>Aparência</strong><span>Tema claro ou escuro</span></span></button>
   </nav>
+
+  <div class="panel" *ngIf="tab==='aparencia'">
+    <section class="card">
+      <div class="card-head"><h2>Tema</h2></div>
+      <div class="card-body">
+        <p class="muted small">Escolha como o NeuroLaudos aparece neste navegador. Também dá para trocar pelo seletor no topo.</p>
+        <div class="themes" role="radiogroup" aria-label="Tema">
+          <button type="button" role="radio" class="tcard light" [attr.aria-checked]="theme.theme()==='light'" (click)="theme.set('light')">
+            <span class="mini"><i class="mside"></i><span class="mbody"><i class="mbar p"></i><i class="mbar"></i><i class="mbar"></i><i class="mbar short"></i></span></span>
+            <b><nl-icon name="sun"/> Claro</b></button>
+          <button type="button" role="radio" class="tcard dark" [attr.aria-checked]="theme.theme()==='dark'" (click)="theme.set('dark')">
+            <span class="mini"><i class="mside"></i><span class="mbody"><i class="mbar p"></i><i class="mbar"></i><i class="mbar"></i><i class="mbar short"></i></span></span>
+            <b><nl-icon name="moon"/> Escuro</b></button>
+        </div>
+      </div>
+    </section>
+  </div>
 
   <div class="panel" *ngIf="tab==='tempo'">
     <div class="costs">
@@ -132,14 +151,30 @@ import {WorkTimer, duration} from './work-timer.service';
   </div>
 </div>`,
   styles: [`
-.crumb{font-size:12px;color:var(--caption);margin-bottom:6px}
-h1{font-size:26px;font-weight:700;margin-bottom:20px}
-.layout{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap}
-.tabs{width:220px;flex:none;display:flex;flex-direction:column;gap:6px}
-.tabs button{display:flex;flex-direction:column;gap:2px;padding:12px 14px;border-radius:10px;border:1px solid transparent;background:none;text-align:left;cursor:pointer;font-family:var(--font)}
-.tabs button strong{font-size:14px;font-weight:600;color:var(--text)}
-.tabs button span{font-size:12px;color:var(--caption)}
-.tabs button.on{background:#fff;border-color:var(--border-card)}
+nl-icon{--ico-size:16px}
+.layout{display:grid;grid-template-columns:260px minmax(0,1fr);gap:16px;align-items:start}
+.tabs{padding:10px;display:flex;flex-direction:column;gap:4px}
+.tabs button{display:flex;gap:12px;align-items:center;padding:12px;border-radius:var(--radius-sm);border:1px solid transparent;background:none;text-align:left;cursor:pointer;font-family:var(--font);color:var(--text)}
+.tabs button:hover{background:var(--chip)}
+.tabs button:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.tabs .vi{width:36px;height:36px;border-radius:var(--radius-sm);display:grid;place-items:center;background:var(--chip);color:var(--text-2);flex:none}
+.tabs button strong{display:block;font-size:14px;font-weight:600}
+.tabs button span span{display:block;font-size:12px;color:var(--caption)}
+.tabs button.on{background:var(--primary-soft);border-color:var(--primary-border)}
+.tabs button.on .vi{background:var(--primary);color:var(--on-primary)}
+.tabs button.on strong{color:var(--primary-text)}
+.themes{display:grid;grid-template-columns:repeat(2,minmax(0,240px));gap:14px;margin-top:14px}
+.tcard{border:1.5px solid var(--border-card);border-radius:var(--radius-lg);padding:10px;background:var(--card);cursor:pointer;text-align:left;font-family:var(--font);color:var(--text);display:flex;flex-direction:column;gap:10px}
+.tcard[aria-checked="true"]{border-color:var(--primary);box-shadow:0 0 0 3px var(--ring)}
+.tcard:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.mini{height:120px;border-radius:var(--radius-sm);display:grid;grid-template-columns:52px 1fr;overflow:hidden;border:1px solid var(--border-card)}
+.mini i{display:block}
+.mside{background:#0c4a43}
+.mbody{padding:10px;display:flex;flex-direction:column;gap:6px}
+.mbar{height:8px;border-radius:4px}.mbar.short{width:70%}
+.light .mbody{background:#f4f7f6}.light .mbar{background:#e3e9e7}.light .mbar.p{background:#0f6f5e;width:40%}
+.dark .mside{background:#0b1f1c}.dark .mbody{background:#0e1615}.dark .mbar{background:#263533}.dark .mbar.p{background:#3bb89c;width:40%}
+.tcard b{display:flex;gap:8px;align-items:center;font-size:14px}
 .panel{flex:1;min-width:min(480px,100%);display:flex;flex-direction:column;gap:16px}
 .form{display:flex;flex-direction:column;gap:16px;max-width:520px}
 .small{font-size:13px}
@@ -158,7 +193,7 @@ h1{font-size:26px;font-weight:700;margin-bottom:20px}
 .pill.ok{background:var(--ok-bg);color:var(--ok-fg)}
 .model{max-width:320px}
 .row{display:flex;gap:10px;flex-wrap:wrap}
-.test{border:1px solid #f0c9c2;background:#fdf3f1;border-radius:10px;padding:14px 16px}
+.test{border:1px solid var(--danger-border);background:var(--danger-bg);border-radius:10px;padding:14px 16px}
 .test.ok{border-color:var(--primary-border);background:var(--primary-soft)}
 .test-title{font-weight:600;margin-bottom:8px}
 .test ul{list-style:none;padding:0;margin:0 0 10px;display:flex;flex-direction:column;gap:8px}
@@ -170,13 +205,13 @@ h1{font-size:26px;font-weight:700;margin-bottom:20px}
 .period{width:170px}
 .seg{display:inline-flex;flex-wrap:wrap;background:var(--chip);border-radius:8px;padding:3px;margin-bottom:14px}
 .seg button{border:0;background:none;padding:6px 12px;border-radius:6px;font:500 13px var(--font);color:var(--text-2);cursor:pointer}
-.seg button.on{background:#fff;color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.seg button.on{background: var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.08)}
 .table-wrap{overflow:auto;border:1px solid var(--border-card);border-radius:10px}
 table{width:100%;border-collapse:collapse;font-size:13px}
-th{font-size:12px;font-weight:600;color:var(--caption);text-align:left;padding:10px 12px;background:#f8faf9;border-bottom:1px solid var(--border-card);white-space:nowrap}
+th{font-size:12px;font-weight:600;color:var(--caption);text-align:left;padding:10px 12px;background:var(--chip);border-bottom:1px solid var(--border-card);white-space:nowrap}
 td{padding:9px 12px;border-bottom:1px solid var(--divider)}
 tbody tr:last-child td{border-bottom:0}
-tfoot td{font-weight:600;border-top:1px solid var(--border-card);border-bottom:0;background:#f8faf9}
+tfoot td{font-weight:600;border-top:1px solid var(--border-card);border-bottom:0;background:var(--chip)}
 .num{text-align:right;white-space:nowrap}
 .strong{font-weight:600;color:var(--primary-text)}
 .empty{padding:10px 0}
@@ -186,14 +221,16 @@ tfoot td{font-weight:600;border-top:1px solid var(--border-card);border-bottom:0
 .switch span{position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .15s}
 .switch.on{background:var(--primary)}
 .switch.on span{left:21px}
-@media(max-width:700px){.tabs{width:100%;flex-direction:row}.costs{grid-template-columns:1fr}}
+@media(max-width:1100px){.layout{grid-template-columns:minmax(0,1fr)}.tabs{flex-direction:row;flex-wrap:wrap}.costs{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){.costs{grid-template-columns:1fr}}
 `],
 })
 export class SettingsComponent {
   private api = inject(Api);
   brl = brl; int = int; brDate = brDate;
   timer = inject(WorkTimer); duration = duration;
-  tab: 'conta' | 'ia' | 'tempo' = 'conta';
+  theme = inject(ThemeService);
+  tab: 'conta' | 'ia' | 'tempo' | 'aparencia' = 'conta';
   t() { return this.timer.stats(); }
   pwCurrent = ''; pwNext = ''; saving = false;
   model = 'gpt-4.1'; enabled = false; configured = false; privacyGate = false; usage: any = null; creditOpen = false; creditInput = '';

@@ -1,90 +1,108 @@
 <ng-container *ngIf="current">
   <!-- Header -->
-  <p class="crumb">Avaliações / {{current.patient_name}}</p>
-  <div class="title-row">
-    <div>
-      <div class="title"><h1>{{current.patient_name}}</h1><span [class]="'badge '+status().css">{{status().label}}</span></div>
-      <p class="summary">{{summary() || 'Complete a identificação'}}</p>
+  <p class="crumbs"><button type="button" (click)="back.emit()">Avaliações</button><nl-icon name="chevr"/><b>Paciente</b></p>
+  <div class="evhead">
+    <span class="pav"><nl-icon name="user"/></span>
+    <div class="evtitle">
+      <h1>{{current.patient_name}} <span [class]="'badge '+status().css">{{status().label}}</span></h1>
+      <p>{{summary() || 'Complete a identificação'}}</p>
     </div>
-  </div>
-  <div class="head-actions">
-    <button class="btn btn-secondary" (click)="showDocument()" [disabled]="!docName('base')">Pré-visualizar</button>
-    <button class="btn btn-primary" [class.half]="!allApproved()" (click)="download()">↓ Baixar Word</button>
-    <button class="btn btn-secondary panel-toggle" (click)="togglePanel()" [attr.aria-expanded]="!panelClosed">{{panelClosed ? '◂ Painel · ' + approved() + '/' + total() + ' · ' + brl(usage?.cost_brl||0) : 'Recolher painel ▸'}}</button>
+    <span *ngIf="current.start_date" class="date"><nl-icon name="calendar"/> Início: {{brDate(current.start_date)}}</span>
+    <div class="head-actions">
+      <button class="btn btn-secondary" (click)="showDocument()" [disabled]="!docName('base')"><nl-icon name="eye"/> Pré-visualizar</button>
+      <button class="btn btn-secondary" [class.half]="!allApproved()" [disabled]="exporting==='pdf'" (click)="download('pdf')" title="O mesmo laudo do Word, convertido em PDF neste computador"><nl-icon name="pdf"/> {{exporting==='pdf' ? 'Gerando PDF…' : 'Baixar PDF'}}</button>
+      <button class="btn btn-primary" [class.half]="!allApproved()" (click)="download()"><nl-icon name="download"/> Baixar Word</button>
+    </div>
   </div>
 
   <!-- Stepper -->
-  <nav class="card stepper">
-    <button *ngFor="let s of steps; let i=index" class="st" [class.current]="step===i" [class.done]="stepDone(i)" (click)="goStep(i)">
-      <span class="circle">{{stepDone(i) && step!==i ? '✓' : i+1}}</span>
+  <nav class="stepper" aria-label="Etapas da avaliação">
+    <button *ngFor="let s of steps; let i=index" type="button" class="st" [attr.aria-current]="step===i ? 'step' : null" [class.current]="step===i" [class.done]="stepDone(i)" [class.pending]="!stepDone(i) && step!==i" (click)="goStep(i)">
+      <span class="circle"><nl-icon *ngIf="stepDone(i) && step!==i" name="check"/><ng-container *ngIf="!(stepDone(i) && step!==i)">{{i+1}}</ng-container></span>
       <span class="st-txt"><strong>{{s}}</strong><span>{{stepSub(i)}}</span></span>
     </button>
   </nav>
 
-  <div class="grid" [class.closed]="panelClosed">
+  <!-- Sections that have no place in the base document -->
+  <section *ngIf="inspection && missing().length" class="alert danger" role="alert">
+    <nl-icon name="alert"/>
+    <div>
+      <strong>Faltam no documento: {{missing().join(', ')}}</strong>
+      <p *ngIf="!locked()">Essas seções não serão geradas e não entrarão no Word. Para incluir, envie o arquivo base de novo com elas.</p>
+      <p *ngIf="locked()">Essas seções não entraram no Word. A avaliação está aprovada; para incluí-las, crie uma nova avaliação com o arquivo corrigido.</p>
+    </div>
+    <button *ngIf="!locked() && step!==1" class="btn btn-secondary btn-sm" (click)="goStep(1)">Enviar arquivo corrigido</button>
+  </section>
+
+  <!-- Steps 1–3: card + side column -->
+  <div *ngIf="step<3" class="stepwrap">
     <div class="col-main">
 
-      <!-- Sections that have no place in the base document -->
-      <section *ngIf="inspection && missing().length" class="card missing-banner" role="alert">
-        <div>
-          <strong>Faltam no documento: {{missing().join(', ')}}</strong>
-          <p *ngIf="!locked()">Essas seções não serão geradas e não entrarão no Word. Para incluir, envie o arquivo base de novo com elas.</p>
-          <p *ngIf="locked()">Essas seções não entraram no Word. A avaliação está aprovada; para incluí-las, crie uma nova avaliação com o arquivo corrigido.</p>
-        </div>
-        <button *ngIf="!locked() && step!==1" class="btn btn-secondary btn-sm" (click)="goStep(1)">Enviar arquivo corrigido</button>
-      </section>
-
       <!-- 1. Identificação -->
-      <section *ngIf="step===0" class="card">
-        <div class="card-head"><h2>Identificação</h2><span class="caption">{{idSaving ? 'Salvando…' : locked() ? 'Travada (avaliação aprovada)' : 'Salva automaticamente'}}</span></div>
+      <section *ngIf="step===0" class="card stepcard">
+        <div class="card-head"><h2>Identificação</h2><small>{{idSaving ? 'Salvando…' : locked() ? 'Travada (avaliação aprovada)' : 'Salva automaticamente · campos em branco usam o arquivo base'}}</small></div>
         <div class="card-body">
           <nl-identity-form [model]="idModel" (modelChange)="onIdentity($event)" [disabled]="locked()"></nl-identity-form>
-          <div class="foot"><button class="btn btn-primary" (click)="goStep(1)">Continuar para arquivos →</button></div>
+          <div class="row-actions"><button class="btn btn-primary" (click)="goStep(1)">Continuar para arquivos <nl-icon name="chevr"/></button></div>
         </div>
       </section>
 
       <!-- 2. Arquivos -->
-      <section *ngIf="step===1" class="card">
-        <div class="card-head"><h2>Arquivos</h2><span class="caption">{{docCount()}} de 2 enviados</span></div>
+      <section *ngIf="step===1" class="card stepcard">
+        <div class="card-head"><h2>Arquivos</h2><small>{{docCount()}} de 2 enviados</small></div>
         <div class="card-body">
-          <div class="zones">
+          <div class="model-row">
+            <div class="mr-field"><span class="mr-label">Modelo do laudo</span>
+              <nl-filter-select [options]="models" [value]="current.model_id || ''" [disabled]="locked()" ariaLabel="Modelo do laudo" placeholder="Sem modelo" (valueChange)="setModel($event)"></nl-filter-select></div>
+            <p class="footnote">O arquivo da estagiária é comparado com o modelo, e as instruções da IA do modelo valem nesta avaliação.</p>
+          </div>
+          <div class="files2">
             <nl-drop-zone title="Arquivo base (estagiária)" [filename]="docName('base')" [busy]="uploading==='base'" [disabled]="locked()" (file)="upload('base',$event)"></nl-drop-zone>
             <nl-drop-zone title="Anamnese (psicóloga)" [filename]="docName('anamnesis')" [busy]="uploading==='anamnesis'" [disabled]="locked()" (file)="upload('anamnesis',$event)"></nl-drop-zone>
           </div>
-          <p *ngIf="withOldText().length" class="warn-note">Este arquivo já tem texto em: {{withOldText().join(', ')}}. No Word final, esse texto será trocado pelo gerado em cada parte. Tabelas, gráficos e referências não mudam, e o arquivo enviado fica guardado como está.</p>
-          <div class="foot"><button class="btn btn-primary" [disabled]="!docsReady()" (click)="goStep(2)">Continuar para geração →</button></div>
+          <ng-container *ngIf="inspection?.model_check as mc">
+            <div *ngIf="mc.ok" class="alert tip"><nl-icon name="checkc"/><div><strong>O arquivo confere com o modelo "{{mc.model.name}}"</strong><p *ngFor="let i of mc.items">{{i.text}}</p><p *ngIf="!mc.items.length">Mesmas seções, campos de interpretação e tabelas.</p></div></div>
+            <div *ngIf="!mc.ok" class="alert" [class.danger]="hasDanger(mc)" [class.warn]="!hasDanger(mc)"><nl-icon name="alert"/><div><strong>Diferenças em relação ao modelo "{{mc.model.name}}"</strong><ul class="mc-list"><li *ngFor="let i of mc.items" [class.info]="i.level==='info'">{{i.text}}</li></ul><p>Confira o arquivo com a estagiária antes de gerar. Se estiver certo assim, pode seguir.</p></div></div>
+          </ng-container>
+          <div *ngIf="withOldText().length" class="alert warn"><nl-icon name="info"/><div><strong>O arquivo base já tem texto em: {{withOldText().join(', ')}}</strong><p>No Word final, esse texto será trocado pelo gerado em cada parte. Tabelas, gráficos e referências não mudam, e o arquivo enviado fica guardado como está.</p></div></div>
+          <div class="row-actions"><button class="btn btn-primary" [disabled]="!docsReady()" (click)="goStep(2)">Continuar para geração <nl-icon name="chevr"/></button></div>
         </div>
       </section>
 
       <!-- 3. Gerar com IA -->
       <ng-container *ngIf="step===2">
-        <section class="card">
-          <div class="card-head"><h2>Gerar texto com IA</h2></div>
+        <section class="card stepcard">
+          <div class="card-head"><h2>Gerar texto com IA</h2>
+            <button *ngIf="docsReady() && !locked() && !generating && (genKeys().length || autoDrafted())" class="btn btn-secondary btn-sm" [disabled]="!aiReady || !pendingAuto().length" (click)="generatePending()"><nl-icon name="spark"/> Gerar seções pendentes{{pendingAuto().length ? ' (' + pendingAuto().length + ')' : ''}}</button></div>
           <div class="card-body">
             <ng-container *ngIf="!docsReady()">
               <p class="muted">Envie o arquivo base e a anamnese para liberar a geração.</p>
-              <div class="foot"><button class="btn btn-secondary" (click)="goStep(1)">← Ir para arquivos</button></div>
+              <div class="row-actions"><button class="btn btn-secondary" (click)="goStep(1)"><nl-icon name="chevl"/> Ir para arquivos</button></div>
             </ng-container>
 
             <ng-container *ngIf="docsReady()">
               <ng-container *ngIf="!generating && !autoDrafted() && !locked()">
                 <p class="muted">A IA redige {{autoKeys().length}} {{autoKeys().length===1?'seção':'seções'}} a partir do arquivo base e da anamnese, usando as instruções abaixo. Nomes e dados pessoais são ocultados antes do envio. Tudo é rascunho para sua revisão.</p>
-                <p class="caption">A Descrição da demanda vem direto do arquivo enviado, sem IA.<ng-container *ngIf="hasConclusion()"> A Conclusão também não é gerada aqui: na etapa 4 você escreve suas orientações e a IA redige a partir delas.</ng-container></p>
-                <p *ngIf="!aiReady" class="warn-note">A geração pela API está desligada. Ative em Configurações → IA e custos.</p>
-                <div class="foot"><button class="btn btn-primary" (click)="generateAll()">Gerar laudo com IA</button></div>
+                <p class="footnote">A Descrição da demanda vem direto do arquivo enviado, sem IA.<ng-container *ngIf="hasConclusion()"> A Conclusão também não é gerada aqui: na etapa 4 você escreve suas orientações e a IA redige a partir delas.</ng-container></p>
+                <div *ngIf="!aiReady" class="alert warn"><nl-icon name="info"/><div><p>A geração pela API está desligada. Ative em Configurações → IA e custos.</p></div></div>
+                <div class="row-actions"><button class="btn btn-primary" (click)="generateAll()"><nl-icon name="spark"/> Gerar laudo com IA</button></div>
               </ng-container>
 
               <ng-container *ngIf="generating || genKeys().length || autoDrafted()">
                 <p *ngIf="generating" class="gen-title">Gerando seções… {{genDone()}}/{{genKeys().length}}</p>
-                <div *ngIf="generating" class="bar"><div [style.width.%]="genPct()"></div></div>
-                <ul class="gen-list">
-                  <li *ngFor="let s of available()"><span class="dot" [class]="'dot '+dotClass(s.id)"></span><span class="gname">{{s.name}}</span><span class="caption">{{rowLabel(s.id)}}</span></li>
+                <div *ngIf="generating" class="progress"><span [style.width.%]="genPct()"></span></div>
+                <ul class="genlist">
+                  <li *ngFor="let s of available()">
+                    <span class="dot" [class]="'dot '+dotClass(s.id)"></span><span class="nm">{{s.name}}</span>
+                    <span *ngIf="gen[s.id]==='running' || gen[s.id]==='error' || s.id===DEMAND_KEY || (s.id===MANUAL_KEY && state(s.id)==='pend')" class="caption">{{rowLabel(s.id)}}</span>
+                    <span *ngIf="!(gen[s.id]==='running' || gen[s.id]==='error' || s.id===DEMAND_KEY || (s.id===MANUAL_KEY && state(s.id)==='pend'))" [class]="'badge '+SECTION_STATE[state(s.id)].css">{{SECTION_STATE[state(s.id)].label}}</span>
+                  </li>
                 </ul>
-                <div *ngIf="!generating" class="foot">
+                <p class="footnote">Cada seção usa só os dados do próprio tópico no arquivo base. Seções aprovadas ficam travadas; para mudar, reabra a seção em Conferir e baixar.</p>
+                <div *ngIf="!generating" class="row-actions">
                   <ng-container *ngIf="!locked()">
-                    <button *ngIf="pendingAuto().length" class="btn btn-primary" [disabled]="!aiReady" (click)="generatePending()">Gerar as que faltam ({{pendingAuto().length}})</button>
-                    <button class="btn" [class.btn-primary]="!pendingAuto().length" [class.btn-secondary]="pendingAuto().length" [disabled]="!autoDrafted()" (click)="goStep(3)">Conferir seções →</button>
-                    <button class="btn btn-secondary" (click)="generateAll()">Regenerar tudo</button>
+                    <button class="btn btn-primary" [disabled]="!autoDrafted()" (click)="goStep(3)">Conferir seções <nl-icon name="chevr"/></button>
+                    <button class="btn btn-secondary" (click)="generateAll()"><nl-icon name="restore"/> Regenerar tudo</button>
                   </ng-container>
                   <p *ngIf="locked()" class="muted">Avaliação aprovada: textos travados.</p>
                 </div>
@@ -94,10 +112,10 @@
         </section>
 
         <!-- Privacidade -->
-        <section *ngIf="docsReady() && privacy && !locked()" class="card">
-          <div class="card-head"><h2>Dados ocultados antes de enviar à IA</h2><span class="caption">{{privacyList().length}} itens</span></div>
+        <section *ngIf="docsReady() && privacy && !locked()" class="card stepcard">
+          <div class="card-head"><h2>Dados ocultados antes de enviar à IA</h2><small>{{privacyList().length}} itens</small></div>
           <div class="card-body">
-            <p class="caption">A IA recebe só os marcadores; no laudo os dados reais voltam sozinhos. Clique num item para não ocultá-lo.</p>
+            <p class="footnote">A IA recebe só os marcadores; no laudo os dados reais voltam sozinhos. Clique num item para não ocultá-lo.</p>
             <div class="terms">
               <button *ngFor="let t of privacyList()" class="term" [class.off]="t.ignored" (click)="toggleTerm(t)"><span class="mono ph">{{t.placeholder||'—'}}</span>{{t.value}}<b>{{t.ignored?'+':'×'}}</b></button>
               <button *ngFor="let x of privacy.extra" class="term" (click)="removeTerm(x.value)"><span class="mono ph">{{x.placeholder}}</span>{{x.value}}<b>×</b></button>
@@ -107,165 +125,211 @@
         </section>
 
         <!-- Instruções desta avaliação -->
-        <section *ngIf="docsReady() && !locked() && instructions.length" class="card">
-          <div class="card-head"><h2>Instruções desta avaliação</h2><span class="caption">{{customCount()===1?"1 personalizada":customCount()+" personalizadas"}}</span></div>
+        <section *ngIf="docsReady() && !locked() && instructions.length" class="card stepcard">
+          <div class="card-head"><h2>Instruções desta avaliação</h2><small>{{instrModel ? 'Do modelo "' + instrModel.name + '" · ' : ''}}{{customCount()===1?"1 personalizada":customCount()+" personalizadas"}}</small></div>
           <div class="acc">
             <div *ngFor="let s of available(); let i=index" class="acc-row" [class.open]="instrOpen===s.id" [hidden]="!autoKeys().includes(s.id)">
-              <button class="acc-head" (click)="instrOpen = instrOpen===s.id ? '' : s.id">
+              <button class="acc-head" (click)="instrOpen = instrOpen===s.id ? '' : s.id" [attr.aria-expanded]="instrOpen===s.id">
                 <span class="mono n">{{(i+1).toString().padStart(2,'0')}}</span><span class="acc-name">{{s.name}}</span>
-                <span class="tag" [class.custom]="isCustom(s.id)">{{isCustom(s.id)?'Personalizada':'Padrão'}}</span>
+                <span class="tag" [class.custom]="isCustom(s.id)" [class.model]="isFromModel(s.id)">{{isCustom(s.id)?'Personalizada':isFromModel(s.id)?'Do modelo':'Padrão'}}</span>
               </button>
               <div *ngIf="instrOpen===s.id" class="acc-body">
                 <textarea class="input mono" rows="7" [(ngModel)]="instrDraft[s.id]" (blur)="saveInstruction(s.id)"></textarea>
-                <div class="row-between"><span class="caption">Limite sugerido: {{instruction(s.id)?.limit}} palavras</span><button class="link" (click)="resetInstruction(s.id)">Usar padrão</button></div>
+                <div class="row-between"><span class="caption">Limite sugerido: {{instruction(s.id)?.limit}} palavras</span><button class="link" (click)="resetInstruction(s.id)">{{instruction(s.id)?.model ? 'Usar a do modelo' : 'Usar padrão'}}</button></div>
               </div>
             </div>
           </div>
         </section>
       </ng-container>
-
-      <!-- 4. Conferir e baixar -->
-      <section *ngIf="step===3" class="card">
-        <div class="card-head">
-          <h2>Conferir seções</h2>
-          <div class="head-tools">
-            <button *ngIf="!locked()" class="link" (click)="approveAll()">Aprovar todas</button>
-            <div class="seg"><button [class.on]="mode==='secoes'" (click)="setMode('secoes')">Seções</button><button [class.on]="mode==='documento'" (click)="setMode('documento')">Documento</button></div>
-          </div>
-        </div>
-
-        <div *ngIf="mode==='secoes'" class="card-body sections">
-          <p *ngIf="!drafted()" class="muted">Ainda não há textos. <button class="link" (click)="goStep(2)">Gerar com IA</button></p>
-          <ng-container *ngFor="let s of reviewRows(); let i=index">
-          <!-- A section missing from the base document can still be drafted by hand; its text just does not go into the Word file -->
-          <div class="sec" [class.sec-missing]="isMissing(s.id)" [class.open]="open===s.id">
-            <button class="sec-head" (click)="toggle(s.id)">
-              <span class="mono n">{{(i+1).toString().padStart(2,'0')}}</span>
-              <span class="sec-name">{{s.name}}<small *ngIf="isMissing(s.id)">{{missingWhy(s.id)}}</small></span>
-              <span *ngIf="isMissing(s.id)" class="badge missing">Falta no documento</span>
-              <span *ngIf="!isMissing(s.id)" [class]="'badge '+SECTION_STATE[state(s.id)].css">{{SECTION_STATE[state(s.id)].label}}</span>
-            </button>
-            <div *ngIf="open===s.id" class="sec-body" [class.split]="refOpen===s.id">
-              <!-- Reference tables on the left, text on the right, also while editing -->
-              <aside *ngIf="refOpen===s.id" class="refs">
-                <div class="refs-head"><p class="label-caps">{{s.id===MANUAL_KEY ? 'Textos das seções usados pela IA' : 'Tabelas usadas pela IA'}} ({{refCount(s.id)}})</p><span class="refs-tools"><button *ngIf="s.id===MANUAL_KEY" class="link" (click)="copyAll()">{{copied==='__all' ? 'Copiado ✓' : 'Copiar tudo'}}</button><button class="link" (click)="closeRefs()">Ocultar</button></span></div>
-                <div *ngFor="let t of (s.id===MANUAL_KEY ? conclusionSources() : [])" class="ref-text">
-                  <p class="label-caps">{{t.name}}</p>
-                  <p *ngFor="let p of paragraphs(t.text)" [class.ptitle]="p.title">{{p.text}}</p>
-                </div>
-                <div *ngFor="let t of refs(s.id)" class="ref-table">
-                  <div class="ref-scroll"><table>
-                    <tr *ngFor="let row of t.grid; let r=index">
-                      <ng-container *ngFor="let c of row">
-                        <th *ngIf="r===0" [attr.rowspan]="c.rowspan" [attr.colspan]="c.colspan">{{c.text}}</th>
-                        <td *ngIf="r>0" [attr.rowspan]="c.rowspan" [attr.colspan]="c.colspan">{{c.text}}</td>
-                      </ng-container>
-                    </tr>
-                  </table></div>
-                  <p *ngIf="t.caption" class="caption">{{t.caption}}</p>
-                </div>
-              </aside>
-              <div class="sec-main">
-              <p *ngIf="fieldAdded(s.id)" class="caption from-file">O arquivo base não tem o campo "Interpretação" desta seção: ao baixar o Word, o sistema cria "Interpretação Clínica:" logo após as tabelas da seção e coloca este texto ali.</p>
-              <p *ngIf="isMissing(s.id)" class="warn-note">⚠ Esta seção falta no arquivo base: o texto fica salvo aqui, mas não entra no Word. Copie para o documento ou envie o arquivo base de novo com o campo "Interpretação".</p>
-              <p *ngFor="let w of warnings(s.id)" class="warn-note">⚠ {{w}}</p>
-
-              <ng-container *ngIf="editing!==s.id">
-                <div *ngIf="s.id===MANUAL_KEY && !locked()" class="instr-box guide">
-                  <p class="label-caps">Suas orientações para a conclusão</p>
-                  <p class="caption">A IA junta os textos das seções de resultados (sem a descrição da demanda e sem a anamnese) seguindo esta orientação. Complete ou mude como quiser, por exemplo dizendo quais características citar no final.</p>
-                  <textarea class="input" rows="6" [(ngModel)]="instrDraft[s.id]" placeholder="Ex.: Integrar os achados de atenção e funções executivas com as queixas escolares; destacar memória preservada; mencionar que os dados são compatíveis com a hipótese que será descrita na Hipótese Diagnóstica."></textarea>
-                  <div class="row-between"><span class="caption mono">{{words(instrDraft[s.id])}} palavras</span>
-                    <!-- If the AI text is not good: write it by hand, or use ChatGPT and paste the answer -->
-                    <span class="concl-actions">
-                    <button class="btn btn-secondary btn-sm" (click)="startEdit(s.id)">{{text(s.id) ? 'Editar manualmente' : 'Escrever manualmente'}}</button>
-                    <button class="btn btn-secondary btn-sm" (click)="startEdit(s.id); copyPrompt(s.id)" title="Copia o pedido com estas orientações, abre o ChatGPT e deixa o campo pronto para colar a resposta">Usar o ChatGPT</button>
-                    <button class="btn btn-primary btn-sm" [disabled]="generating" (click)="generateConclusion()">{{gen[s.id]==='running'?'Gerando…':state(s.id)==='pend'?'Gerar conclusão com a IA':'Gerar de novo com estas orientações'}}</button></span></div>
-                </div>
-                <div *ngIf="text(s.id)" class="sec-text"><p *ngFor="let p of paragraphs(text(s.id))" [class.ptitle]="p.title">{{p.text}}</p></div>
-                <p *ngIf="!text(s.id)" class="muted">{{s.id===MANUAL_KEY ? 'Ainda sem conclusão. Escreva suas orientações acima ou use Editar para escrever você mesma.' : s.id===DEMAND_KEY ? 'O arquivo base não tem texto nesta parte. Escreva em Editar ou gere com a IA.' : 'Sem texto ainda.'}}</p>
-                <p *ngIf="s.id===DEMAND_KEY && demandIsFromFile()" class="caption from-file">Texto do arquivo enviado, sem alteração e sem IA.</p>
-                <div class="sec-actions">
-                  <span class="caption mono">{{words(text(s.id))}} palavras</span>
-                  <!-- Read aloud with the local natural voice (Piper via the local API; Windows voice as fallback). No AI, nothing leaves the machine -->
-                  <span *ngIf="text(s.id) && reader.available()" class="listen" [class.on]="reader.key===s.id">
-                    <button class="listen-play" (click)="reader.toggle(s.id, text(s.id))" [attr.aria-label]="reader.key===s.id && !reader.paused ? 'Pausar leitura' : 'Ouvir texto'">{{reader.key===s.id && reader.loading ? '…' : reader.key===s.id && !reader.paused ? '❚❚' : '▶'}}</button>
-                    <span *ngIf="reader.key===s.id" class="listen-bar"><span [style.width.%]="reader.progress()*100"></span></span>
-                    <button class="listen-rate" (click)="reader.cycleRate()" title="Velocidade">{{reader.rate.toString().replace('.', ',')}}x</button>
-                    <button *ngIf="reader.key===s.id" class="listen-stop" (click)="reader.stop()" aria-label="Parar leitura">■</button>
-                  </span>
-                  <button *ngIf="refCount(s.id)" class="link" (click)="toggleRefs(s.id)">{{refLabel(s.id)}}</button>
-                  <span class="spacer"></span>
-                  <button *ngIf="s.id===MANUAL_KEY && conclusionSources().length" class="btn btn-secondary btn-sm" (click)="copyAll()" title="Copia os textos de todas as seções usadas na conclusão">{{copied==='__all' ? 'Copiado ✓' : 'Copiar tudo'}}</button>
-                  <button *ngIf="text(s.id)" class="btn btn-secondary btn-sm" (click)="copyText(s.id)">{{copied===s.id ? 'Copiado ✓' : 'Copiar'}}</button>
-                  <ng-container *ngIf="!locked()">
-                    <button *ngIf="s.id!==MANUAL_KEY" class="btn btn-secondary btn-sm" (click)="openInstr(s.id)">Instrução</button>
-                    <button class="btn btn-secondary btn-sm" (click)="startEdit(s.id)">Editar</button>
-                    <button *ngIf="s.id===DEMAND_KEY && demandInFile() && !demandIsFromFile()" class="btn btn-secondary btn-sm" (click)="useFileDemand()">Usar o texto do arquivo</button>
-                    <button *ngIf="s.id===DEMAND_KEY" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="generateDemand()">{{gen[s.id]==='running'?'Gerando…':'Gerar com IA'}}</button>
-                    <button *ngIf="s.id!==MANUAL_KEY && s.id!==DEMAND_KEY" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="regenerate(s.id)">{{gen[s.id]==='running'?'Gerando…':'Regenerar'}}</button>
-                    <button *ngIf="state(s.id)==='gen' && !isMissing(s.id)" class="btn btn-primary btn-sm" (click)="approveAndNext(s.id)">Aprovar e próxima</button>
-                  </ng-container>
-                </div>
-                <div *ngIf="sectionInstr===s.id" class="instr-box">
-                  <p class="label-caps">Instrução desta avaliação</p>
-                  <textarea class="input mono" rows="6" [(ngModel)]="instrDraft[s.id]"></textarea>
-                  <div class="row-between">
-                    <button class="link" (click)="resetInstruction(s.id)">Usar padrão</button>
-                    <button class="btn btn-primary btn-sm" [disabled]="generating" (click)="regenerate(s.id, true)">Regenerar com esta instrução</button>
-                  </div>
-                </div>
-              </ng-container>
-
-              <div *ngIf="editing===s.id" class="edit">
-                <textarea class="input edit-area" rows="12" [(ngModel)]="editText"></textarea>
-                <div class="sec-actions">
-                  <button class="link" (click)="copyPrompt(s.id)">Modo manual: copiar pedido para o ChatGPT</button>
-                  <button class="link" (click)="pasteAnswer()">Colar resposta</button>
-                  <button *ngIf="refCount(s.id)" class="link" (click)="toggleRefs(s.id)">{{refLabel(s.id)}}</button>
-                  <span class="spacer"></span>
-                  <button class="btn btn-secondary btn-sm" (click)="editing=''">Cancelar</button>
-                  <button class="btn btn-primary btn-sm" (click)="saveEdit(s.id)">Salvar</button>
-                </div>
-              </div>
-              </div>
-            </div>
-          </div>
-          </ng-container>
-        </div>
-
-        <div [hidden]="mode!=='documento'" class="doc-wrap">
-          <p *ngIf="previewLoading" class="caption center">Montando o documento…</p>
-          <p *ngIf="!docName('base')" class="caption center">Envie o arquivo base para ver o documento.</p>
-          <div #previewBox class="doc"></div>
-        </div>
-      </section>
-
-      <p class="foot-note">O arquivo base original nunca é alterado. A Hipótese Diagnóstica é escrita pela psicóloga no Word.</p>
     </div>
 
     <!-- Side column -->
-    <aside *ngIf="!panelClosed" class="col-side">
-      <section class="card card-pad">
+    <aside class="sidecol">
+      <section class="card sbox">
         <p class="label-caps">Progresso</p>
-        <p class="big-num">{{approved()}} <span>de {{total()}} seções aprovadas</span></p>
-        <div class="bar small"><div [style.width.%]="total() ? approved()/total()*100 : 0"></div></div>
+        <p class="big"><b>{{approved()}}</b><span>de {{total()}} seções aprovadas</span></p>
+        <div class="progress" [class.full]="allApproved()"><span [style.width.%]="total() ? approved()/total()*100 : 0"></span></div>
       </section>
-      <section class="card fold">
-        <button class="fold-btn" (click)="costOpen=!costOpen" [attr.aria-expanded]="costOpen"><span class="label-caps">Custo da IA</span><span class="fold-val">{{brl(usage?.cost_brl||0)}}</span><span class="chev">{{costOpen?'▴':'▾'}}</span></button>
+      <section class="card sline-card">
+        <button class="sline" (click)="costOpen=!costOpen" [attr.aria-expanded]="costOpen"><span class="label-caps">Custo da IA</span><b>{{brl(usage?.cost_brl||0)}} <nl-icon name="chevd" [class.up]="costOpen"/></b></button>
         <div *ngIf="costOpen" class="fold-body">
           <p class="mono tokens">{{int(usage?.total_tokens||0)}} tokens · {{usage?.calls||0}} chamadas</p>
           <p class="note">Estimativa pela tabela de preços do modelo e câmbio do servidor. O valor exato fica no painel da OpenAI.</p>
         </div>
       </section>
-      <section class="card fold">
-        <button class="fold-btn" (click)="filesOpen=!filesOpen" [attr.aria-expanded]="filesOpen"><span class="label-caps">Arquivos</span><span class="fold-val">{{docCount()}} de 2</span><span class="chev">{{filesOpen?'▴':'▾'}}</span></button>
+      <section class="card sline-card">
+        <button class="sline" (click)="filesOpen=!filesOpen" [attr.aria-expanded]="filesOpen"><span class="label-caps">Arquivos</span><b>{{docCount()}} de 2 <nl-icon name="chevd" [class.up]="filesOpen"/></b></button>
         <div *ngIf="filesOpen" class="fold-body">
-          <button class="file-line" (click)="goStep(1)"><span [class.ok]="docName('base')">{{docName('base')?'✓':'○'}}</span><span class="mono">{{docName('base')||'Arquivo base'}}</span></button>
-          <button class="file-line" (click)="goStep(1)"><span [class.ok]="docName('anamnesis')">{{docName('anamnesis')?'✓':'○'}}</span><span class="mono">{{docName('anamnesis')||'Anamnese'}}</span></button>
+          <button class="file-line" (click)="goStep(1)"><nl-icon [name]="docName('base') ? 'checkc' : 'doc'" [class.ok]="docName('base')"/><span class="mono">{{docName('base')||'Arquivo base'}}</span></button>
+          <button class="file-line" (click)="goStep(1)"><nl-icon [name]="docName('anamnesis') ? 'checkc' : 'doc'" [class.ok]="docName('anamnesis')"/><span class="mono">{{docName('anamnesis')||'Anamnese'}}</span></button>
         </div>
       </section>
-      <button class="link-danger" (click)="remove()">Excluir avaliação</button>
+      <button class="link-danger" (click)="remove()"><nl-icon name="trash"/> Excluir avaliação</button>
     </aside>
   </div>
+
+  <!-- 4. Conferir e baixar -->
+  <div *ngIf="step===3" class="conf">
+    <div class="card confbar">
+      <h2>Conferir seções</h2>
+      <div class="head-tools">
+        <button *ngIf="!locked() && mode==='secoes'" class="link" (click)="approveAll()">Aprovar todas</button>
+        <div class="seg" role="tablist" aria-label="Modo de visualização"><button type="button" role="tab" [attr.aria-selected]="mode==='secoes'" [class.on]="mode==='secoes'" (click)="setMode('secoes')"><nl-icon name="layers"/> Seções</button><button type="button" role="tab" [attr.aria-selected]="mode==='documento'" [class.on]="mode==='documento'" (click)="setMode('documento')"><nl-icon name="doc"/> Documento</button></div>
+      </div>
+    </div>
+
+    <ng-container *ngIf="mode==='secoes'">
+      <section *ngIf="!drafted() && !reviewRows().length" class="card card-pad"><p class="muted">Ainda não há textos. <button class="link" (click)="goStep(2)">Gerar com IA</button></p></section>
+      <div *ngIf="reviewRows().length" class="work">
+        <nav class="card seclist" aria-label="Seções da avaliação">
+          <h2><nl-icon name="doc"/> Seções da avaliação <span>({{reviewRows().length}})</span></h2>
+          <button *ngFor="let s of reviewRows(); let i=index" type="button" class="sec-item" [class.on]="cur()===s.id" [class.sec-missing]="isMissing(s.id)" (click)="select(s.id)" [attr.aria-current]="cur()===s.id ? 'true' : null">
+            <span class="mono num">{{(i+1).toString().padStart(2,'0')}}</span>
+            <span class="sec-name">{{s.name}}</span>
+            <span *ngIf="isMissing(s.id)" class="badge danger">Falta</span>
+            <span *ngIf="!isMissing(s.id)" [class]="'badge '+SECTION_STATE[state(s.id)].css">{{SECTION_STATE[state(s.id)].label}}</span>
+          </button>
+        </nav>
+
+        <ng-container *ngFor="let s of reviewRows(); let i=index">
+        <!-- A section missing from the base document can still be drafted by hand; its text just does not go into the Word file -->
+        <section *ngIf="cur()===s.id" class="card editor">
+          <div class="edhead">
+            <span class="ei"><nl-icon name="doc"/></span>
+            <div class="edt"><h2>{{s.name}}</h2><small>Seção {{(i+1).toString().padStart(2,'0')}} · {{sourceLabel(s.id)}}</small></div>
+            <span *ngIf="isMissing(s.id)" class="badge danger">Falta no documento</span>
+            <span *ngIf="!isMissing(s.id)" [class]="'badge '+SECTION_STATE[state(s.id)].css">{{SECTION_STATE[state(s.id)].label}}</span>
+          </div>
+
+          <div *ngIf="isMissing(s.id)" class="alert danger small"><nl-icon name="alert"/><div><p>{{missingWhy(s.id)}} O texto fica salvo aqui, mas não entra no Word. Copie para o documento ou envie o arquivo base de novo com o campo "Interpretação".</p></div></div>
+          <div *ngIf="fieldAdded(s.id)" class="alert tip small"><nl-icon name="info"/><div><p>O arquivo base não tem o campo "Interpretação" desta seção: ao baixar o Word, o sistema cria "Interpretação Clínica:" logo após as tabelas da seção e coloca este texto ali.</p></div></div>
+          <div *ngFor="let w of warnings(s.id)" class="alert warn small"><nl-icon name="info"/><div><p>{{w}}</p></div></div>
+
+          <!-- Conclusão: the psychologist's guidance comes first -->
+          <div *ngIf="s.id===MANUAL_KEY && !locked() && editing!==s.id" class="ed-instr">
+            <label [for]="'guide-'+s.id">Suas orientações para a conclusão</label>
+            <small class="hint">A IA junta os textos das seções de resultados (sem a descrição da demanda e sem a anamnese) seguindo esta orientação. Complete ou mude como quiser, por exemplo dizendo quais características citar no final.</small>
+            <textarea [id]="'guide-'+s.id" class="input" rows="5" [(ngModel)]="instrDraft[s.id]" placeholder="Ex.: Integrar os achados de atenção e funções executivas com as queixas escolares; destacar memória preservada; mencionar que os dados são compatíveis com a hipótese que será descrita na Hipótese Diagnóstica."></textarea>
+            <div class="ed-instr-row">
+              <small class="mono">{{words(instrDraft[s.id])}} palavras</small>
+              <!-- If the AI text is not good: write it by hand, or use ChatGPT and paste the answer -->
+              <button class="btn btn-secondary btn-sm" [disabled]="gptLoading===s.id" (click)="openGpt(s.id)" title="Copia o pedido com estas orientações e os textos das seções, e abre o ChatGPT"><nl-icon name="external"/> {{gptLoading===s.id ? 'Preparando…' : 'Usar o ChatGPT'}}</button>
+              <button class="btn btn-primary btn-sm" [disabled]="generating" (click)="generateConclusion()"><nl-icon name="spark"/> {{gen[s.id]==='running'?'Gerando…':state(s.id)==='pend'?'Gerar conclusão com a IA':'Gerar de novo com estas orientações'}}</button>
+            </div>
+          </div>
+
+          <!-- Text: read mode, or edited in place -->
+          <div *ngIf="editing!==s.id" class="draft" [class.is-loading]="gen[s.id]==='running'" [class.empty]="!text(s.id)">
+            <p *ngFor="let p of paragraphs(text(s.id))" [class.ptitle]="p.title">{{p.text}}</p>
+            <p *ngIf="!text(s.id)" class="muted">{{s.id===MANUAL_KEY ? 'Ainda sem conclusão. Escreva suas orientações acima ou use Editar para escrever você mesma.' : s.id===DEMAND_KEY ? 'O arquivo base não tem texto nesta parte. Escreva em Editar ou gere com a IA.' : 'Sem texto ainda.'}}</p>
+          </div>
+          <textarea *ngIf="editing===s.id" class="draft editing" [(ngModel)]="editText" aria-label="Texto da seção" (keydown.escape)="editing=''"></textarea>
+          <p *ngIf="s.id===DEMAND_KEY && demandIsFromFile() && editing!==s.id" class="footnote from-file">Texto do arquivo enviado, sem alteração e sem IA.</p>
+          <div *ngIf="editing===s.id" class="ed-editbar">
+            <span>Editando o texto. As mudanças valem só para esta avaliação.</span>
+            <button class="link" (click)="openGpt(s.id)" title="Copia o pedido e abre o ChatGPT">Abrir no ChatGPT</button>
+            <button class="link" (click)="pasteAnswer()">Colar resposta</button>
+            <button class="btn btn-secondary btn-sm" (click)="editing=''">Cancelar</button>
+            <button class="btn btn-primary btn-sm" (click)="saveEdit(s.id)"><nl-icon name="check"/> Salvar edição</button>
+          </div>
+
+          <!-- Instruction for this section -->
+          <div *ngIf="sectionInstr===s.id" class="ed-instr">
+            <label [for]="'instr-'+s.id">Instrução para regenerar esta seção</label>
+            <textarea [id]="'instr-'+s.id" class="input" rows="5" [(ngModel)]="instrDraft[s.id]"></textarea>
+            <div class="ed-instr-row">
+              <small>A IA usa só os dados desta seção no arquivo base, mais a sua instrução.</small>
+              <button class="link" (click)="resetInstruction(s.id)">{{instruction(s.id)?.model ? 'Usar a do modelo' : 'Usar padrão'}}</button>
+              <button class="btn btn-secondary btn-sm" (click)="sectionInstr=''">Cancelar</button>
+              <button class="btn btn-primary btn-sm" [disabled]="generating" (click)="regenerate(s.id, true)"><nl-icon name="spark"/> Regenerar com instrução</button>
+            </div>
+          </div>
+
+          <!-- ChatGPT web: request ready to paste, then the answer comes back into the editor -->
+          <div *ngIf="gptOpen===s.id" class="ed-gpt" role="region" aria-label="Pedido para o ChatGPT">
+            <div class="gpt-head"><nl-icon name="external"/><b>Pedido para o ChatGPT</b><span [class]="'badge ' + (gptCopied ? 'ok' : 'warn')">{{gptCopied ? 'Copiado' : 'Não copiado'}}</span><button class="x" (click)="gptOpen=''" aria-label="Fechar">×</button></div>
+            <ol class="gpt-steps"><li>No ChatGPT, cole com <kbd>Ctrl</kbd> + <kbd>V</kbd> e envie.</li><li>Copie a resposta e volte aqui.</li><li>Clique em <b>Colar resposta</b>, revise e salve.</li></ol>
+            <textarea class="input mono" readonly rows="5" [value]="gptText" aria-label="Texto do pedido" (focus)="$any($event.target).select()"></textarea>
+            <div class="ed-instr-row">
+              <small>Vai junto: {{s.id===MANUAL_KEY ? 'suas orientações e os textos das seções de resultados' : refCount(s.id) ? 'as tabelas desta seção e a instrução' : 'os dados desta seção e a instrução'}}. {{gptHidden}} {{gptHidden===1 ? 'dado pessoal trocado' : 'dados pessoais trocados'}} por marcadores.</small>
+              <button class="btn btn-secondary btn-sm" (click)="copyGpt()"><nl-icon name="copy"/> Copiar pedido</button>
+              <button *ngIf="s.id!==MANUAL_KEY && refCount(s.id)" class="btn btn-secondary btn-sm" (click)="copyTablesImage(s.id)" title="As tabelas já vão em texto no pedido; use a imagem se preferir colar a tabela como figura"><nl-icon name="table"/> Copiar tabelas como imagem</button>
+              <button class="btn btn-secondary btn-sm" (click)="goGpt()"><nl-icon name="external"/> Abrir ChatGPT</button>
+              <button *ngIf="!locked()" class="btn btn-primary btn-sm" (click)="pasteGptAnswer(s.id)"><nl-icon name="edit"/> Colar resposta</button>
+            </div>
+          </div>
+
+          <div class="edbar">
+            <span class="wc">{{words(editing===s.id ? editText : text(s.id))}} palavras</span>
+            <!-- Read aloud with the local natural voice (Piper via the local API; Windows voice as fallback). No AI, nothing leaves the machine -->
+            <ng-container *ngIf="text(s.id) && reader.available() && editing!==s.id">
+              <button class="play" [class.on]="reader.key===s.id && !reader.paused" (click)="reader.toggle(s.id, text(s.id))" [attr.aria-label]="reader.key===s.id && !reader.paused ? 'Pausar leitura' : 'Ouvir texto'"><ng-container *ngIf="reader.key===s.id && reader.loading">…</ng-container><nl-icon *ngIf="!(reader.key===s.id && reader.loading)" [name]="reader.key===s.id && !reader.paused ? 'pause' : 'playc'"/></button>
+              <span *ngIf="reader.key===s.id" class="listen-bar"><span [style.width.%]="reader.progress()*100"></span></span>
+              <button class="speed" (click)="reader.cycleRate()" title="Velocidade da leitura">{{reader.rate.toString().replace('.', ',')}}x</button>
+              <button *ngIf="reader.key===s.id" class="speed" (click)="reader.stop()" aria-label="Parar leitura"><nl-icon name="stop"/></button>
+            </ng-container>
+            <button *ngIf="refCount(s.id)" class="link tlink" (click)="toggleRefs(s.id)">{{refLabel(s.id)}}</button>
+            <div class="edacts">
+              <button *ngIf="s.id===MANUAL_KEY && conclusionSources().length" class="btn btn-secondary btn-sm" (click)="copyAll()" title="Copia os textos de todas as seções usadas na conclusão"><nl-icon [name]="copied==='__all' ? 'check' : 'copy'"/> {{copied==='__all' ? 'Copiado' : 'Copiar tudo'}}</button>
+              <button *ngIf="text(s.id)" class="btn btn-secondary btn-sm" (click)="copyText(s.id)"><nl-icon [name]="copied===s.id ? 'check' : 'copy'"/> {{copied===s.id ? 'Copiado' : 'Copiar'}}</button>
+              <ng-container *ngIf="!locked()">
+                <button *ngIf="s.id!==MANUAL_KEY" class="btn btn-secondary btn-sm" [class.on]="gptOpen===s.id" [disabled]="gptLoading===s.id" (click)="openGpt(s.id)" title="Copia o pedido com as tabelas e a instrução desta seção e abre o ChatGPT"><nl-icon name="external"/> {{gptLoading===s.id ? 'Preparando…' : 'ChatGPT'}}</button>
+                <button *ngIf="s.id!==MANUAL_KEY" class="btn btn-secondary btn-sm" [class.on]="sectionInstr===s.id" (click)="openInstr(s.id)" [attr.aria-expanded]="sectionInstr===s.id"><nl-icon name="chat"/> Instrução</button>
+                <button class="btn btn-secondary btn-sm" [class.on]="editing===s.id" [disabled]="editing===s.id" (click)="startEdit(s.id)"><nl-icon name="edit"/> {{text(s.id) ? 'Editar' : 'Escrever'}}</button>
+                <button *ngIf="s.id===DEMAND_KEY && demandInFile() && !demandIsFromFile()" class="btn btn-secondary btn-sm" (click)="useFileDemand()"><nl-icon name="doc"/> Usar o texto do arquivo</button>
+                <button *ngIf="s.id===DEMAND_KEY" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="generateDemand()"><nl-icon name="spark"/> {{gen[s.id]==='running'?'Gerando…':'Gerar com IA'}}</button>
+                <button *ngIf="s.id!==MANUAL_KEY && s.id!==DEMAND_KEY" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="regenerate(s.id)"><nl-icon name="restore"/> {{gen[s.id]==='running'?'Gerando…':'Regenerar'}}</button>
+              </ng-container>
+            </div>
+          </div>
+
+          <!-- Reference material: read-only, from the base document -->
+          <div *ngIf="refOpen===s.id" class="ed-tables">
+            <div class="subh"><nl-icon name="table"/> {{s.id===MANUAL_KEY ? 'Textos das seções usados pela IA' : 'Tabelas de referência'}} <small>— do arquivo base, somente leitura</small></div>
+            <div *ngFor="let t of (s.id===MANUAL_KEY ? conclusionSources() : [])" class="ref-text">
+              <p class="label-caps">{{t.name}}</p>
+              <p *ngFor="let p of paragraphs(t.text)" [class.ptitle]="p.title">{{p.text}}</p>
+            </div>
+            <div *ngFor="let t of refs(s.id)" class="ref-table">
+              <div class="ref-scroll"><table class="dt">
+                <tr *ngFor="let row of t.grid; let r=index">
+                  <ng-container *ngFor="let c of row">
+                    <th *ngIf="r===0" [attr.rowspan]="c.rowspan" [attr.colspan]="c.colspan">{{c.text}}</th>
+                    <td *ngIf="r>0" [attr.rowspan]="c.rowspan" [attr.colspan]="c.colspan">{{c.text}}</td>
+                  </ng-container>
+                </tr>
+              </table></div>
+              <p *ngIf="t.caption" class="footnote">{{t.caption}}</p>
+            </div>
+          </div>
+
+          <div *ngIf="!locked() && state(s.id)==='gen' && !isMissing(s.id) && editing!==s.id" class="ed-approve">
+            <button class="btn btn-primary" (click)="approveAndNext(s.id)"><nl-icon name="check"/> {{isLastPending(s.id) ? 'Aprovar' : 'Aprovar e próxima'}}</button>
+            <span class="ai-note"><nl-icon name="spark"/> Rascunho de IA · só entra no Word depois de aprovado</span>
+          </div>
+        </section>
+        </ng-container>
+      </div>
+    </ng-container>
+
+    <section [hidden]="mode!=='documento'" class="card docview">
+      <div class="doctool">
+        <span class="pg">{{pageCount ? (pageCount===1 ? '1 página' : pageCount + ' páginas') : 'Prévia do Word'}}</span>
+        <span class="legend">Textos atuais, inclusive os ainda não aprovados</span>
+        <span class="sp"></span>
+        <div class="zoom" aria-label="Zoom"><button type="button" (click)="setZoom(-0.1)" aria-label="Diminuir zoom">−</button><span>{{(zoom*100).toFixed(0)}}%</span><button type="button" (click)="setZoom(0.1)" aria-label="Aumentar zoom">+</button></div>
+        <button class="btn btn-secondary btn-sm" (click)="setMode('secoes')"><nl-icon name="edit"/> Voltar às seções</button>
+        <button class="btn btn-secondary btn-sm" [class.half]="!allApproved()" [disabled]="exporting==='pdf'" (click)="download('pdf')"><nl-icon name="pdf"/> {{exporting==='pdf' ? 'Gerando PDF…' : 'Baixar PDF'}}</button>
+        <button class="btn btn-primary btn-sm" [class.half]="!allApproved()" (click)="download()"><nl-icon name="download"/> Baixar Word</button>
+      </div>
+      <div class="docscroll">
+        <p *ngIf="previewLoading" class="caption center">Montando o documento…</p>
+        <p *ngIf="!docName('base')" class="caption center">Envie o arquivo base para ver o documento.</p>
+        <div #previewBox class="doc" [style.zoom]="zoom"></div>
+      </div>
+    </section>
+    <button class="link-danger self-start" (click)="remove()"><nl-icon name="trash"/> Excluir avaliação</button>
+  </div>
+
+  <p class="footnote foot-note">O arquivo base original nunca é alterado. A Hipótese Diagnóstica é escrita pela psicóloga no Word.</p>
 </ng-container>

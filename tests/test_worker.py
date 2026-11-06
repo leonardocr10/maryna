@@ -108,6 +108,17 @@ class TestWorker(unittest.TestCase):
    z.writestr('word/document.xml','<w/>');z.writestr('big.bin',b'0'*(201*1024*1024))
   with self.assertRaises(AssertionError):run('inspect',str(self.base))
 
+ def test_two_labels_on_one_line_keep_their_own_values(self):
+  """Synthetic: "Data de início: - Data da finalização: -" on one line, separated by a single space."""
+  d=Document();d.add_paragraph('Data de início da avaliação: - Data da finalização do laudo: -');d.add_paragraph('Nome: ')
+  d.add_table(rows=1,cols=1).cell(0,0).text='DESCRIÇÃO DA DEMANDA';d.save(self.base)
+  ident=run('inspect',str(self.base))['identification']
+  self.assertEqual(ident['Data de início da avaliação'],'-')
+  self.assertEqual(ident['Data da finalização do laudo'],'-')
+  fields={'Data de início da avaliação':'15/09/2026','Data da finalização do laudo':'19/10/2026'}
+  run('export',stdin={'base':str(self.base),'out':str(self.out),'sections':{},'fields':fields})
+  self.assertEqual(Document(self.out).paragraphs[0].text,'Data de início da avaliação: 15/09/2026 Data da finalização do laudo: 19/10/2026')
+
  def test_fills_identification_values_only(self):
   d=Document()
   p=d.add_paragraph();p.add_run('Data de início da avaliação: ').bold=True;p.add_run('25/08/2026       Data da finalização do laudo: 00/11/2026')

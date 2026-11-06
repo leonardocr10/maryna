@@ -1,33 +1,34 @@
 import {Component, EventEmitter, Input, Output} from '@angular/core';
 import {CommonModule} from '@angular/common';
+import {IconComponent} from './icon.component';
 
 /** .docx upload zone: click or drag. Shows the file name once sent. */
 @Component({
   selector: 'nl-drop-zone',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, IconComponent],
   template: `
 <div class="dz" [class.done]="filename" [class.over]="over" [class.busy]="busy" [class.inline]="inline" [class.disabled]="disabled"
      (click)="!disabled&&!busy&&picker.click()" (dragover)="$event.preventDefault();over=true" (dragleave)="over=false" (drop)="onDrop($event)">
   <input #picker type="file" accept=".docx" hidden (click)="$event.stopPropagation()" (change)="onPick($event)">
-  <div class="icon">{{busy?'…':filename?'✓':'+'}}</div>
+  <div class="icon"><ng-container *ngIf="busy">…</ng-container><nl-icon *ngIf="!busy" [name]="filename ? 'doc' : 'upload'"/></div>
   <div class="txt">
     <strong>{{title}}</strong>
-    <span *ngIf="filename" class="name mono">{{filename}}</span>
+    <code *ngIf="filename" class="name">{{filename}}</code>
     <span class="hint">{{busy?'Enviando…':filename?'Arraste outro para trocar':'Arraste o .docx aqui ou clique'}}</span>
   </div>
 </div>`,
   styles: [`
-.dz{border:1.5px dashed var(--border-dashed);border-radius:10px;background:#fff;padding:24px 18px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;cursor:pointer;transition:background .15s,border-color .15s;min-height:170px;justify-content:center}
+.dz{border:1.5px dashed var(--border-dashed);border-radius:10px;background: var(--card);padding:24px 18px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;cursor:pointer;transition:background .15s,border-color .15s;min-height:170px;justify-content:center}
 .dz:hover,.dz.over{border-color:var(--primary);background:var(--primary-soft)}
-.dz.done{border:1.5px solid var(--primary-border-2);background:#f3faf7}
+.dz.done{border:1px solid var(--primary-border);background:var(--primary-soft);border-radius:var(--radius-lg)}
 .dz.busy{cursor:progress}.dz.disabled{opacity:.6;cursor:not-allowed}
-.icon{width:40px;height:40px;border-radius:50%;background:#eef3f1;color:var(--text-3);display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:500}
-.done .icon{background:var(--primary);color:#fff;font-size:16px}
+.icon{width:42px;height:42px;border-radius:50%;background:var(--chip);color:var(--text-3);display:grid;place-items:center;font-size:18px;--ico-size:20px;margin-bottom:2px}
+.done .icon{background:var(--primary);color:var(--on-primary)}
 .txt{display:flex;flex-direction:column;gap:4px;min-width:0;max-width:100%}
-strong{font-size:14px;font-weight:600}
-.name{font-size:12.5px;color:var(--primary-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.hint{font-size:12.5px;color:var(--caption)}
+strong{font-size:14.5px;font-weight:600;color:var(--text)}
+.name{font:12.5px var(--mono);color:var(--primary-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hint{font-size:12.5px;color:var(--text-3)}
 .dz.inline{flex-direction:row;min-height:0;padding:14px 16px;text-align:left;justify-content:flex-start}
 .dz.inline .icon{width:34px;height:34px;flex:none}
 `],

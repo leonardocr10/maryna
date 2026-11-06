@@ -47,3 +47,13 @@ test('helpers', () => {
   assert.deepEqual(dateVariants('07/03/2015').slice(0, 2), ['07/03/2015', '7/3/2015']);
   assert.deepEqual(leftoverPlaceholders('ok [PESSOA_9] e [ESCORE]'), ['[PESSOA_9]', '[ESCORE]']);
 });
+
+test('lower-case surname at the end of a cued name is masked too (synthetic names)', () => {
+  const terms = detectTerms({anamnesisLines: ['Dra. Fictícia sobrenometeste', 'Dra. Ana disse que melhorou', 'Psiquiatra Beto']}).map(t => t.value);
+  assert.ok(terms.includes('Fictícia sobrenometeste'));
+  assert.ok(terms.includes('Ana'));
+  assert.ok(!terms.some(t => /disse/.test(t)));
+  assert.ok(terms.includes('Beto'));
+  const map = buildMap(detectTerms({anamnesisLines: ['Dra. Fictícia sobrenometeste']}));
+  assert.doesNotMatch(redact('Atendida pela Dra. Fictícia sobrenometeste.', map), /sobrenometeste/);
+});

@@ -36,3 +36,10 @@ export function wordingProblems(text, {categories = true, numbers = false} = {})
   if (c.length) out.push('categorias de desempenho (' + c.slice(0, 8).join(', ') + ')');
   return out;
 }
+
+// A psychologist's instruction only lifts the no-numbers/no-categories rule when it asks for them in so many words
+// ("cite os escores", "incluir classificação"); "sem classificação" or an instruction that does not mention them keeps it.
+const SCORE_WORDS = String.raw`(?:classifica[cç][aãoõ]\p{L}*|escores?|percentis?|percentil|pontua[cç][aãoõ]\p{L}*|n[uú]meros?|valores?|QIs?|resultados num[eé]ricos)`;
+const ASK_VERBS = String.raw`(?:com|incluir|inclua|incluindo|citar|cite|citando|colocar|coloque|mostrar|mostre|informar|informe|apresentar|apresente|mencionar|mencione|manter|mantenha)`;
+const ASK_RE = new RegExp(String.raw`(?<!(?:^|\s)(?:sem|n[aã]o)\s(?:\p{L}+\s){0,2})(?<!\p{L})${ASK_VERBS}\s+(?:\p{L}+\s+){0,2}?${SCORE_WORDS}`, 'iu');
+export const asksForScores = text => ASK_RE.test(String(text || '').normalize('NFC'));

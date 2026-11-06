@@ -137,18 +137,22 @@
         <div *ngIf="mode==='secoes'" class="card-body sections">
           <p *ngIf="!drafted()" class="muted">Ainda não há textos. <button class="link" (click)="goStep(2)">Gerar com IA</button></p>
           <ng-container *ngFor="let s of reviewRows(); let i=index">
-          <div *ngIf="isMissing(s.id)" class="sec sec-missing">
-            <div class="sec-head"><span class="mono n">{{(i+1).toString().padStart(2,'0')}}</span><span class="sec-name">{{s.name}}<small>{{missingWhy(s.id)}}</small></span><span class="badge missing">Falta no documento</span></div>
-          </div>
-          <div *ngIf="!isMissing(s.id)" class="sec" [class.open]="open===s.id">
+          <!-- A section missing from the base document can still be drafted by hand; its text just does not go into the Word file -->
+          <div class="sec" [class.sec-missing]="isMissing(s.id)" [class.open]="open===s.id">
             <button class="sec-head" (click)="toggle(s.id)">
-              <span class="mono n">{{(i+1).toString().padStart(2,'0')}}</span><span class="sec-name">{{s.name}}</span>
-              <span [class]="'badge '+SECTION_STATE[state(s.id)].css">{{SECTION_STATE[state(s.id)].label}}</span>
+              <span class="mono n">{{(i+1).toString().padStart(2,'0')}}</span>
+              <span class="sec-name">{{s.name}}<small *ngIf="isMissing(s.id)">{{missingWhy(s.id)}}</small></span>
+              <span *ngIf="isMissing(s.id)" class="badge missing">Falta no documento</span>
+              <span *ngIf="!isMissing(s.id)" [class]="'badge '+SECTION_STATE[state(s.id)].css">{{SECTION_STATE[state(s.id)].label}}</span>
             </button>
             <div *ngIf="open===s.id" class="sec-body" [class.split]="refOpen===s.id">
               <!-- Reference tables on the left, text on the right, also while editing -->
               <aside *ngIf="refOpen===s.id" class="refs">
-                <div class="refs-head"><p class="label-caps">Tabelas usadas pela IA ({{refs(s.id).length}})</p><button class="link" (click)="closeRefs()">Ocultar</button></div>
+                <div class="refs-head"><p class="label-caps">{{s.id===MANUAL_KEY ? 'Textos das seções usados pela IA' : 'Tabelas usadas pela IA'}} ({{refCount(s.id)}})</p><span class="refs-tools"><button *ngIf="s.id===MANUAL_KEY" class="link" (click)="copyAll()">{{copied==='__all' ? 'Copiado ✓' : 'Copiar tudo'}}</button><button class="link" (click)="closeRefs()">Ocultar</button></span></div>
+                <div *ngFor="let t of (s.id===MANUAL_KEY ? conclusionSources() : [])" class="ref-text">
+                  <p class="label-caps">{{t.name}}</p>
+                  <p *ngFor="let p of paragraphs(t.text)" [class.ptitle]="p.title">{{p.text}}</p>
+                </div>
                 <div *ngFor="let t of refs(s.id)" class="ref-table">
                   <div class="ref-scroll"><table>
                     <tr *ngFor="let row of t.grid; let r=index">
@@ -162,30 +166,45 @@
                 </div>
               </aside>
               <div class="sec-main">
+              <p *ngIf="fieldAdded(s.id)" class="caption from-file">O arquivo base não tem o campo "Interpretação" desta seção: ao baixar o Word, o sistema cria "Interpretação Clínica:" logo após as tabelas da seção e coloca este texto ali.</p>
+              <p *ngIf="isMissing(s.id)" class="warn-note">⚠ Esta seção falta no arquivo base: o texto fica salvo aqui, mas não entra no Word. Copie para o documento ou envie o arquivo base de novo com o campo "Interpretação".</p>
               <p *ngFor="let w of warnings(s.id)" class="warn-note">⚠ {{w}}</p>
 
               <ng-container *ngIf="editing!==s.id">
                 <div *ngIf="s.id===MANUAL_KEY && !locked()" class="instr-box guide">
                   <p class="label-caps">Suas orientações para a conclusão</p>
-                  <p class="caption">Escreva o que você concluiu e o que quer destacar (achados principais, hipóteses a mencionar, encaminhamentos). A IA redige a partir disso e dos dados da avaliação; nada é gerado sem esta orientação.</p>
+                  <p class="caption">A IA junta os textos das seções de resultados (sem a descrição da demanda e sem a anamnese) seguindo esta orientação. Complete ou mude como quiser, por exemplo dizendo quais características citar no final.</p>
                   <textarea class="input" rows="6" [(ngModel)]="instrDraft[s.id]" placeholder="Ex.: Integrar os achados de atenção e funções executivas com as queixas escolares; destacar memória preservada; mencionar que os dados são compatíveis com a hipótese que será descrita na Hipótese Diagnóstica."></textarea>
                   <div class="row-between"><span class="caption mono">{{words(instrDraft[s.id])}} palavras</span>
-                    <button class="btn btn-primary btn-sm" [disabled]="generating" (click)="generateConclusion()">{{gen[s.id]==='running'?'Gerando…':state(s.id)==='pend'?'Gerar conclusão com a IA':'Gerar de novo com estas orientações'}}</button></div>
+                    <!-- If the AI text is not good: write it by hand, or use ChatGPT and paste the answer -->
+                    <span class="concl-actions">
+                    <button class="btn btn-secondary btn-sm" (click)="startEdit(s.id)">{{text(s.id) ? 'Editar manualmente' : 'Escrever manualmente'}}</button>
+                    <button class="btn btn-secondary btn-sm" (click)="startEdit(s.id); copyPrompt(s.id)" title="Copia o pedido com estas orientações, abre o ChatGPT e deixa o campo pronto para colar a resposta">Usar o ChatGPT</button>
+                    <button class="btn btn-primary btn-sm" [disabled]="generating" (click)="generateConclusion()">{{gen[s.id]==='running'?'Gerando…':state(s.id)==='pend'?'Gerar conclusão com a IA':'Gerar de novo com estas orientações'}}</button></span></div>
                 </div>
                 <div *ngIf="text(s.id)" class="sec-text"><p *ngFor="let p of paragraphs(text(s.id))" [class.ptitle]="p.title">{{p.text}}</p></div>
                 <p *ngIf="!text(s.id)" class="muted">{{s.id===MANUAL_KEY ? 'Ainda sem conclusão. Escreva suas orientações acima ou use Editar para escrever você mesma.' : s.id===DEMAND_KEY ? 'O arquivo base não tem texto nesta parte. Escreva em Editar ou gere com a IA.' : 'Sem texto ainda.'}}</p>
                 <p *ngIf="s.id===DEMAND_KEY && demandIsFromFile()" class="caption from-file">Texto do arquivo enviado, sem alteração e sem IA.</p>
                 <div class="sec-actions">
                   <span class="caption mono">{{words(text(s.id))}} palavras</span>
-                  <button *ngIf="refs(s.id).length" class="link" (click)="toggleRefs(s.id)">{{refOpen===s.id ? 'Ocultar tabelas' : 'Ver tabelas de referência (' + refs(s.id).length + ')'}}</button>
+                  <!-- Read aloud with the local natural voice (Piper via the local API; Windows voice as fallback). No AI, nothing leaves the machine -->
+                  <span *ngIf="text(s.id) && reader.available()" class="listen" [class.on]="reader.key===s.id">
+                    <button class="listen-play" (click)="reader.toggle(s.id, text(s.id))" [attr.aria-label]="reader.key===s.id && !reader.paused ? 'Pausar leitura' : 'Ouvir texto'">{{reader.key===s.id && reader.loading ? '…' : reader.key===s.id && !reader.paused ? '❚❚' : '▶'}}</button>
+                    <span *ngIf="reader.key===s.id" class="listen-bar"><span [style.width.%]="reader.progress()*100"></span></span>
+                    <button class="listen-rate" (click)="reader.cycleRate()" title="Velocidade">{{reader.rate.toString().replace('.', ',')}}x</button>
+                    <button *ngIf="reader.key===s.id" class="listen-stop" (click)="reader.stop()" aria-label="Parar leitura">■</button>
+                  </span>
+                  <button *ngIf="refCount(s.id)" class="link" (click)="toggleRefs(s.id)">{{refLabel(s.id)}}</button>
                   <span class="spacer"></span>
+                  <button *ngIf="s.id===MANUAL_KEY && conclusionSources().length" class="btn btn-secondary btn-sm" (click)="copyAll()" title="Copia os textos de todas as seções usadas na conclusão">{{copied==='__all' ? 'Copiado ✓' : 'Copiar tudo'}}</button>
+                  <button *ngIf="text(s.id)" class="btn btn-secondary btn-sm" (click)="copyText(s.id)">{{copied===s.id ? 'Copiado ✓' : 'Copiar'}}</button>
                   <ng-container *ngIf="!locked()">
                     <button *ngIf="s.id!==MANUAL_KEY" class="btn btn-secondary btn-sm" (click)="openInstr(s.id)">Instrução</button>
                     <button class="btn btn-secondary btn-sm" (click)="startEdit(s.id)">Editar</button>
                     <button *ngIf="s.id===DEMAND_KEY && demandInFile() && !demandIsFromFile()" class="btn btn-secondary btn-sm" (click)="useFileDemand()">Usar o texto do arquivo</button>
                     <button *ngIf="s.id===DEMAND_KEY" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="generateDemand()">{{gen[s.id]==='running'?'Gerando…':'Gerar com IA'}}</button>
                     <button *ngIf="s.id!==MANUAL_KEY && s.id!==DEMAND_KEY" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="regenerate(s.id)">{{gen[s.id]==='running'?'Gerando…':'Regenerar'}}</button>
-                    <button *ngIf="state(s.id)==='gen'" class="btn btn-primary btn-sm" (click)="approveAndNext(s.id)">Aprovar e próxima</button>
+                    <button *ngIf="state(s.id)==='gen' && !isMissing(s.id)" class="btn btn-primary btn-sm" (click)="approveAndNext(s.id)">Aprovar e próxima</button>
                   </ng-container>
                 </div>
                 <div *ngIf="sectionInstr===s.id" class="instr-box">
@@ -203,7 +222,7 @@
                 <div class="sec-actions">
                   <button class="link" (click)="copyPrompt(s.id)">Modo manual: copiar pedido para o ChatGPT</button>
                   <button class="link" (click)="pasteAnswer()">Colar resposta</button>
-                  <button *ngIf="refs(s.id).length" class="link" (click)="toggleRefs(s.id)">{{refOpen===s.id ? 'Ocultar tabelas' : 'Ver tabelas de referência (' + refs(s.id).length + ')'}}</button>
+                  <button *ngIf="refCount(s.id)" class="link" (click)="toggleRefs(s.id)">{{refLabel(s.id)}}</button>
                   <span class="spacer"></span>
                   <button class="btn btn-secondary btn-sm" (click)="editing=''">Cancelar</button>
                   <button class="btn btn-primary btn-sm" (click)="saveEdit(s.id)">Salvar</button>

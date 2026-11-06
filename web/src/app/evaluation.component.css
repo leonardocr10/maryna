@@ -105,6 +105,17 @@
 .sec-body.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
 .sec-main { min-width: 0; }
 .refs { margin-top: 14px; padding: 14px; background: #f5f8f7; border: 1px solid var(--border-card); border-radius: 10px; display: flex; flex-direction: column; gap: 14px; position: sticky; top: 8px; max-height: calc(100vh - 90px); overflow: auto; }
+.listen { display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px 3px 3px; border: 1px solid var(--border-card); border-radius: 999px; background: #fff; }
+.listen.on { background: #eef5f2; border-color: #c9d8d3; }
+.listen button { border: 0; background: none; cursor: pointer; font: 600 12px var(--font); color: var(--text-2); }
+.listen-play { width: 26px; height: 26px; border-radius: 50%; background: var(--primary, #1f6b5a) !important; color: #fff !important; font-size: 11px !important; display: inline-flex; align-items: center; justify-content: center; }
+.listen-rate { min-width: 34px; padding: 3px 6px; border-radius: 999px; background: #e3ece8 !important; }
+.listen-stop { font-size: 10px !important; padding: 2px 4px; }
+.listen-bar { width: 70px; height: 4px; border-radius: 2px; background: #d3e0d6; overflow: hidden; }
+.listen-bar span { display: block; height: 100%; background: var(--primary, #1f6b5a); transition: width .3s; }
+.ref-text { background: #fff; border: 1px solid #c9d8d3; border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.5; display: flex; flex-direction: column; gap: 6px; }
+.concl-actions { display: inline-flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.refs-tools { display: inline-flex; gap: 12px; }
 .refs-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .ref-scroll { overflow-x: auto; }
 .ref-table table { border-collapse: collapse; width: 100%; background: #fff; font-size: 12.5px; }
@@ -127,6 +138,5 @@
 .missing-banner strong { font-size: 14px; color: var(--danger); }
 .missing-banner p { font-size: 13px; color: var(--text-2); margin-top: 3px; }
 .sec-missing { background: #fdf8f7; border-style: dashed; border-color: #e3b9b0; }
-.sec-missing .sec-head { cursor: default; }
 .sec-missing .sec-name small { display: block; font-size: 12px; font-weight: 400; color: var(--text-3); }
 .badge.missing { background: #fbe4df; color: var(--danger); }

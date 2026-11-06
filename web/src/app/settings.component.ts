@@ -56,6 +56,23 @@ import {WorkTimer, duration} from './work-timer.service';
     <div class="costs">
       <section class="card card-pad"><p class="label-caps">Gasto estimado neste mês</p><p class="money">{{brl(usage?.month?.cost_brl)}}</p><p class="mono caption">{{int(usage?.month?.total_tokens)}} tokens</p></section>
       <section class="card card-pad"><p class="label-caps">Total desde o início</p><p class="money">{{brl(usage?.total?.cost_brl)}}</p><p class="mono caption">{{int(usage?.total?.total_tokens)}} tokens</p></section>
+      <!-- OpenAI only shows the balance on its billing page: estimate = balance typed there - cost recorded here since -->
+      <section class="card card-pad balance">
+        <p class="label-caps">Saldo estimado na OpenAI</p>
+        <ng-container *ngIf="usage?.balance as b; else noBalance">
+          <p class="money" [class.low]="b.remaining_usd < 2">US$ {{usd(b.remaining_usd)}}</p>
+          <p class="caption">≈ {{brl(b.remaining_brl)}} · informado em {{brDate(b.credit_at)}}, menos US$ {{usd(b.spent_usd)}} gastos desde então</p>
+        </ng-container>
+        <ng-template #noBalance><p class="money">—</p><p class="caption">Informe o saldo que aparece na página da OpenAI.</p></ng-template>
+        <div class="balance-actions">
+          <a class="btn btn-primary btn-sm" href="https://platform.openai.com/settings/organization/billing/overview" target="_blank" rel="noopener noreferrer">Adicionar créditos ↗</a>
+          <button class="link" (click)="creditOpen=!creditOpen">{{creditOpen ? 'Cancelar' : 'Atualizar saldo'}}</button>
+        </div>
+        <div *ngIf="creditOpen" class="credit-form">
+          <label class="caption">Saldo atual em US$ (copie de "Credit balance" na página de cobrança)</label>
+          <div class="row"><input class="input" inputmode="decimal" [(ngModel)]="creditInput" placeholder="ex.: 10,50"><button class="btn btn-secondary btn-sm" [disabled]="saving||!creditInput" (click)="saveCredit()">Salvar saldo</button></div>
+        </div>
+      </section>
     </div>
     <section class="card">
       <div class="card-head"><h2>IA (OpenAI)</h2></div>
@@ -130,7 +147,7 @@ h1{font-size:26px;font-weight:700;margin-bottom:20px}
 .strength div{height:100%;background:var(--warn-dot);transition:width .2s}
 .strength div.good{background:var(--ok-dot)}
 .good-txt{color:var(--ok-fg)}
-.costs{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.costs{display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:16px}.balance .money.low{color:var(--danger)}.balance-actions{display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap}.balance-actions a{text-decoration:none}.credit-form{margin-top:10px;display:flex;flex-direction:column;gap:6px}.credit-form .row{display:flex;gap:8px}.credit-form .input{max-width:140px}
 
 .tlist{list-style:none;padding:0;margin:10px 0 12px;display:flex;flex-direction:column;gap:8px;font-size:13.5px}
 .tlist li{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--divider);padding-bottom:8px}
@@ -174,12 +191,12 @@ tfoot td{font-weight:600;border-top:1px solid var(--border-card);border-bottom:0
 })
 export class SettingsComponent {
   private api = inject(Api);
-  brl = brl; int = int;
+  brl = brl; int = int; brDate = brDate;
   timer = inject(WorkTimer); duration = duration;
   tab: 'conta' | 'ia' | 'tempo' = 'conta';
   t() { return this.timer.stats(); }
   pwCurrent = ''; pwNext = ''; saving = false;
-  model = 'gpt-4.1'; enabled = false; configured = false; privacyGate = false; usage: any = null;
+  model = 'gpt-4.1'; enabled = false; configured = false; privacyGate = false; usage: any = null; creditOpen = false; creditInput = '';
   testing = false; test: any = null;
   details: any = null; period = '30'; view: 'evaluation' | 'day' | 'section' | 'model' | 'recent' = 'evaluation';
   periods = [{label: 'Últimos 7 dias', value: '7'}, {label: 'Últimos 30 dias', value: '30'}, {label: 'Últimos 90 dias', value: '90'}, {label: 'Último ano', value: '365'}];
@@ -212,6 +229,12 @@ export class SettingsComponent {
       this.usage = await this.api.req('GET', '/ai/usage');
       this.loadDetails();
     } catch {}
+  }
+  usd(v: number) { return (v || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+  async saveCredit() {
+    this.saving = true;
+    try { await this.api.req('PUT', '/ai/credit', {credit_usd: this.creditInput}); this.creditOpen = false; this.creditInput = ''; this.api.notify('Saldo atualizado.'); await this.load(); }
+    catch {} finally { this.saving = false; }
   }
   async saveAi() {
     this.saving = true;

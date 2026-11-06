@@ -23,3 +23,12 @@ test('wordingProblems applies only the requested checks', () => {
   assert.equal(wordingProblems(text, {categories: true}).length, 1);
   assert.deepEqual(wordingProblems(text, {categories: false, numbers: false}), []);
 });
+
+import {asksForScores} from '../src/wording.mjs';
+test('instruction lifts the no-numbers rule only when it asks for scores explicitly', () => {
+  assert.equal(asksForScores('FAZER PARAGRAFO COM INTERPRETACAO CLINICA DA EXAMINADA SEM COLOCAR CLASSIFICACAO'), false);
+  assert.equal(asksForScores('não incluir a classificação'), false);
+  assert.equal(asksForScores('Texto mais resumido'), false);
+  assert.equal(asksForScores('Cite os escores e as classificações'), true);
+  assert.equal(asksForScores('incluir a classificação'), true);
+});

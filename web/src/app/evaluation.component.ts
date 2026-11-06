@@ -4,16 +4,28 @@ import {FormsModule} from '@angular/forms';
 import {renderAsync} from 'docx-preview';
 import {Api} from './api.service';
 import {WorkTimer} from './work-timer.service';
+import {Reader} from './reader.service';
 import {DropZoneComponent} from './ui/drop-zone.component';
 import {Identity, IdentityFormComponent, emptyIdentity} from './ui/identity-form.component';
-import {PERCEPTION_MAX_AGE, SECTIONS, SECTION_STATE, STATUS, SectionState, ageText, ageYears, brDate, brl, int, words} from './shared';
+import {CONCLUSION_GUIDANCE, OPTIONAL_SECTIONS, PERCEPTION_MAX_AGE, SECTIONS, SECTION_STATE, STATUS, SectionState, ageText, ageYears, brDate, brl, int, words} from './shared';
 
 /** Section the AI only writes from the psychologist's own guidance (never in "Gerar laudo"). */
 const MANUAL_KEY = 'conclusao';
+const NOT_IN_CONCLUSION = ['demanda', 'anamnesis', 'conclusao', 'recomendacoes'];
 /** Copied from the base document as written; the AI only writes it when asked. */
 const DEMAND_KEY = 'demanda';
 
 type Gen = 'pending' | 'running' | 'done' | 'error' | 'skipped';
+
+/** Copies text. navigator.clipboard only exists on https or localhost; opened from another computer on the
+ * network (http://IP) the old copy command through a hidden text box is used instead. */
+async function writeClipboard(text: string): Promise<boolean> {
+  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; } } catch {}
+  const box = document.createElement('textarea');
+  box.value = text; box.setAttribute('readonly', ''); box.style.position = 'fixed'; box.style.opacity = '0'; box.style.top = '0';
+  document.body.appendChild(box); box.select();
+  try { return document.execCommand('copy'); } catch { return false; } finally { box.remove(); }
+}
 
 @Component({
   selector: 'nl-evaluation',
@@ -25,6 +37,7 @@ type Gen = 'pending' | 'running' | 'done' | 'error' | 'skipped';
 export class EvaluationComponent implements OnDestroy {
   private api = inject(Api);
   private timer = inject(WorkTimer);
+  reader = inject(Reader);
   @ViewChild('previewBox') previewBox?: ElementRef<HTMLDivElement>;
   @Output() changed = new EventEmitter<void>();
   @Output() deleted = new EventEmitter<void>();
@@ -53,7 +66,7 @@ export class EvaluationComponent implements OnDestroy {
   open = ''; editing = ''; editText = ''; sectionInstr = '';
   mode: 'secoes' | 'documento' = 'secoes'; previewLoading = false;
 
-  ngOnDestroy() { clearTimeout(this.idTimer); }
+  ngOnDestroy() { clearTimeout(this.idTimer); this.reader.stop(); }
 
   // ---------- loading ----------
   async load(first = false) {
@@ -81,12 +94,17 @@ export class EvaluationComponent implements OnDestroy {
     try { this.privacy = await this.api.req('GET', `/evaluations/${this.evaluationId}/privacy`); } catch {}
     try { this.references = await this.api.req('GET', `/evaluations/${this.evaluationId}/references`); } catch { this.references = {}; }
   }
-  refs(k: string) { return this.references[k] || []; }
+  refs(k: string) { return k === MANUAL_KEY ? [] : this.references[k] || []; }
+  /** What the conclusion is built from: the texts of the result sections (no demand, no anamnesis), as the API sends them. */
+  conclusionSources() { return this.applicable().filter(s => !NOT_IN_CONCLUSION.includes(s.id) && this.text(s.id).trim()).map(s => ({name: s.name, text: this.text(s.id)})); }
+  /** Reference material behind a section: section texts for the conclusion, tables for the others. */
+  refCount(k: string) { return k === MANUAL_KEY ? this.conclusionSources().length : this.refs(k).length; }
+  refLabel(k: string) { return this.refOpen === k ? (k === MANUAL_KEY ? 'Ocultar textos' : 'Ocultar tabelas') : (k === MANUAL_KEY ? 'Ver textos das seções (' : 'Ver tabelas de referência (') + this.refCount(k) + ')'; }
   async loadInstructions() {
     try {
       const r = await this.api.req('GET', `/evaluations/${this.evaluationId}/instructions`);
       this.instructions = r.sections;
-      this.instrDraft = Object.fromEntries(r.sections.map((x: any) => [x.key, x.custom || (x.key === MANUAL_KEY ? '' : x.default)]));
+      this.instrDraft = Object.fromEntries(r.sections.map((x: any) => [x.key, x.custom || (x.key === MANUAL_KEY ? CONCLUSION_GUIDANCE : x.default)]));
     } catch {}
   }
 
@@ -95,12 +113,21 @@ export class EvaluationComponent implements OnDestroy {
   docName(kind: string) { return this.documents.filter(d => d.kind === kind).at(-1)?.filename || ''; }
   docCount() { return (this.docName('base') ? 1 : 0) + (this.docName('anamnesis') ? 1 : 0); }
   docsReady() { return this.docCount() === 2; }
-  /** Sections this person needs. Percepção is for under 17; text already written stays visible. Unknown age: kept. */
+  /** Sections this person needs. Percepção is for under 17 (text already written stays visible; unknown age: kept).
+   * BFP and DIVA appear only when the base document has their field, even if old text exists. */
   applicable() {
     const age = ageYears(this.idModel.birth_date, this.idModel.end_date);
-    return SECTIONS.filter(s => !(s.id === 'percepcao' && age !== null && age >= PERCEPTION_MAX_AGE && !this.text(s.id).trim()));
+    const found = this.placeable();
+    return SECTIONS.filter(s =>
+      !(this.inspection && OPTIONAL_SECTIONS.includes(s.id) && !found.has(s.id)) &&
+      !(s.id === 'percepcao' && age !== null && age >= PERCEPTION_MAX_AGE && !this.text(s.id).trim()));
   }
-  available() { const found = new Set((this.inspection?.markers || []).map((m: any) => m.key)); return this.inspection ? this.applicable().filter(s => found.has(s.id)) : this.applicable(); }
+  /** Sections the Word file can receive: those with an interpretation field, and titled sections without one
+   * (the export creates the field right after their tables). */
+  placeable() { return new Set([...(this.inspection?.markers || []).map((m: any) => m.key), ...Object.keys(this.inspection?.title_ranges || {})]); }
+  /** Title exists but the "Interpretação" field does not: the export adds it. */
+  fieldAdded(k: string) { return !!this.inspection?.title_ranges?.[k] && !(this.inspection?.markers || []).some((m: any) => m.key === k); }
+  available() { const found = this.placeable(); return this.inspection ? this.applicable().filter(s => found.has(s.id)) : this.applicable(); }
   withOldText() { return (this.inspection?.markers || []).filter((m: any) => m.existing_paragraphs > 0 && m.key !== DEMAND_KEY).map((m: any) => SECTIONS.find(s => s.id === m.key)?.name || m.key); }
   missing() { const ids = new Set(this.available().map(s => s.id)); return this.applicable().filter(s => !ids.has(s.id)).map(s => s.name); }
   isMissing(k: string) { return !!this.inspection && !this.available().some(s => s.id === k); }
@@ -131,7 +158,18 @@ export class EvaluationComponent implements OnDestroy {
     if (i === 2) return this.generating ? `Gerando ${this.genDone()}/${this.genKeys().length}` : this.autoDrafted() ? (this.autoDrafted() === 1 ? '1 seção gerada' : `${this.autoDrafted()} seções geradas`) : 'Pendente';
     return this.allApproved() ? 'Aprovada' : `${this.approved()}/${this.total()} aprovadas`;
   }
-  paragraphs(t: string) { return (t || '').split(/\n\s*\n/).map(p => p.trim()).filter(Boolean).map(p => ({title: /^#{1,6}\s/.test(p) && p.split('\n').length === 1, text: p.replace(/^#{1,6}\s*/, '').replace(/\*\*(.+?)\*\*/g, '$1')})); }
+  /** Paragraphs for display. A "## Título: texto..." line (title and text on one line) becomes a bold title plus a normal
+   * paragraph, as in the Word export; only short "## " lines are titles. */
+  paragraphs(t: string) {
+    return (t || '').split(/\n\s*\n/).map(p => p.trim()).filter(Boolean).flatMap(p => {
+      const clean = (s: string) => s.replace(/\*\*(.+?)\*\*/g, '$1').trim();
+      if (!/^#{1,6}\s/.test(p)) return [{title: false, text: clean(p)}];
+      const [first, ...rest] = p.replace(/^#{1,6}\s*/, '').split('\n');
+      const inline = first.length > 80 ? /^([^:.]{2,80}):\s+(.+)$/.exec(first) : null;
+      const title = inline ? inline[1] : first, body = [inline?.[2] || '', ...rest].join(' ').trim();
+      return [{title: true, text: clean(title)}, ...(body ? [{title: false, text: clean(body)}] : [])];
+    });
+  }
 
   // ---------- step 1: identification (auto-save) ----------
   onIdentity(v: Identity) {
@@ -212,7 +250,7 @@ export class EvaluationComponent implements OnDestroy {
     if ((ins.custom || (k === MANUAL_KEY ? '' : ins.default)) === value) return true;
     try {
       const r = await this.api.req('PUT', `/evaluations/${this.evaluationId}/instructions/${k}`, {prompt: value && value !== ins.default ? value : null});
-      ins.custom = r.custom; this.instrDraft[k] = r.custom || (k === MANUAL_KEY ? '' : ins.default);
+      ins.custom = r.custom; this.instrDraft[k] = r.custom || (k === MANUAL_KEY ? CONCLUSION_GUIDANCE : ins.default);
       return true;
     } catch { return false; }
   }
@@ -241,8 +279,8 @@ export class EvaluationComponent implements OnDestroy {
     this.refOpen = '';
     if (this.panelFoldedByTables) { this.panelClosed = false; this.panelFoldedByTables = false; }
   }
-  toggle(k: string) { this.closeRefs(); this.open = this.open === k ? '' : k; this.editing = ''; this.sectionInstr = ''; }
-  startEdit(k: string) { this.editing = k; this.editText = this.text(k); this.sectionInstr = ''; }
+  toggle(k: string) { this.reader.stop(); this.closeRefs(); this.open = this.open === k ? '' : k; this.editing = ''; this.sectionInstr = ''; }
+  startEdit(k: string) { this.reader.stop(); this.editing = k; this.editText = this.text(k); this.sectionInstr = ''; }
   async saveEdit(k: string) {
     if (!this.editText.trim()) { this.api.notify('O texto não pode ficar vazio.'); return; }
     try { await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content: this.editText}); this.editing = ''; await this.load(); this.changed.emit(); this.api.notify('Texto salvo. A seção voltou para revisão.'); } catch {}
@@ -268,7 +306,7 @@ export class EvaluationComponent implements OnDestroy {
       await this.load(); this.changed.emit();
       const list = this.available(), i = list.findIndex(s => s.id === k);
       const next = [...list.slice(i + 1), ...list.slice(0, i)].find(s => this.state(s.id) !== 'ap');
-      if (this.refOpen) { if (next && this.refs(next.id).length) this.refOpen = next.id; else this.closeRefs(); }
+      if (this.refOpen) { if (next && this.refCount(next.id)) this.refOpen = next.id; else this.closeRefs(); }
       this.open = next?.id || ''; this.editing = ''; this.sectionInstr = '';
       if (!next && this.allApproved()) this.api.notify('Todas as seções aprovadas. Já dá para baixar o Word.');
     } catch {}
@@ -300,7 +338,19 @@ export class EvaluationComponent implements OnDestroy {
   }
   // manual mode (ChatGPT web)
   async copyPrompt(k: string) {
-    try { const r = await this.api.req('POST', `/evaluations/${this.evaluationId}/prompt/${k}`, {}); await navigator.clipboard.writeText(r.text); window.open('https://chatgpt.com/', 'chatgpt'); this.api.notify(`Pedido copiado (${r.hidden} dados ocultados). Cole no ChatGPT.`); } catch {}
+    try { const r = await this.api.req('POST', `/evaluations/${this.evaluationId}/prompt/${k}`, k === MANUAL_KEY ? {notes: (this.instrDraft[k] || '').trim()} : {}); await writeClipboard(r.text); window.open('https://chatgpt.com/', 'chatgpt'); this.api.notify(`Pedido copiado (${r.hidden} dados ocultados). Cole no ChatGPT.`); } catch {}
+  }
+  /** Copies the section text ready to paste in Word: topic titles without "##", paragraphs separated by a blank line. */
+  copied = ''; private copiedTimer: any;
+  async copyText(k: string) { await this.copy(k, this.paragraphs(this.text(k)).map(p => p.text).join('\n\n')); }
+  /** Conclusão: every section text the conclusion is built from, each under its section name. */
+  async copyAll() {
+    await this.copy('__all', this.conclusionSources().map(t => t.name.toUpperCase() + '\n\n' + this.paragraphs(t.text).map(p => p.text).join('\n\n')).join('\n\n\n'));
+  }
+  private async copy(id: string, plain: string) {
+    if (!await writeClipboard(plain)) { this.api.notify('Não foi possível copiar. Selecione o texto e use Ctrl+C.'); return; }
+    this.copied = id; clearTimeout(this.copiedTimer);
+    this.copiedTimer = setTimeout(() => this.copied = '', 1800);
   }
   async pasteAnswer() { try { this.editText = (await navigator.clipboard.readText()).trim(); } catch { this.api.notify('Use Ctrl+V dentro do campo.'); } }
 

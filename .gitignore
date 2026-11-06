@@ -17,3 +17,6 @@ api/data/
 *.db
 *.db-wal
 *.db-shm
+# Local Piper voice (downloaded by scripts/setup-voice.mjs)
+worker/voices/
+amostras-voz/

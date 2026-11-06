@@ -6,7 +6,7 @@ from docx import Document
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 WORKER=str(ROOT/'worker/docx_worker.py')
-SLOTS=['inteligencia','percepcao','memoria','atencao','funcoes_executivas','comportamento','comportamento_diva']
+SLOTS=['inteligencia','percepcao','memoria','atencao','funcoes_executivas','comportamento','personalidade','comportamento_diva']
 
 def run(op,*args,stdin=None):
  r=subprocess.run([sys.executable,WORKER,op,*args],input=json.dumps(stdin) if stdin else None,text=True,capture_output=True,encoding='utf-8')
@@ -16,11 +16,13 @@ def run(op,*args,stdin=None):
 def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 
 def synthetic_base(path):
- """Reference layout: ANAMNESE + seven interpretation markers, each after a score table."""
+ """Reference layout: ANAMNESE + one interpretation marker per slot, each after a score table.
+ Only the BFP field carries its own title, since an untitled extra behaviour field is the DIVA one."""
  d=Document();d.sections[0].header.paragraphs[0].text='Cabeçalho fictício'
  d.add_paragraph('Paciente: Fulano Fictício')
  d.add_paragraph('ANAMNESE')
- for i,_ in enumerate(SLOTS):
+ for i,k in enumerate(SLOTS):
+  if k=='personalidade':d.add_paragraph('BATERIA FATORIAL DA PERSONALIDADE')
   t=d.add_table(rows=2,cols=3)
   for c,v in enumerate(['Teste','Pontuação','Classificação']):t.cell(0,c).text=v
   for c,v in enumerate([f'Teste {i}',str(100+i),'Média']):t.cell(1,c).text=v
@@ -205,6 +207,63 @@ class TestWorker(unittest.TestCase):
   r=run('inspect',str(self.base));els=r['elements']
   firsts={m['key']:[e['rows'][0][0] for e in els[m['section_start']:m['section_end']] if e['type']=='table' and len(e['rows'])>1] for m in r['markers'] if 'section_start' in m}
   self.assertEqual(firsts,{'inteligencia':['WISC','Subtestes WISC'],'percepcao':['Percepção'],'comportamento':[],'comportamento_diva':['DIVA']})
+
+ def test_title_without_field_still_has_its_tables(self):
+  d=Document()
+  d.add_table(rows=1,cols=1).cell(0,0).text='HABILIDADES INTELECTUAIS E DE INTELIGÊNCIA'
+  d.add_table(rows=2,cols=2).cell(0,0).text='WISC'
+  d.add_table(rows=1,cols=1).cell(0,0).text='MEMÓRIA E APRENDIZAGEM:'
+  d.add_table(rows=1,cols=1).cell(0,0).text='Interpretação e Observações Clínicas:'
+  d.save(self.base)
+  r=run('inspect',str(self.base))
+  self.assertEqual([m['key'] for m in r['markers']],['memoria'])
+  self.assertEqual(r['title_ranges'],{'inteligencia':[1,2]})
+
+ def test_title_and_text_on_one_line_are_split(self):
+  import importlib.util
+  spec=importlib.util.spec_from_file_location('w',WORKER);w=importlib.util.module_from_spec(spec);spec.loader.exec_module(w)
+  long='A pessoa fictícia relatou dormir tarde e acordar cansada na maior parte dos dias da semana.'
+  self.assertEqual(w.blocks('## Sono: '+long),[('Sono',True),(long,False)])
+  self.assertEqual(w.blocks('## Sono'+chr(10)+chr(10)+'Texto.'),[('Sono',True),('Texto.',False)])
+
+ def test_export_adds_field_for_title_without_one(self):
+  d=Document()
+  d.add_table(rows=1,cols=1).cell(0,0).text='HABILIDADES INTELECTUAIS E DE INTELIGÊNCIA'
+  d.add_table(rows=2,cols=2).cell(0,0).text='WISC'
+  d.add_paragraph('Tabela 1. Resultados fictícios.');d.add_paragraph('')
+  d.add_table(rows=1,cols=1).cell(0,0).text='MEMÓRIA E APRENDIZAGEM:'
+  d.add_table(rows=1,cols=1).cell(0,0).text='Interpretação e Observações Clínicas:'
+  d.save(self.base);before=sha(self.base)
+  r=run('export',stdin={'base':str(self.base),'out':str(self.out),'sections':{'inteligencia':'Texto manual sintético.','memoria':'Memória sintética.'}})
+  self.assertEqual((r['missing'],r['fields_added']),([],['inteligencia']));self.assertEqual(sha(self.base),before)
+  body=[e for e in Document(self.out).element.body.iterchildren() if e.tag.endswith('}p') or e.tag.endswith('}tbl')]
+  texts=[''.join(t.text or '' for t in e.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t')) for e in body]
+  i=texts.index('Tabela 1. Resultados fictícios.')
+  self.assertEqual(texts[i+1:i+3],['Interpretação Clínica:','Texto manual sintético.'])
+  self.assertEqual(texts.index('MEMÓRIA E APRENDIZAGEM:'),i+4)
+
+ def test_bfp_title_gets_its_own_section_before_diva(self):
+  d=Document()
+  d.add_table(rows=1,cols=1).cell(0,0).text='COMPORTAMENTO:'
+  d.add_table(rows=1,cols=1).cell(0,0).text='Interpretação e Observações Clínicas:'
+  d.add_table(rows=1,cols=1).cell(0,0).text='BATERIA FATORIAL DA PERSONALIDADE'
+  d.add_table(rows=2,cols=2).cell(0,0).text='BFP'
+  d.add_table(rows=1,cols=1).cell(0,0).text='Interpretação e Observações Clínicas:'
+  d.add_table(rows=2,cols=2).cell(0,0).text='DIVA'
+  d.add_table(rows=1,cols=1).cell(0,0).text='Interpretação e Observações Clínicas:'
+  d.save(self.base)
+  r=run('inspect',str(self.base))
+  self.assertEqual([m['key'] for m in r['markers']],['comportamento','personalidade','comportamento_diva'])
+  self.assertIn('personalidade',r['titled_domains'])
+
+ def test_stacked_rows_in_one_row_become_separate_rows(self):
+  d=Document();t=d.add_table(rows=2,cols=3)
+  for c,v in enumerate(['Índice','QI','Classificação']):t.cell(0,c).text=v
+  for c,v in enumerate(['Índice A'+chr(10)+'Índice B','90'+chr(10)+'101','Média'+chr(10)+'Média']):t.cell(1,c).text=v
+  d.save(self.base)
+  e=[e for e in run('inspect',str(self.base))['elements'] if e['type']=='table'][0]
+  self.assertEqual(e['rows'],[['Índice','QI','Classificação'],['Índice A','90','Média'],['Índice B','101','Média']])
+  self.assertEqual([[c['text'] for c in r] for r in e['grid']],e['rows'])
 
  def test_grid_keeps_merged_cells_once(self):
   d=Document();t=d.add_table(rows=3,cols=3)

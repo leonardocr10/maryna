@@ -13,7 +13,7 @@ from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
 from docx.table import Table
 
-SLOTS=['inteligencia','percepcao','memoria','atencao','funcoes_executivas','comportamento','comportamento_diva']
+SLOTS=['inteligencia','percepcao','memoria','atencao','funcoes_executivas','comportamento','personalidade','comportamento_diva']
 # Fixed (non-interpretation) destinations, matched by label prefix after normalisation.
 FIXED=[
  ('demanda',('DESCRIÇÃO DA DEMANDA',)),
@@ -35,7 +35,8 @@ DOMAINS=[
  ('memoria',('MEMÓRIA',)),
  ('atencao',('PROCESSOS ATENCIONAIS','ATENÇÃO')),
  ('funcoes_executivas',('FUNÇÕES EXECUTIVAS',)),
- ('comportamento',('COMPORTAMENTO','BATERIA FATORIAL')),
+ ('personalidade',('BATERIA FATORIAL',)),
+ ('comportamento',('COMPORTAMENTO',)),
 ]
 def domain_of(text):
  """Domain key when the text is an all-caps section title, else None."""
@@ -50,8 +51,8 @@ class Markers:
  def __init__(self):self.used=set();self.domain=None;self.last=None
  def _slot(self):
   k=self.domain;self.domain=None
-  # a second field in the behaviour section (same title, or a new one like BATERIA FATORIAL) is the DIVA slot
-  if (k is None and self.last=='comportamento') or (k=='comportamento' and k in self.used):k='comportamento_diva'
+  # a second untitled field in the behaviour section (after its own field or the BFP one) is the DIVA slot
+  if (k is None and self.last in ('comportamento','personalidade')) or (k=='comportamento' and k in self.used):k='comportamento_diva'
   if k is None or k in self.used:k=next((s for s in SLOTS if s not in self.used),None)
   if k:self.used.add(k)
   self.last=k
@@ -100,6 +101,20 @@ def open_docx(path):
   if len(infos)>MAX_ENTRIES or sum(i.file_size for i in infos)>MAX_UNZIPPED:raise SystemExit('docx too large when uncompressed')
   if 'word/document.xml' not in z.namelist():raise SystemExit('not a Word document')
  return Document(path)
+def stacked_lines(texts):
+ """Some templates put several results in one row, one per line inside each cell (e.g. three indexes and
+ their scores). When every cell of the row has the same number of lines, those lines are separate rows."""
+ lines=[[clean(x) for x in t.split(chr(10)) if clean(x)] for t in texts]
+ n=len(lines[0]) if lines else 0
+ return [list(r) for r in zip(*lines)] if n>1 and all(len(l)==n for l in lines) else None
+def table_rows(table):
+ """Plain rows of cell text, with stacked rows split apart."""
+ out=[]
+ for i,row in enumerate(table.rows):
+  texts=[c.text for c in row.cells]
+  # the header row keeps its line breaks ("SOMA DOS / ESCORES T" is one title)
+  out.extend((i and stacked_lines(texts)) or [[clean(t) for t in texts]])
+ return out
 def table_grid(table):
  """Rows of {text,rowspan,colspan} for display: merged cells appear once, as in the document."""
  grid=[];cells={}
@@ -111,15 +126,23 @@ def table_grid(table):
    elif tc in cells:
     if tc not in counted:cells[tc]['rowspan']+=1;counted.add(tc)
    else:
-    cells[tc]={'text':clean(c.text),'rowspan':1,'colspan':1};new.add(tc);line.append(cells[tc])
+    cells[tc]={'text':clean(c.text),'raw':c.text,'rowspan':1,'colspan':1};new.add(tc);line.append(cells[tc])
   grid.append(line)
- return grid
+ out=[];width=max((sum(c['colspan'] for c in l) for l in grid),default=0)
+ for i,line in enumerate(grid):
+  # header and rows with merged cells stay as they are; plain stacked rows become one row per line
+  plain=i and len(line)==width and all(c['rowspan']==1 and c['colspan']==1 for c in line)
+  split=stacked_lines([c['raw'] for c in line]) if plain else None
+  out.extend([[{'text':t,'rowspan':1,'colspan':1} for t in r] for r in split] if split else [line])
+ for line in out:
+  for c in line:c.pop('raw',None)
+ return out
 def all_elements(doc):
  for ch in doc.element.body.iterchildren():
   if ch.tag.endswith('}p'):
    yield {'type':'p','text':clean(Paragraph(ch,doc).text)}
   elif ch.tag.endswith('}tbl'):
-   t=Table(ch,doc);yield {'type':'table','rows':[[clean(c.text) for c in row.cells] for row in t.rows],'grid':table_grid(t)}
+   t=Table(ch,doc);yield {'type':'table','rows':table_rows(t),'grid':table_grid(t)}
 def section_ranges(elements,markers):
  """Elements that belong to each interpretation: from its section title to the next title, so tables placed
  after the interpretation field still count. A section with another interpretation ahead ends at its own field."""
@@ -134,6 +157,18 @@ def section_ranges(elements,markers):
   if next_field is not None and (next_title is None or next_field<next_title):end=i
   else:end=next_title if next_title is not None else len(elements)
   m['section_start'],m['section_end']=start,end
+def title_ranges(elements,markers):
+ """For a section whose title exists but has no interpretation field: its elements, from the title to the next
+ title or field. Lets a draft be written from its tables even though the export has no place to put it."""
+ text=lambda e:e['text'] if e['type']=='p' else ' '.join(x for row in e['rows'] for x in row)
+ has_field={m['key'] for m in markers}
+ titles=[(i,domain_of(text(e))) for i,e in enumerate(elements) if domain_of(text(e))]
+ stops=sorted({i for i,_ in titles}|{m['index'] for m in markers})
+ out={}
+ for i,k in titles:
+  if k in has_field or k in out:continue
+  out[k]=[i+1,min([s for s in stops if s>i],default=len(elements))]
+ return out
 def inspect(path):
  d=open_docx(path);elements=list(all_elements(d));markers=[];m=Markers()
  children=[ch for ch in d.element.body.iterchildren() if ch.tag.endswith('}p') or ch.tag.endswith('}tbl')]
@@ -148,7 +183,7 @@ def inspect(path):
    markers.append({'key':k,'index':i,'label':txt,'existing_paragraphs':sum(1 for ch in old if clean(Paragraph(ch,d).text)),'existing_text':'\n\n'.join(t for t in (Paragraph(ch,d).text.strip() for ch in old) if t)})
  section_ranges(elements,markers)
  titled=sorted({domain_of(e['text'] if e['type']=='p' else ' '.join(x for row in e['rows'] for x in row)) for e in elements}-{None})
- return {'elements':elements,'markers':markers,'titled_domains':titled,'identification':identification(d),'warnings':['Conferir visualmente a ordem dos marcadores e os resultados.']}
+ return {'elements':elements,'markers':markers,'titled_domains':titled,'title_ranges':title_ranges(elements,markers),'identification':identification(d),'warnings':['Conferir visualmente a ordem dos marcadores e os resultados.']}
 
 REPORT_FONT='Arial';REPORT_HALF_POINTS='22'  # Arial 11 pt
 def run_props(bold=False,red=False):
@@ -183,7 +218,11 @@ def blocks(content):
    line=re.sub(r'\*\*(.+?)\*\*',r'\1',line)
    if line.startswith('#'):
     if out:out.append(('',False))
-    out.append((line.lstrip('#').strip(),True))
+    line=line.lstrip('#').strip()
+    # "## Título: texto..." on one line: bold title, then the text as a normal paragraph
+    inline=re.fullmatch(r'([^:.]{2,80}):\s+(.+)',line) if len(line)>80 else None
+    if inline:out.append((inline.group(1).strip(),True));out.append((inline.group(2).strip(),False))
+    else:out.append((line,True))
    else:out.append((line,False))
  return out
 def insert_after(anchor,content,red=False):
@@ -242,11 +281,27 @@ def fill_fields(doc,fields):
    if value is None or label in filled:continue
    if p.text[a:b]==value or replace_span(p,a,b,value):filled.append(label)
  return filled
+FIELD_LABEL='Interpretação Clínica:'
+def fieldless_anchors(d):
+ """{key: last element of the section} for sections whose title exists but that have no interpretation field.
+ The export adds the field label and the text right after it, i.e. after the section's tables and captions."""
+ elements=list(all_elements(d));m=Markers();markers=[]
+ children=[ch for ch in d.element.body.iterchildren() if ch.tag.endswith('}p') or ch.tag.endswith('}tbl')]
+ for i,e in enumerate(elements):
+  k=m.key(e['text'] if e['type']=='p' else ' '.join(x for row in e['rows'] for x in row))
+  if k:markers.append({'key':k,'index':i})
+ out={}
+ for k,(start,end) in title_ranges(elements,markers).items():
+  # skip trailing blank paragraphs so the new field sits right under the last table or caption
+  last=max([i for i in range(start-1,end) if elements[i]['type']=='table' or elements[i].get('text')],default=start-1)
+  out[k]=children[last]
+ return out
 def export(base,out,sections,highlight=False,fields=None):
  if os.path.abspath(base)==os.path.abspath(out):raise SystemExit('out must differ from base')
  before=sha256(base)
  d=open_docx(base);seen=[];m=Markers();replaced={}
  filled=fill_fields(d,{k:clean(v) for k,v in (fields or {}).items() if clean(v)})
+ anchors=fieldless_anchors(d);added=[]
  for ch in list(d.element.body.iterchildren()):
   if not (ch.tag.endswith('}p') or ch.tag.endswith('}tbl')) or ch.getparent() is None:continue
   k=m.key(element_text(ch,d))
@@ -258,10 +313,15 @@ def export(base,out,sections,highlight=False,fields=None):
     if clean(Paragraph(old,d).text):replaced[k]=replaced.get(k,0)+1
     old.getparent().remove(old)
    insert_after(ch,sections[k],highlight)
+ # sections written by hand for a title without field: add the field label and the text after the section's content
+ for k,anchor in anchors.items():
+  if k in sections and clean(sections[k]) and k not in seen:
+   label=new_paragraph(FIELD_LABEL,bold=True);anchor.addnext(label)
+   insert_after(label,sections[k],highlight);seen.append(k);added.append(k)
  d.save(out)
  after=sha256(base)
  if before!=after:raise SystemExit('base document changed during export')
- return {'inserted':seen,'missing':[k for k in sections if k not in seen],'fields_filled':filled,'replaced':replaced,'base_sha256':before,'out_sha256':sha256(out)}
+ return {'inserted':seen,'missing':[k for k in sections if k not in seen],'fields_filled':filled,'replaced':replaced,'fields_added':added,'base_sha256':before,'out_sha256':sha256(out)}
 def main():
  op=sys.argv[1]
  sys.stdout.reconfigure(encoding='utf-8')

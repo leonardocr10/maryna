@@ -9,6 +9,7 @@ export const SECTIONS = [
   {id: 'atencao', name: 'Processos atencionais'},
   {id: 'funcoes_executivas', name: 'Funções executivas'},
   {id: 'comportamento', name: 'Comportamento'},
+  {id: 'personalidade', name: 'Bateria Fatorial da Personalidade'},
   {id: 'comportamento_diva', name: 'Comportamento / DIVA'},
   {id: 'conclusao', name: 'Conclusão'},
   {id: 'recomendacoes', name: 'Indicações e recomendações'},
@@ -22,7 +23,16 @@ export const SCHOOLING_OPTIONS: SelectOption[] = [
   ...['1ª série', '2ª série', '3ª série', 'Ensino médio completo'].map(label => ({label, group: 'Ensino médio'})),
   ...['Superior incompleto', 'Superior completo'].map(label => ({label, group: 'Ensino superior'})),
 ];
-export const MODEL_OPTIONS: SelectOption[] = ['gpt-4.1', 'gpt-4.1-mini', 'gpt-4o', 'gpt-4o-mini', 'o4-mini'];
+/** Text models (checked on the API account on 2026-11-05). US$ per 1M tokens: input / output. */
+export const MODEL_OPTIONS: SelectOption[] = [
+  {value: 'gpt-6.1-terra', label: 'gpt-6.1-terra — US$ 1,00 / 5,00 (recomendado)', group: 'Novos (GPT-6)'},
+  {value: 'gpt-6.1-sol', label: 'gpt-6.1-sol — US$ 2,00 / 10,00 (mais forte)', group: 'Novos (GPT-6)'},
+  {value: 'gpt-6-luna', label: 'gpt-6-luna — US$ 0,10 / 0,50 (mais barato)', group: 'Novos (GPT-6)'},
+  {value: 'gpt-4.1', label: 'gpt-4.1 — US$ 2,00 / 8,00', group: 'Anteriores'},
+  {value: 'gpt-4.1-mini', label: 'gpt-4.1-mini — US$ 0,40 / 1,60', group: 'Anteriores'},
+  {value: 'gpt-4o', label: 'gpt-4o — US$ 2,50 / 10,00', group: 'Anteriores'},
+  {value: 'gpt-4o-mini', label: 'gpt-4o-mini — US$ 0,15 / 0,60', group: 'Anteriores'},
+];
 
 /** Option list that also keeps a value typed before (e.g. read from an old base document). */
 export function withCurrent(options: SelectOption[], current: string): SelectOption[] {
@@ -55,6 +65,10 @@ export function ageYears(birth: string, at?: string): number | null {
 }
 /** Percepção is only for people under this age. */
 export const PERCEPTION_MAX_AGE = 17;
+/** Pre-filled guidance for the conclusion (same text as the API default). */
+export const CONCLUSION_GUIDANCE = 'Fazer texto discorrido de conclusão e raciocínio clínico de forma um pouco resumida, vinculando dados e resultados de forma coerente e bem estruturada, e relatar no final que apresenta características ';
+/** Behaviour sub-sections not every base document has: shown only when the document has their field. */
+export const OPTIONAL_SECTIONS = ['personalidade', 'comportamento_diva'];
 
 export type EvalStatus = 'rs' | 'rv' | 'ap';
 export const STATUS: Record<EvalStatus, {label: string; css: string}> = {rs: {label: 'Rascunho', css: 'idle'}, rv: {label: 'Em revisão', css: 'warn'}, ap: {label: 'Aprovada', css: 'ok'}};

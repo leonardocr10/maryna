@@ -18,7 +18,7 @@ New-Item -ItemType Directory -Force -Path $programs | Out-Null
 
 function Add-UserPath([string]$dir) {
   if ($env:NL_SKIP_USER_PATH -eq '1') { return }   # tests only
-  # Edits the registry value directly so entries such as %USERPROFILE%in keep working (type and raw text preserved).
+  # Edits the registry value directly so entries such as %USERPROFILE%bin keep working (type and raw text preserved).
   $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
   try {
     $raw = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)

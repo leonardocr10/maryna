@@ -4,7 +4,11 @@ Você está trabalhando no software de auxílio à elaboração de laudos neurop
 
 ## Regras inegociáveis
 1. Toda avaliação exige upload do DOCX-base da estagiária e DOCX de anamnese da psicóloga. Nunca substituir ou sobrescrever arquivos originais.
-2. Não alterar nenhum valor, escore, percentil, classificação, tabela, cabeçalho, rodapé, autor, assinatura, referência ou texto já existente no DOCX-base. Inserir apenas textos nas regiões previamente aprovadas como destino.
+2. Não alterar nenhum valor, escore, percentil, classificação, tabela, cabeçalho, rodapé, autor, assinatura, referência ou texto já existente no DOCX-base. Inserir apenas textos nas regiões previamente aprovadas como destino. Exceções aprovadas pela responsável, sempre por escolha e aprovação da psicóloga, nunca pela IA:
+   - Partes de texto fixo sob uma caixa de título de uma célula (ex.: Fontes fundamentais de informações, Instrumentos/avaliações aplicadas, Procedimentos de análise, Instrumentos/resultados), chaves `fixo_*`: sem edição, o Word mantém os parágrafos originais; editadas e aprovadas, o texto substitui só os parágrafos logo abaixo do título.
+   - A linha de local e data do fechamento ("Cidade, D de mês de AAAA."), trocada inteira pelo texto salvo na avaliação; em branco, fica a do arquivo.
+   - Campos de identificação (valor após "Nome:", "Data de Nascimento:" etc.), preenchidos com os dados da avaliação.
+   A Hipótese diagnóstica é região de destino escrita só pela psicóloga: a IA nunca redige diagnóstico (geração e pedido ao ChatGPT recusados).
 3. Anamnese: tópicos relevantes, um ou mais parágrafos discursivos objetivos por tópico; preservar fontes (pai, mãe, responsável, próprio paciente), divergências, temporalidade e desconhecidos.
 4. Interpretação: sem classificação explícita no parágrafo salvo quando psicóloga solicitar; não inventar sintomas, testes, datas, correlações ou diagnóstico. Nunca transformar mera contagem de sintomas em diagnóstico.
 5. Gerar somente rascunhos de IA. Salvar geração + histórico + evidências; edição e aprovação por psicóloga; exportação apenas quando aprovada.

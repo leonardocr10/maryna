@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS evaluations(
   start_date TEXT NULL,
   end_date TEXT NULL,
   model_id TEXT NULL,
+  submitted_at TEXT NULL,
+  submitted_by TEXT NULL,
   created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 CREATE TABLE IF NOT EXISTS documents(
@@ -66,6 +68,34 @@ CREATE TABLE IF NOT EXISTS section_history(
   version INTEGER NOT NULL,
   content TEXT NOT NULL,
   actor_id TEXT,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+-- Review workflow: correction requests from the psychologist to whoever prepared the files (and replies).
+CREATE TABLE IF NOT EXISTS review_notes(
+  id TEXT PRIMARY KEY,
+  evaluation_id TEXT NOT NULL REFERENCES evaluations(id),
+  author_id TEXT,
+  text TEXT NOT NULL,
+  resolved_at TEXT NULL,
+  resolved_by TEXT NULL,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE INDEX IF NOT EXISTS ix_notes_eval ON review_notes(evaluation_id);
+-- Standard texts of the clinic (recommendations, referrals...), inserted by hand in the editor. Never patient data.
+CREATE TABLE IF NOT EXISTS text_snippets(
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  text TEXT NOT NULL,
+  section_key TEXT NULL,
+  created_by TEXT,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+-- "Esqueci minha senha": there is no e-mail service, so the request goes to the administrator (Configurações > Usuários).
+CREATE TABLE IF NOT EXISTS password_requests(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  handled_at TEXT NULL,
   created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 CREATE TABLE IF NOT EXISTS prompt_templates(

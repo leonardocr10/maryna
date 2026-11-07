@@ -1,12 +1,12 @@
 import {Component, EventEmitter, Input, OnInit, Output, inject} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {Api} from './api.service';
-import {EvalStatus, STATUS, brDate, brl, fold, listStatus} from './shared';
+import {EvalStatus, STATUS, brDate, brl, fold, listStatus, todayISO} from './shared';
 import {IconComponent} from './ui/icon.component';
 import {FilterSelectComponent} from './ui/filter-select.component';
 import {PagerComponent} from './ui/pager.component';
 
-type Filter = 'all' | EvalStatus;
+type Filter = 'all' | EvalStatus | 'late' | 'soon' | 'queue' | 'fix';
 const ORDERS = ['Mais recentes', 'Mais antigas', 'Nome (A–Z)', 'Nome (Z–A)', 'Status', 'Progresso'];
 
 /** "Avaliações" home: KPIs, paginated table and the side cards (tarefas, atividade recente). */
@@ -34,7 +34,7 @@ const ORDERS = ['Mais recentes', 'Mais antigas', 'Nome (A–Z)', 'Nome (Z–A)',
       <nl-filter-select size="sm" icon="sort" [searchable]="false" [alignRight]="true" ariaLabel="Ordenar lista" [options]="orders" [value]="order" (valueChange)="order=$event;page=1"></nl-filter-select></div>
     <div class="filters">
       <div class="search-box"><nl-icon name="search"/><input class="input" [value]="query" (input)="setQuery($any($event.target).value)" placeholder="Buscar avaliação ou paciente…" aria-label="Buscar avaliação ou paciente"></div>
-      <button *ngFor="let f of filters" type="button" class="fchip" [class.on]="filter===f.id" [attr.aria-pressed]="filter===f.id" (click)="filter=f.id;page=1">{{f.label}} <b>{{count(f.id)}}</b></button>
+      <button *ngFor="let f of chips()" type="button" class="fchip" [class.on]="filter===f.id" [attr.aria-pressed]="filter===f.id" (click)="filter=f.id;page=1">{{f.label}} <b>{{count(f.id)}}</b></button>
     </div>
     <div class="tablewrap">
       <table class="tbl">
@@ -45,7 +45,7 @@ const ORDERS = ['Mais recentes', 'Mais antigas', 'Nome (A–Z)', 'Nome (Z–A)',
             <td>{{e.age || '—'}}</td>
             <td class="c"><span *ngIf="sexIcon(e.sex) as sx" class="sx" [class]="'sx ' + sx" [title]="e.sex" [attr.aria-label]="e.sex"><nl-icon [name]="sx"/></span><span *ngIf="!sexIcon(e.sex)" class="muted" [title]="e.sex || 'Não informado'">—</span></td>
             <td><span class="thi"><nl-icon name="calendar"/> {{brDate(e.start_date || e.created_at)}}</span></td>
-            <td><span [class]="'badge '+STATUS[st(e)].css"><nl-icon [name]="st(e)==='ap' ? 'checkfill' : st(e)==='rv' ? 'clock' : 'edit'"/> {{STATUS[st(e)].label}}</span></td>
+            <td><span *ngIf="fix(e)" class="badge danger due" title="A psicóloga pediu correções"><nl-icon name="chat"/> Correção pedida</span><span *ngIf="queued(e)" class="badge warn due" [title]="'Enviada por ' + (e.submitted_by_name || '—')"><nl-icon name="upload"/> Enviada</span><span *ngIf="late(e)" class="badge danger due" [title]="'Prazo: ' + brDate(e.end_date)"><nl-icon name="alert"/> Atrasada</span><span *ngIf="soon(e)" class="badge warn due" [title]="'Prazo: ' + brDate(e.end_date)"><nl-icon name="calendar"/> Vence {{brDate(e.end_date).slice(0,5)}}</span><span [class]="'badge '+STATUS[st(e)].css"><nl-icon [name]="st(e)==='ap' ? 'checkfill' : st(e)==='rv' ? 'clock' : 'edit'"/> {{STATUS[st(e)].label}}</span></td>
             <td class="prog"><span class="pm">{{e.approved_count||0}} de {{e.section_total||0}} seções</span><span class="pbar"><span class="progress" [class.full]="pct(e)===100"><span [style.width.%]="pct(e)"></span></span><b>{{pct(e)}}%</b></span></td>
           </tr>
         </tbody>
@@ -59,6 +59,10 @@ const ORDERS = ['Mais recentes', 'Mais antigas', 'Nome (A–Z)', 'Nome (Z–A)',
     <section class="card side-card">
       <h3><nl-icon name="bolt"/> Tarefas do dia</h3>
       <p>Acompanhe as próximas ações do seu fluxo de laudos.</p>
+      <button *ngIf="count('queue')" type="button" class="task" (click)="filter='queue';page=1"><span class="ti tone-warn"><nl-icon name="upload"/></span><span><b>{{canWrite() ? 'Aguardando sua revisão' : 'Enviadas para revisão'}} ({{count('queue')}})</b><small>Arquivos enviados pela estagiária</small></span><nl-icon name="chevr"/></button>
+      <button *ngIf="count('fix')" type="button" class="task" (click)="filter='fix';page=1"><span class="ti tone-danger"><nl-icon name="chat"/></span><span><b>Correções pedidas ({{count('fix')}})</b><small>{{canWrite() ? 'Esperando a estagiária corrigir' : 'A psicóloga pediu ajustes'}}</small></span><nl-icon name="chevr"/></button>
+      <button *ngIf="count('late')" type="button" class="task" (click)="filter='late';page=1"><span class="ti tone-danger"><nl-icon name="alert"/></span><span><b>Atrasadas ({{count('late')}})</b><small>Data de finalização já passou</small></span><nl-icon name="chevr"/></button>
+      <button *ngIf="count('soon')" type="button" class="task" (click)="filter='soon';page=1"><span class="ti tone-warn"><nl-icon name="calendar"/></span><span><b>Vencem em 7 dias ({{count('soon')}})</b><small>Pela data de finalização do laudo</small></span><nl-icon name="chevr"/></button>
       <button type="button" class="task" (click)="filter='rv';page=1"><span class="ti tone-warn"><nl-icon name="clock"/></span><span><b>Revisar {{count('rv')}} {{count('rv')===1?'avaliação':'avaliações'}}</b><small>Seções geradas pela IA</small></span><nl-icon name="chevr"/></button>
       <button type="button" class="task" (click)="filter='rs';page=1"><span class="ti tone-primary"><nl-icon name="clipboard"/></span><span><b>Concluir rascunhos ({{count('rs')}})</b><small>Enviar arquivos e gerar seções</small></span><nl-icon name="chevr"/></button>
       <button type="button" class="task" (click)="filter='ap';page=1"><span class="ti tone-ok"><nl-icon name="checkc"/></span><span><b>Aprovadas ({{count('ap')}})</b><small>Laudos prontos para baixar</small></span><nl-icon name="chevr"/></button>
@@ -77,6 +81,7 @@ const ORDERS = ['Mais recentes', 'Mais antigas', 'Nome (A–Z)', 'Nome (Z–A)',
   </div>
 </div>`,
   styles: [`:host{display:block}.ev{cursor:pointer}
+.due{margin-right:6px}
 .c{text-align:center}
 .sx{display:inline-grid;place-items:center;--ico-size:20px}
 .sx.female{color:#8b3fd9}
@@ -98,12 +103,22 @@ export class DashboardComponent implements OnInit {
   page = 1; per = 8;
   filters: {id: Filter; label: string}[] = [{id: 'all', label: 'Todas'}, {id: 'rs', label: 'Rascunho'}, {id: 'rv', label: 'Em revisão'}, {id: 'ap', label: 'Aprovadas'}];
 
+  /** Status chips, plus the deadline ones while there is something late or due soon. */
+  chips() { return [...this.filters, ...([{id: 'queue', label: 'Enviadas'}, {id: 'fix', label: 'Correção pedida'}, {id: 'late', label: 'Atrasadas'}, {id: 'soon', label: 'Vencem em 7 dias'}] as {id: Filter; label: string}[]).filter(f => this.filter === f.id || this.count(f.id))]; }
   async ngOnInit() { try { this.usage = await this.api.req('GET', '/ai/usage'); } catch {} }
 
   /** Icon for the sex column; null when not informed. */
   sexIcon(v: string) { const x = fold(v || ''); return x.startsWith('fem') ? 'female' : x.startsWith('masc') ? 'male' : null; }
   st(e: any) { return listStatus(e); }
-  count(f: Filter) { return f === 'all' ? this.evaluations.length : this.evaluations.filter(e => listStatus(e) === f).length; }
+  /** Deadline = "Data da finalização do laudo" of an evaluation not approved yet. */
+  late(e: any) { return listStatus(e) !== 'ap' && !!e.end_date && e.end_date < todayISO(); }
+  soon(e: any) { if (listStatus(e) === 'ap' || !e.end_date) return false; const d = (Date.parse(e.end_date) - Date.parse(todayISO())) / 864e5; return d >= 0 && d <= 7; }
+  /** Review workflow: sent by the assistant and waiting, or sent back with open correction requests. */
+  queued(e: any) { return listStatus(e) !== 'ap' && !!e.submitted_at && !+e.open_notes; }
+  fix(e: any) { return listStatus(e) !== 'ap' && +e.open_notes > 0; }
+  canWrite() { const r = this.api.me()?.role; return r === 'admin' || r === 'psychologist'; }
+  private matches(e: any, f: Filter) { return f === 'all' || (f === 'late' ? this.late(e) : f === 'soon' ? this.soon(e) : f === 'queue' ? this.queued(e) : f === 'fix' ? this.fix(e) : listStatus(e) === f); }
+  count(f: Filter) { return this.evaluations.filter(e => this.matches(e, f)).length; }
   pct(e: any) { const t = +e.section_total || 0; return t ? Math.round((+e.approved_count || 0) / t * 100) : 0; }
   setQuery(v: string) { this.query = v; this.page = 1; this.queryChange.emit(v); }
   private inMonth(d: any) { if (!d) return false; const x = new Date(d), n = new Date(); return x.getFullYear() === n.getFullYear() && x.getMonth() === n.getMonth(); }
@@ -113,7 +128,7 @@ export class DashboardComponent implements OnInit {
   filtered() {
     const q = fold(this.query.trim());
     const rank: Record<string, number> = {rv: 0, rs: 1, ap: 2};
-    const rows = this.evaluations.filter(e => (!q || fold(e.patient_name || '').includes(q)) && (this.filter === 'all' || listStatus(e) === this.filter));
+    const rows = this.evaluations.filter(e => (!q || fold(e.patient_name || '').includes(q)) && this.matches(e, this.filter));
     const t = (e: any) => new Date(e.created_at).getTime() || 0;
     const by: Record<string, (a: any, b: any) => number> = {
       'Mais recentes': (a, b) => t(b) - t(a), 'Mais antigas': (a, b) => t(a) - t(b),
@@ -130,6 +145,7 @@ export class DashboardComponent implements OnInit {
     for (const e of this.evaluations) {
       if (e.approved_at && listStatus(e) === 'ap') ev.push({id: e.id, title: 'Avaliação aprovada', name: e.patient_name, at: e.approved_at, icon: 'check', tone: 'tone-ok'});
       if (e.created_at) ev.push({id: e.id, title: 'Nova avaliação criada', name: e.patient_name, at: e.created_at, icon: 'plus', tone: 'tone-primary'});
+      if (e.submitted_at) ev.push({id: e.id, title: 'Enviada para revisão' + (e.submitted_by_name ? ' por ' + e.submitted_by_name : ''), name: e.patient_name, at: e.submitted_at, icon: 'upload', tone: 'tone-warn'});
     }
     return ev.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 5);
   }

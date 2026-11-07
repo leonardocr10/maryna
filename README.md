@@ -51,9 +51,23 @@ Custo: estimado a partir de `PRICES` em `api/src/server.mjs` (USD por 1M tokens,
 
 Ditado por voz: o botão de microfone nos campos de texto (edição das seções, orientações da conclusão, instruções da avaliação e do modelo) transcreve a fala em português em tempo real. O texto provisório aparece abaixo do campo e entra no campo, na posição do cursor, a cada pausa da fala, sem apagar o que já estava escrito; dá para pausar, continuar, concluir e editar à mão durante o ditado. Só um campo dita por vez. O áudio vai do navegador direto para a OpenAI (WebRTC, modelo `gpt-live-transcribe`) com uma credencial temporária de 60 s criada pelo servidor; a chave da API nunca vai para o navegador, e nada do áudio ou do texto ditado é gravado ou registrado no servidor (só a abertura da sessão entra no registro de auditoria). Fica desligado por padrão: exige `DICTATION_ENABLED=true`, `AI_ENABLED=true` e `ALLOW_EXTERNAL_AI=true` no `api/.env` e autorização da psicóloga. Limites de custo: `DICTATION_MAX_SECONDS` por sessão e `DICTATION_DAILY_LIMIT` sessões por pessoa por dia. O microfone exige `localhost` ou HTTPS (no modo LAN por HTTP, os outros computadores não conseguem ditar). A transcrição nunca é reescrita por IA.
 
+## Fluxo de trabalho e telas
+- **Estagiária → psicóloga:** a estagiária cria a avaliação, envia os arquivos e clica em **Enviar para revisão**. A psicóloga vê a avaliação em "Aguardando sua revisão" no painel e pode **pedir correção** (o pedido volta para a estagiária, que marca como resolvido e envia de novo).
+- **Conferir antes de seguir:** a avaliação lista o que falta (identificação, arquivos, seções sem lugar ou sem tabela) e avisos do arquivo base: nome, nascimento e idade que não conferem com o sistema, datas trocadas, tabelas sem valores e testes citados na anamnese sem resultado no arquivo. Só avisa: nada é calculado nem alterado.
+- **Conferência final:** ao aprovar, aponta marcadores como `[PACIENTE]` não trocados, seções vazias, textos muito acima da extensão sugerida e avisos da geração.
+- **Versões:** cada seção mostra as versões anteriores com o que mudou (palavra a palavra) e permite restaurar; restaurar também guarda o texto atual. Enquanto edita, o texto salva sozinho a cada pausa, numa única versão por sessão de edição.
+- **Textos-padrão** (Configurações): parágrafos recorrentes da clínica, inseridos no cursor ao editar. Não guarde dados de paciente neles.
+- **Pacientes:** ficha com todas as avaliações da pessoa e **Nova reavaliação** (já com sexo, escolaridade e modelo da última).
+- **Prazos:** a data de finalização vira prazo no painel ("Atrasadas", "Vencem em 7 dias").
+- **Relatórios:** avaliações criadas e aprovadas por mês, tempo médio de trabalho e gasto estimado com IA.
+- **Esqueci minha senha:** sem serviço de e-mail, o pedido aparece para o administrador em Configurações > Usuários, que passa uma senha temporária.
+
 ## Endpoints
 - `GET /api/health`
 - `POST /api/setup` (somente quando não existem usuários) · `POST /api/login` · `GET /api/me` · `PUT /api/me/password`
+- `GET /api/evaluations/:id/review` · `POST /api/evaluations/:id/submit` · `POST /api/evaluations/:id/notes` (pedido de correção) · `POST /api/evaluations/:id/notes/:nid/resolve`
+- `GET /api/evaluations/:id/sections/:key/history` · `POST /api/evaluations/:id/sections/:key/restore` · `PUT .../sections/:key` aceita `merge:true` (salvamento automático)
+- `GET/POST /api/snippets` · `PUT/DELETE /api/snippets/:id` · `POST /api/password-requests` (sem login)
 - `GET/POST /api/users` · `PUT /api/users/:id` (nome, papel, ativo) · `POST /api/users/:id/password` (senha temporária) — só administrador
 - `GET/POST /api/patients`
 - `GET/POST /api/evaluations` · `GET/DELETE /api/evaluations/:id`

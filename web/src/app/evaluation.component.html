@@ -34,6 +34,9 @@
     <button *ngIf="!locked() && step!==1" class="btn btn-secondary btn-sm" (click)="goStep(1)">Enviar arquivo corrigido</button>
   </section>
 
+  <nl-review-panel [evaluationId]="evaluationId" [locked]="locked()" [canWrite]="canWrite()" [docsReady]="docsReady()" [pendings]="pendings()"
+    (changed)="changed.emit()" (goStep)="goStep($event)"></nl-review-panel>
+
   <!-- Steps 1–3: card + side column -->
   <div *ngIf="step<3" class="stepwrap">
     <div class="col-main">
@@ -224,15 +227,18 @@
             <p *ngFor="let p of paragraphs(text(s.id))" [class.ptitle]="p.title">{{p.text}}</p>
             <p *ngIf="!text(s.id)" class="muted">{{s.id===MANUAL_KEY ? 'Ainda sem conclusão. Escreva suas orientações acima ou use Editar para escrever você mesma.' : s.id===DEMAND_KEY ? 'O arquivo base não tem texto nesta parte. Escreva em Editar ou gere com a IA.' : 'Sem texto ainda.'}}</p>
           </div>
-          <nl-dictate *ngIf="editing===s.id" [evaluationId]="evaluationId"><textarea class="draft editing" [(ngModel)]="editText" aria-label="Texto da seção" (keydown.escape)="editing=''"></textarea></nl-dictate>
+          <nl-dictate *ngIf="editing===s.id" [evaluationId]="evaluationId"><textarea class="draft editing" [(ngModel)]="editText" (ngModelChange)="autosaveLater(s.id)" aria-label="Texto da seção" (keydown.escape)="closeEdit()"></textarea></nl-dictate>
           <p *ngIf="s.id===DEMAND_KEY && demandIsFromFile() && editing!==s.id" class="footnote from-file">Texto do arquivo enviado, sem alteração e sem IA.</p>
           <div *ngIf="editing===s.id" class="ed-editbar">
-            <span>Editando o texto. As mudanças valem só para esta avaliação.</span>
+            <span>{{autoSaving ? 'Salvando…' : autoSaved ? 'Salvo automaticamente às ' + autoSaved + '.' : 'Editando o texto. Salva sozinho a cada pausa.'}}</span>
             <button class="link" (click)="openGpt(s.id)" title="Copia o pedido e abre o ChatGPT">Abrir no ChatGPT</button>
             <button class="link" (click)="pasteAnswer()">Colar resposta</button>
-            <button class="btn btn-secondary btn-sm" (click)="editing=''">Cancelar</button>
+            <nl-filter-select *ngIf="snippetsFor(s.id).length" size="sm" [searchable]="true" ariaLabel="Inserir texto-padrão" placeholder="Inserir texto-padrão"
+              [options]="snippetsFor(s.id)" value="" (valueChange)="insertSnippet($event)"></nl-filter-select>
+            <button class="btn btn-secondary btn-sm" (click)="closeEdit()">{{autoSaved ? 'Fechar' : 'Cancelar'}}</button>
             <button class="btn btn-primary btn-sm" (click)="saveEdit(s.id)"><nl-icon name="check"/> Salvar edição</button>
           </div>
+          <nl-section-versions *ngIf="versionsOpen===s.id" [evaluationId]="evaluationId" [sectionKey]="s.id" [canRestore]="!readOnly()" (closed)="versionsOpen=''" (restored)="versionsOpen='';load();changed.emit()"></nl-section-versions>
 
           <!-- Instruction for this section -->
           <div *ngIf="sectionInstr===s.id" class="ed-instr">
@@ -272,6 +278,7 @@
             <button *ngIf="refCount(s.id)" class="link tlink" (click)="toggleRefs(s.id)">{{refLabel(s.id)}}</button>
             <div class="edacts">
               <button *ngIf="s.id===MANUAL_KEY && conclusionSources().length" class="btn btn-secondary btn-sm" (click)="copyAll()" title="Copia os textos de todas as seções usadas na conclusão"><nl-icon [name]="copied==='__all' ? 'check' : 'copy'"/> {{copied==='__all' ? 'Copiado' : 'Copiar tudo'}}</button>
+              <button *ngIf="(section(s.id)?.version || 1) > 1" class="btn btn-secondary btn-sm" [class.on]="versionsOpen===s.id" (click)="versionsOpen = versionsOpen===s.id ? '' : s.id" [attr.aria-expanded]="versionsOpen===s.id"><nl-icon name="restore"/> Versões ({{(section(s.id)?.version || 1) - 1}})</button>
               <button *ngIf="text(s.id)" class="btn btn-secondary btn-sm" (click)="copyText(s.id)"><nl-icon [name]="copied===s.id ? 'check' : 'copy'"/> {{copied===s.id ? 'Copiado' : 'Copiar'}}</button>
               <ng-container *ngIf="!readOnly()">
                 <button *ngIf="s.id!==MANUAL_KEY" class="btn btn-secondary btn-sm" [class.on]="gptOpen===s.id" [disabled]="gptLoading===s.id" (click)="openGpt(s.id)" title="Copia o pedido com as tabelas e a instrução desta seção e abre o ChatGPT"><nl-icon name="external"/> {{gptLoading===s.id ? 'Preparando…' : 'ChatGPT'}}</button>

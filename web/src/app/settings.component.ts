@@ -8,12 +8,13 @@ import {WorkTimer, duration} from './work-timer.service';
 import {ThemeService} from './theme.service';
 import {IconComponent} from './ui/icon.component';
 import {UsersComponent} from './users.component';
+import {SnippetsComponent} from './snippets.component';
 
 /** Settings with vertical tabs: Minha conta / IA e custos / Tempo / Aparência / Usuários (admin). */
 @Component({
   selector: 'nl-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule, FilterSelectComponent, IconComponent, UsersComponent],
+  imports: [CommonModule, FormsModule, FilterSelectComponent, IconComponent, UsersComponent, SnippetsComponent],
   template: `
 <div class="pagehead"><span class="hicon"><nl-icon name="gear"/></span><div><h1>Configurações</h1><p>Conta, inteligência artificial, custos, tempo de trabalho e aparência.</p></div></div>
 <div class="layout">
@@ -22,10 +23,12 @@ import {UsersComponent} from './users.component';
     <button type="button" role="tab" [attr.aria-selected]="tab==='ia'" [class.on]="tab==='ia'" (click)="tab='ia';load()"><span class="vi"><nl-icon name="spark"/></span><span><strong>IA e custos</strong><span>Modelo, geração e gastos</span></span></button>
     <button type="button" role="tab" [attr.aria-selected]="tab==='tempo'" [class.on]="tab==='tempo'" (click)="tab='tempo';timer.loadStats()"><span class="vi"><nl-icon name="clock"/></span><span><strong>Tempo</strong><span>Média por avaliação</span></span></button>
     <button type="button" role="tab" [attr.aria-selected]="tab==='aparencia'" [class.on]="tab==='aparencia'" (click)="tab='aparencia'"><span class="vi"><nl-icon name="sun"/></span><span><strong>Aparência</strong><span>Tema claro ou escuro</span></span></button>
+    <button *ngIf="api.me()?.role !== 'assistant'" type="button" role="tab" [attr.aria-selected]="tab==='textos'" [class.on]="tab==='textos'" (click)="tab='textos'"><span class="vi"><nl-icon name="list"/></span><span><strong>Textos-padrão</strong><span>Parágrafos que você sempre usa</span></span></button>
     <button *ngIf="api.isAdmin()" type="button" role="tab" [attr.aria-selected]="tab==='usuarios'" [class.on]="tab==='usuarios'" (click)="tab='usuarios'"><span class="vi"><nl-icon name="users"/></span><span><strong>Usuários</strong><span>Contas e papéis</span></span></button>
   </nav>
 
   <div class="panel" *ngIf="tab==='usuarios' && api.isAdmin()"><nl-users></nl-users></div>
+  <div class="panel" *ngIf="tab==='textos' && api.me()?.role !== 'assistant'"><nl-snippets></nl-snippets></div>
 
   <div class="panel" *ngIf="tab==='aparencia'">
     <section class="card">
@@ -235,7 +238,7 @@ export class SettingsComponent {
   brl = brl; int = int; brDate = brDate;
   timer = inject(WorkTimer); duration = duration;
   theme = inject(ThemeService);
-  tab: 'conta' | 'ia' | 'tempo' | 'aparencia' | 'usuarios' = 'conta';
+  tab: 'conta' | 'ia' | 'tempo' | 'aparencia' | 'usuarios' | 'textos' = 'conta';
   t() { return this.timer.stats(); }
   pwCurrent = ''; pwNext = ''; saving = false;
   model = 'gpt-4.1'; enabled = false; configured = false; privacyGate = false; usage: any = null; creditOpen = false; creditInput = '';

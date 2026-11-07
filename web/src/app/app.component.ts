@@ -14,6 +14,7 @@ import {DashboardComponent} from './dashboard.component';
 import {PatientsComponent} from './patients.component';
 import {ComingSoonComponent} from './coming-soon.component';
 import {ModelsComponent} from './models.component';
+import {ReportsComponent} from './reports.component';
 
 type Screen = 'home' | 'evaluation' | 'new' | 'settings' | 'patients' | 'models' | 'library' | 'reports';
 const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 'models', 'library', 'reports'];
@@ -21,7 +22,7 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule, NewEvaluationComponent, EvaluationComponent, SettingsComponent, IconComponent, ConfirmDialogComponent, DashboardComponent, PatientsComponent, ComingSoonComponent, ModelsComponent],
+  imports: [CommonModule, FormsModule, NewEvaluationComponent, EvaluationComponent, SettingsComponent, IconComponent, ConfirmDialogComponent, DashboardComponent, PatientsComponent, ComingSoonComponent, ModelsComponent, ReportsComponent],
   template: `
 <!-- Theme switch, shared by the login screen and the top bar -->
 <ng-template #themeSwitch>
@@ -50,7 +51,19 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
     </ul>
   </section>
   <section class="login-side">
-    <form *ngIf="!api.loggedIn()" class="login-card" (submit)="$event.preventDefault();login()">
+    <!-- No e-mail service: the request goes to the administrator, who hands over a temporary password -->
+    <form *ngIf="!api.loggedIn() && forgot" class="login-card" (submit)="$event.preventDefault();requestReset()">
+      <img class="login-logo" src="assets/brand/neurolaudos-logo.webp" alt="NeuroLaudos IA — Elaboração assistida de laudos">
+      <div><h1>Esqueci minha senha</h1><p class="sub">Informe o seu e-mail. O administrador da clínica recebe o pedido e passa a você uma senha temporária.</p></div>
+      <ng-container *ngIf="!forgotSent">
+        <div class="field"><label for="fg-email">E-mail</label>
+          <div class="with-ico"><nl-icon name="mail"/><input id="fg-email" class="input" type="email" name="femail" [(ngModel)]="email" autocomplete="username" placeholder="seu@email.com"></div></div>
+        <button class="btn btn-primary btn-block" type="submit" [disabled]="!email.includes('@') || loggingIn"><nl-icon name="mail"/> Pedir nova senha</button>
+      </ng-container>
+      <div *ngIf="forgotSent" class="alert tip" role="status"><nl-icon name="checkc"/><div><strong>Pedido registrado</strong><p>Se este e-mail tiver uma conta ativa, o administrador já vê o pedido em Configurações &gt; Usuários. Fale com ele para receber a senha temporária.</p></div></div>
+      <button type="button" class="link" (click)="forgot=false">Voltar para o login</button>
+    </form>
+    <form *ngIf="!api.loggedIn() && !forgot" class="login-card" (submit)="$event.preventDefault();login()">
       <img class="login-logo" src="assets/brand/neurolaudos-logo.webp" alt="NeuroLaudos IA — Elaboração assistida de laudos">
       <div><h1>Acesse sua conta</h1><p class="sub">Entre para gerenciar avaliações e laudos.</p></div>
       <div class="field"><label for="lg-email">E-mail</label>
@@ -59,6 +72,7 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
         <div class="with-ico"><nl-icon name="lock"/><input id="lg-pw" class="input" [type]="showPw ? 'text' : 'password'" name="password" [(ngModel)]="password" autocomplete="current-password">
           <button type="button" class="pw-eye" (click)="showPw=!showPw" [attr.aria-label]="showPw ? 'Ocultar senha' : 'Mostrar senha'" [attr.aria-pressed]="showPw"><nl-icon [name]="showPw ? 'eyeoff' : 'eye'"/></button></div></div>
       <button class="btn btn-primary btn-block" type="submit" [disabled]="!email||!password||loggingIn"><nl-icon name="login"/> {{loggingIn ? 'Entrando…' : 'Entrar'}}</button>
+      <button type="button" class="link forgot" (click)="forgot=true;forgotSent=false">Esqueci minha senha</button>
       <p class="login-meta"><span><nl-icon name="shield"/> Ambiente seguro e confidencial (LGPD)</span></p>
     </form>
     <!-- First access or password reset by the admin: the temporary password is replaced before anything else -->
@@ -113,7 +127,7 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
       <div class="content">
         <!-- an evaluation screen with no evaluation open (e.g. it was deleted elsewhere) falls back to the list instead of a blank page -->
         <nl-dashboard *ngIf="screen()==='home' || (screen()==='evaluation' && !selectedId())" [evaluations]="evaluations()" [query]="search" (queryChange)="search=$event" (open)="open($event)" (create)="go('new')"></nl-dashboard>
-        <nl-patients *ngIf="screen()==='patients'" [evaluations]="evaluations()" (open)="open($event)" (create)="go('new')"></nl-patients>
+        <nl-patients *ngIf="screen()==='patients'" [evaluations]="evaluations()" (open)="open($event)" (create)="go('new')" (created)="onCreated({id: $event, generate: false})"></nl-patients>
         <nl-new-evaluation *ngIf="screen()==='new'" (closed)="goHome()" (created)="onCreated($event)"></nl-new-evaluation>
         <nl-settings *ngIf="screen()==='settings'"></nl-settings>
         <nl-evaluation *ngIf="screen()==='evaluation' && selectedId()" [id]="selectedId()" [autoGenerate]="autoGenerate"
@@ -122,9 +136,7 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
         <nl-coming-soon *ngIf="screen()==='library'" title="Biblioteca de testes" subtitle="Instrumentos e guias de interpretação usados pela IA." icon="lib"
           plan="Os guias por instrumento já existem dentro do sistema, mas ainda não há uma tela para consultar ou editar."
           [items]="['Lista dos instrumentos reconhecidos nas tabelas do arquivo base','Guia de interpretação de cada instrumento','Faixas etárias de aplicação']"></nl-coming-soon>
-        <nl-coming-soon *ngIf="screen()==='reports'" title="Relatórios" subtitle="Números da clínica ao longo do tempo." icon="chart"
-          plan="O tempo médio e os gastos com IA já aparecem em Configurações. Esta área vai reunir os indicadores em um só lugar."
-          [items]="['Avaliações por mês e por status','Tempo médio por avaliação','Gastos com IA por período']"></nl-coming-soon>
+        <nl-reports *ngIf="screen()==='reports'" [evaluations]="evaluations()"></nl-reports>
       </div>
     </main>
   </div>
@@ -156,6 +168,7 @@ nl-icon{--ico-size:16px}
 .login-logo{width:240px;max-width:100%;height:auto;margin-bottom:6px}
 :host-context([data-theme="dark"]) .login-logo{content:url('/assets/brand/neurolaudos-logo-light.webp')}
 .login-card h1{font-size:26px;font-weight:700;color:var(--brand-ink)}
+.login-card .forgot{align-self:center;font-size:13px}
 .login-card .sub{color:var(--text-3);font-size:13.5px;margin-top:4px}
 .with-ico{position:relative;display:flex;align-items:center}
 .with-ico>nl-icon{position:absolute;left:12px;color:var(--text-3);--ico-size:18px;pointer-events:none}
@@ -247,13 +260,13 @@ export class AppComponent {
   theme = inject(ThemeService);
   STATUS = STATUS; brDate = brDate; clock = clock; duration = duration;
   email = ''; password = ''; showPw = false; loggingIn = false;
-  pwTemp = ''; pwNew = ''; pwRepeat = '';
+  pwTemp = ''; pwNew = ''; pwRepeat = ''; forgot = false; forgotSent = false;
 
   // Open screen/evaluation survive a page reload (kept per browser tab).
   private saved = (() => { try { return JSON.parse(sessionStorage.getItem('nl_view') || '{}'); } catch { return {}; } })();
   screen = signal<Screen>(SCREENS.includes(this.saved.screen) ? (this.saved.screen === 'evaluation' && !this.saved.id ? 'home' : this.saved.screen) : 'home');
   navItems: {id: Screen; label: string; icon: string}[] = [
-    {id: 'home', label: 'Avaliações', icon: 'home'},
+    {id: 'home', label: 'Avaliações', icon: 'home'}, {id: 'patients', label: 'Pacientes', icon: 'users'},
     {id: 'models', label: 'Modelos de laudo', icon: 'doc'}, {id: 'library', label: 'Biblioteca de testes', icon: 'lib'},
     {id: 'reports', label: 'Relatórios', icon: 'chart'}, {id: 'settings', label: 'Configurações', icon: 'gear'}];
   evaluations = signal<any[]>([]);
@@ -278,6 +291,10 @@ export class AppComponent {
       this.password = ''; this.showPw = false;
       if (!this.mustChange()) await this.load();
     } catch {} finally { this.loggingIn = false; }
+  }
+  async requestReset() {
+    this.loggingIn = true;
+    try { await this.api.req('POST', '/password-requests', {email: this.email}); this.forgotSent = true; } catch {} finally { this.loggingIn = false; }
   }
   mustChange() { return !!this.api.me()?.must_change_password; }
   roleName() { const r = this.api.me()?.role; return r ? ROLE_NAMES[r] : ''; }

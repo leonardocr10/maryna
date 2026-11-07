@@ -397,3 +397,126 @@ test('an admin cannot lock themselves out', async () => {
   // still an active admin
   assert.equal((await api('GET', '/api/users', {token: tokens.admin})).status, 200);
 });
+
+// ---- Autosave and review workflow ----
+test('autosave edits by the same person collapse into one version', async () => {
+  const id = await withFiles();
+  const url = `/api/evaluations/${id}/sections/anamnesis`;
+  await api('PUT', url, {token: tokens.psy, body: {content: 'Versão inicial sintética.'}});
+  await api('PUT', url, {token: tokens.psy, body: {content: 'Primeira pausa.', merge: true}});
+  const r = await api('PUT', url, {token: tokens.psy, body: {content: 'Segunda pausa.', merge: true}});
+  assert.equal(r.data.merged, true);
+  await api('PUT', url, {token: tokens.psy, body: {content: 'Texto final sintético.', merge: true}});
+  const d = db();
+  const s = d.prepare("SELECT id,version,content FROM sections WHERE evaluation_id=? AND section_key='anamnesis'").get(id);
+  const h = d.prepare('SELECT content FROM section_history WHERE section_id=? ORDER BY id').all(s.id).map(x => x.content);
+  d.close();
+  assert.equal(s.content, 'Texto final sintético.');
+  assert.equal(s.version, 2);
+  assert.deepEqual(h, ['Versão inicial sintética.'], 'only the text before the editing session is kept as a version');
+  // approving is never merged: it is its own version
+  await api('PUT', url, {token: tokens.psy, body: {content: 'Texto final sintético.', approve: true, merge: true}});
+  const d2 = db();
+  assert.equal(d2.prepare("SELECT status FROM sections WHERE evaluation_id=? AND section_key='anamnesis'").get(id).status, 'approved');
+  d2.close();
+});
+
+test('review workflow: send, ask for correction, resolve, send again', async () => {
+  const id = await newEvaluation(tokens.assistant);
+  const ev = `/api/evaluations/${id}`;
+  assert.equal((await api('POST', ev + '/submit', {token: tokens.assistant})).status, 409, 'needs both files');
+  await upload(tokens.assistant, id, 'base', fs.readFileSync(path.join(tmp, 'base.docx')));
+  await upload(tokens.assistant, id, 'anamnesis', fs.readFileSync(path.join(tmp, 'anamnese.docx')));
+  const sent = await api('POST', ev + '/submit', {token: tokens.assistant});
+  assert.equal(sent.status, 200);
+  assert.ok(sent.data.submitted_at);
+  let row = (await api('GET', '/api/evaluations', {token: tokens.psy})).data.find(e => e.id === id);
+  assert.ok(row.submitted_at);
+  assert.equal(Number(row.open_notes), 0);
+
+  assert.equal((await api('POST', ev + '/notes', {token: tokens.assistant, body: {text: 'Pedido indevido'}})).status, 403, 'only the psychologist asks for corrections');
+  const asked = await api('POST', ev + '/notes', {token: tokens.psy, body: {text: 'Falta a tabela sintética do teste.'}});
+  assert.equal(asked.status, 201);
+  assert.equal(asked.data.submitted_at, null, 'goes back to whoever prepared it');
+  row = (await api('GET', '/api/evaluations', {token: tokens.assistant})).data.find(e => e.id === id);
+  assert.equal(Number(row.open_notes), 1);
+  assert.equal((await api('POST', ev + '/submit', {token: tokens.assistant})).status, 409, 'open request blocks sending again');
+
+  const note = asked.data.notes[0];
+  const done = await api('POST', `${ev}/notes/${note.id}/resolve`, {token: tokens.assistant, body: {}});
+  assert.equal(done.status, 200);
+  assert.ok(done.data.notes[0].resolved_at);
+  assert.equal((await api('POST', ev + '/submit', {token: tokens.assistant})).status, 200);
+  assert.equal((await api('POST', `${ev}/notes/nao-existe/resolve`, {token: tokens.assistant, body: {}})).status, 404);
+  // deleting the evaluation takes its notes too
+  assert.equal((await api('DELETE', ev, {token: tokens.psy})).status, 200);
+  const d = db();
+  assert.equal(d.prepare('SELECT COUNT(*) n FROM review_notes WHERE evaluation_id=?').get(id).n, 0);
+  d.close();
+});
+
+// ---- Checks, versions, standard texts, password requests ----
+test('inspect reports consistency checks', async () => {
+  const id = await withFiles();
+  // the synthetic base has no identification fields; a swapped date range is an error
+  await api('PUT', `/api/evaluations/${id}/identification`, {token: tokens.psy, body: {name: PATIENT, start_date: '2025-09-01', end_date: '2025-08-01'}});
+  const r = await api('POST', `/api/evaluations/${id}/inspect`, {token: tokens.psy});
+  assert.equal(r.status, 200);
+  assert.ok(Array.isArray(r.data.checks));
+  assert.ok(r.data.checks.some(c => c.level === 'danger' && /Datas trocadas/.test(c.text)));
+});
+
+test('section versions can be listed and restored without losing the current text', async () => {
+  const id = await withFiles();
+  const url = `/api/evaluations/${id}/sections/anamnesis`;
+  await api('PUT', url, {token: tokens.psy, body: {content: 'Primeiro texto sintético.'}});
+  await api('PUT', url, {token: tokens.psy, body: {content: 'Segundo texto sintético.'}});
+  const h = await api('GET', url + '/history', {token: tokens.assistant});
+  assert.equal(h.status, 200, 'any role reads the versions');
+  assert.equal(h.data.current.content, 'Segundo texto sintético.');
+  assert.deepEqual(h.data.versions.map(v => v.content), ['Primeiro texto sintético.']);
+  assert.equal((await api('POST', url + '/restore', {token: tokens.assistant, body: {version: 1}})).status, 403);
+  assert.equal((await api('POST', url + '/restore', {token: tokens.psy, body: {version: 99}})).status, 404);
+  assert.equal((await api('POST', url + '/restore', {token: tokens.psy, body: {version: 1}})).status, 200);
+  const after = await api('GET', url + '/history', {token: tokens.psy});
+  assert.equal(after.data.current.content, 'Primeiro texto sintético.');
+  assert.equal(after.data.current.status, 'edited');
+  assert.deepEqual(after.data.versions.map(v => v.content), ['Segundo texto sintético.', 'Primeiro texto sintético.']);
+});
+
+test('standard texts: the psychologist manages them, everyone reads them', async () => {
+  assert.equal((await api('POST', '/api/snippets', {token: tokens.assistant, body: {title: 'Xx', text: 'Yy'}})).status, 403);
+  assert.equal((await api('POST', '/api/snippets', {token: tokens.psy, body: {title: 'Ok', text: 'Texto', section_key: 'nao-existe'}})).status, 400);
+  const c = await api('POST', '/api/snippets', {token: tokens.psy, body: {title: 'Encaminhamento sintético', text: 'Recomenda-se acompanhamento sintético.', section_key: 'recomendacoes'}});
+  assert.equal(c.status, 201);
+  assert.ok((await api('GET', '/api/snippets', {token: tokens.assistant})).data.some(s => s.id === c.data.id));
+  assert.equal((await api('PUT', `/api/snippets/${c.data.id}`, {token: tokens.psy, body: {title: 'Encaminhamento', text: 'Novo texto sintético.'}})).status, 200);
+  assert.equal((await api('DELETE', `/api/snippets/${c.data.id}`, {token: tokens.psy})).status, 200);
+  assert.equal((await api('DELETE', `/api/snippets/${c.data.id}`, {token: tokens.psy})).status, 404);
+});
+
+test('forgot password: same answer for any e-mail, the admin sees the request, a reset clears it', async () => {
+  const u = await account('esqueci@exemplo.test', 'assistant');
+  assert.equal((await api('POST', '/api/password-requests', {body: {email: 'ninguem@exemplo.test'}})).status, 202);
+  assert.equal((await api('POST', '/api/password-requests', {body: {email: 'ESQUECI@exemplo.test'}})).status, 202);
+  assert.equal((await api('POST', '/api/password-requests', {body: {email: 'esqueci@exemplo.test'}})).status, 202, 'repeated request is fine');
+  let row = (await api('GET', '/api/users', {token: tokens.admin})).data.users.find(x => x.id === u.id);
+  assert.ok(row.reset_requested_at);
+  const d = db();
+  assert.equal(d.prepare('SELECT COUNT(*) n FROM password_requests WHERE user_id=? AND handled_at IS NULL').get(u.id).n, 1, 'one open request per person');
+  d.close();
+  await api('POST', `/api/users/${u.id}/password`, {token: tokens.admin, body: {password: 'redefinida-sintetica-2'}});
+  row = (await api('GET', '/api/users', {token: tokens.admin})).data.users.find(x => x.id === u.id);
+  assert.equal(row.reset_requested_at, null);
+});
+
+test('a re-evaluation is a new evaluation of the same patient', async () => {
+  const first = await withFiles();
+  const list = (await api('GET', '/api/evaluations', {token: tokens.psy})).data;
+  const patient = list.find(e => e.id === first).patient_id;
+  const again = await api('POST', '/api/evaluations', {token: tokens.assistant, body: {patient_id: patient, sex: 'Feminino', start_date: '2026-01-10'}});
+  assert.equal(again.status, 201);
+  const both = (await api('GET', '/api/evaluations', {token: tokens.psy})).data.filter(e => e.patient_id === patient);
+  assert.equal(both.length, 2);
+  assert.ok(both.every(e => 'model_name' in e && 'open_notes' in e));
+});

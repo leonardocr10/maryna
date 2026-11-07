@@ -1,7 +1,7 @@
 import {Component, EventEmitter, Input, OnInit, Output, inject} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {Api} from './api.service';
-import {STATUS, ageYears, brDate, fold, listStatus} from './shared';
+import {STATUS, ageYears, brDate, fold, listStatus, todayISO} from './shared';
 import {IconComponent} from './ui/icon.component';
 import {FilterSelectComponent} from './ui/filter-select.component';
 import {PagerComponent} from './ui/pager.component';
@@ -41,7 +41,7 @@ const ORDERS = ['Mais recentes', 'Nome (A–Z)', 'Nome (Z–A)', 'Idade', 'Statu
       <table class="tbl">
         <thead><tr><th>Paciente</th><th>Idade</th><th>Sexo</th><th>Última avaliação</th><th>Status</th><th>Próximo passo</th></tr></thead>
         <tbody>
-          <tr *ngFor="let r of pageRows()" tabindex="0" (click)="openRow(r)" (keydown.enter)="openRow(r)">
+          <tr *ngFor="let r of pageRows()" tabindex="0" [class.sel]="sel?.id===r.id" (click)="select(r)" (keydown.enter)="select(r)">
             <td><div class="who"><span class="av">{{initials(r.name)}}</span><span><b>{{r.name}}</b><small>{{r.count}} {{r.count===1?'avaliação':'avaliações'}}</small></span></div></td>
             <td>{{r.ageText}}</td>
             <td>{{r.sex || '—'}}</td>
@@ -57,6 +57,20 @@ const ORDERS = ['Mais recentes', 'Nome (A–Z)', 'Nome (Z–A)', 'Idade', 'Statu
   </section>
 
   <div class="stack">
+    <!-- Patient record: every evaluation of this person, and a re-evaluation that starts from the last one -->
+    <section *ngIf="sel" class="card side-card ficha">
+      <div class="fhead"><span class="av">{{initials(sel.name)}}</span><div><h3>{{sel.name}}</h3><small>{{sel.ageText}}{{sel.sex ? ' · ' + sel.sex : ''}}</small></div>
+        <button class="link close" (click)="sel=null" aria-label="Fechar ficha">×</button></div>
+      <p class="label-caps">Avaliações ({{evalsOf(sel).length}})</p>
+      <p *ngIf="!evalsOf(sel).length" class="caption">Nenhuma avaliação ainda.</p>
+      <button *ngFor="let e of evalsOf(sel)" type="button" class="task" (click)="open.emit(e.id)">
+        <span class="ti tone-primary"><nl-icon name="clipboard"/></span>
+        <span><b>{{brDate(e.start_date || e.created_at)}}</b><small>{{e.model_name || 'Sem modelo'}} · {{e.approved_count || 0}} de {{e.section_total || 0}} seções</small></span>
+        <span [class]="'badge '+STATUS[st(e)].css">{{STATUS[st(e)].label}}</span>
+      </button>
+      <button class="btn btn-primary btn-sm reav" [disabled]="busy" (click)="sel.last ? reevaluate(sel) : create.emit()"><nl-icon name="plus"/> {{sel.last ? 'Nova reavaliação' : 'Criar avaliação'}}</button>
+      <p *ngIf="sel.last" class="caption">A reavaliação já vem com sexo, escolaridade e modelo da última avaliação. Os arquivos são enviados de novo.</p>
+    </section>
     <section class="card side-card">
       <h3><nl-icon name="alert"/> Pendências</h3>
       <p>Pacientes com algo esperando por você.</p>
@@ -66,13 +80,24 @@ const ORDERS = ['Mais recentes', 'Nome (A–Z)', 'Nome (Z–A)', 'Idade', 'Statu
     </section>
   </div>
 </div>`,
-  styles: [`:host{display:block}`],
+  styles: [`:host{display:block}
+tr.sel td{background:var(--primary-soft)}
+.ficha .fhead{display:flex;gap:10px;align-items:center;margin-bottom:12px}
+.ficha .fhead h3{margin:0}
+.ficha .fhead small{color:var(--caption);font-size:12.5px}
+.ficha .fhead .close{margin-left:auto;font-size:20px;line-height:1}
+.ficha .av{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:var(--primary-soft);color:var(--primary-text);font-weight:600;flex:none}
+.ficha .task .badge{margin-left:auto}
+.ficha .reav{margin-top:10px}`],
 })
 export class PatientsComponent implements OnInit {
   private api = inject(Api);
   @Input() evaluations: any[] = [];
   @Output() open = new EventEmitter<string>();
   @Output() create = new EventEmitter<void>();
+  /** New evaluation of the same patient, created here; the parent opens it. */
+  @Output() created = new EventEmitter<string>();
+  sel: Row | null = null; busy = false;
   STATUS = STATUS; brDate = brDate;
   patients: any[] = [];
   query = ''; bandFilter: Band = 'all'; statusFilter: '' | 'rs' | 'rv' | 'none' = '';
@@ -128,5 +153,18 @@ export class PatientsComponent implements OnInit {
     return rows.sort(by[this.order]);
   }
   pageRows() { const all = this.filtered(); const pages = Math.max(1, Math.ceil(all.length / this.per)); if (this.page > pages) this.page = pages; return all.slice((this.page - 1) * this.per, this.page * this.per); }
-  openRow(r: Row) { if (r.last) this.open.emit(r.last.id); else this.create.emit(); }
+  select(r: Row) {
+    this.sel = this.sel?.id === r.id ? null : r;
+    // on narrow screens the record sits under the list: bring it into view
+    if (this.sel) setTimeout(() => document.querySelector('nl-patients .ficha')?.scrollIntoView({behavior: 'smooth', block: 'nearest'}));
+  }
+  evalsOf(r: Row) { return this.evaluations.filter(e => e.patient_id === r.id).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()); }
+  /** Re-evaluation: a new evaluation of the same patient with sex, schooling and model of the last one; dates start today. */
+  async reevaluate(r: Row) {
+    const last = r.last; if (!last) return; this.busy = true;
+    try {
+      const e = await this.api.req<any>('POST', '/evaluations', {patient_id: r.id, sex: last.sex || null, schooling: last.schooling || null, model_id: last.model_id || null, start_date: todayISO()});
+      this.api.notify('Reavaliação criada. Envie os arquivos novos.'); this.created.emit(e.id);
+    } catch {} finally { this.busy = false; }
+  }
 }

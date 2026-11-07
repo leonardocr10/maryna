@@ -6,12 +6,12 @@
 - [x] Sanitizar/extrair somente seções necessárias do DOCX para envio à IA: evite envio irrestrito de todas as tabelas.
 - [ ] Pseudonimização feita (lista revisável por avaliação); faltam controle de acesso por papel, retenção e avaliação de impacto de privacidade.
 - [ ] Endurecer upload: zip bomb e validação DOCX feitos; faltam malware scan e log redaction.
-- [ ] Gestão de contas e papéis feita (criar, papel, desativar, senha temporária com troca obrigatória, revogação de sessão); faltam MFA e recuperação de acesso por e-mail.
+- [ ] Gestão de contas e papéis feita (criar, papel, desativar, senha temporária com troca obrigatória, revogação de sessão, pedido de nova senha ao administrador); faltam MFA e recuperação por e-mail com serviço de envio.
 - [x] Completar revisão da profissional: aprovação rastreável por usuário, timestamp e bloqueio da versão editada.
 
 ## P1 — funcional
 - [x] Implementar visualização lado a lado: original, dados extraídos, texto proposto e histórico.
-- [ ] Mostrar avisos de dados ausentes e inconsistências entre documentos.
+- [x] Mostrar avisos de dados ausentes e inconsistências entre documentos (pendências, conferência do arquivo base e conferência final antes de aprovar).
 - [ ] Extrair RAVLT, WISC-IV, BPA, FDT, DIVA e demais testes com origem por tabela/célula; nunca calcular normas sem fonte licenciada.
 - [ ] Prompts editáveis por seção com versões e testes controlados (sem dados reais).
 - [ ] Validar respostas da API OpenAI com esquema JSON estrito e limite de saída; lidar com erro, timeout e retry sem duplicar geração.
@@ -24,7 +24,7 @@
 - [ ] Backup e restauração testados, criptografia at-rest no MySQL, rotação de segredos e ciclo de retenção.
 - [ ] Histórico de auditoria imutável, monitoramento e alertas.
 - [ ] Deploy HTTPS com proxy, domínios e CI/CD, teste e2e e manual clínico.
-- [ ] Biblioteca de textos fixos/base conceitual e referências validadas.
+- [ ] Biblioteca de textos fixos: textos-padrão da clínica feitos; faltam base conceitual e referências validadas.
 - [ ] Administração dos modelos infantis/adultos e atualização controlada.
 
 ## Critérios de aceite do fluxo principal

@@ -7,7 +7,7 @@ import {FilterSelectComponent} from './ui/filter-select.component';
 import {IconComponent} from './ui/icon.component';
 import {brDate} from './shared';
 
-interface Account {id: string; name: string; email: string; role: Role; active: boolean; must_change_password: boolean; created_at: string; last_login_at: string | null; evaluations: number; approvals: number}
+interface Account {id: string; name: string; email: string; role: Role; active: boolean; must_change_password: boolean; created_at: string; last_login_at: string | null; evaluations: number; approvals: number; reset_requested_at: string | null}
 
 /** Temporary password the admin hands over; the person must replace it at the first login. */
 function tempPassword() {
@@ -61,6 +61,8 @@ function tempPassword() {
       <button type="button" class="link" (click)="shown=null">Fechar</button>
     </div>
 
+    <div *ngIf="requests().length" class="alert warn" role="status"><nl-icon name="bell"/><div><strong>{{requests().length === 1 ? '1 pedido' : requests().length + ' pedidos'}} de nova senha</strong>
+      <p>{{requestNames()}} {{requests().length === 1 ? 'pediu' : 'pediram'}} pela tela de login. Use "Redefinir senha" na linha da pessoa e passe a senha temporária a ela.</p></div></div>
     <p *ngIf="!users" class="caption">Carregando…</p>
     <div *ngIf="users" class="tablewrap">
       <table class="tbl">
@@ -74,9 +76,10 @@ function tempPassword() {
               <ng-template #selfRole>{{ROLE_NAMES[u.role]}} <small>(você)</small></ng-template>
             </td>
             <td>
+              <span *ngIf="u.active && u.reset_requested_at" class="badge danger" [title]="'Pedido em ' + when(u.reset_requested_at)">Pediu nova senha</span>
               <span *ngIf="!u.active" class="badge idle">Desativada</span>
               <span *ngIf="u.active && u.must_change_password" class="badge warn">Aguardando 1º acesso</span>
-              <span *ngIf="u.active && !u.must_change_password" class="badge ok">Ativa</span>
+              <span *ngIf="u.active && !u.must_change_password && !u.reset_requested_at" class="badge ok">Ativa</span>
             </td>
             <td>{{u.last_login_at ? when(u.last_login_at) : 'Nunca'}}</td>
             <td class="num" [title]="u.approvals + ' aprovada(s) por esta conta'">{{u.evaluations}}</td>
@@ -134,6 +137,8 @@ export class UsersComponent implements OnInit {
   newTemp = tempPassword;
 
   ngOnInit() { this.load(); }
+  requests() { return (this.users || []).filter(u => u.active && u.reset_requested_at); }
+  requestNames() { return this.requests().map(u => u.name).join(', '); }
   async load() { try { this.users = (await this.api.req<{users: Account[]}>('GET', '/users')).users; } catch {} }
   when(iso: string) { const d = new Date(iso); return isNaN(+d) ? brDate(iso) : `${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}`; }
   startCreate() { this.form = {name: '', email: '', role: 'assistant', password: tempPassword()}; this.creating = true; this.shown = null; }

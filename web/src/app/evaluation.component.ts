@@ -13,6 +13,8 @@ import {Dictation} from './dictation/dictation.service';
 import {FilterSelectComponent} from './ui/filter-select.component';
 import {DropZoneComponent} from './ui/drop-zone.component';
 import {Identity, IdentityFormComponent, emptyIdentity} from './ui/identity-form.component';
+import {Pending, ReviewPanelComponent} from './ui/review-panel.component';
+import {SectionVersionsComponent} from './ui/section-versions.component';
 import {CONCLUSION_GUIDANCE, OPTIONAL_SECTIONS, PERCEPTION_MAX_AGE, SECTIONS, SECTION_STATE, STATUS, SectionState, ageText, ageYears, brDate, brl, int, words} from './shared';
 
 /** Section the AI only writes from the psychologist's own guidance (never in "Gerar laudo"). */
@@ -36,7 +38,7 @@ async function writeClipboard(text: string): Promise<boolean> {
 @Component({
   selector: 'nl-evaluation',
   standalone: true,
-  imports: [CommonModule, FormsModule, DropZoneComponent, IdentityFormComponent, IconComponent, FilterSelectComponent, DictateComponent],
+  imports: [CommonModule, FormsModule, DropZoneComponent, IdentityFormComponent, IconComponent, FilterSelectComponent, DictateComponent, ReviewPanelComponent, SectionVersionsComponent],
   templateUrl: './evaluation.component.html',
   styleUrl: './evaluation.component.css',
 })
@@ -73,7 +75,7 @@ export class EvaluationComponent implements OnDestroy {
   open = ''; editing = ''; editText = ''; sectionInstr = '';
   mode: 'secoes' | 'documento' = 'secoes'; previewLoading = false;
 
-  ngOnDestroy() { clearTimeout(this.idTimer); clearTimeout(this.instrSaveTimer); this.reader.stop(); }
+  ngOnDestroy() { clearTimeout(this.idTimer); clearTimeout(this.instrSaveTimer); this.reader.stop(); if (this.autoTimer) { clearTimeout(this.autoTimer); this.autosave(this.editing); } }
 
   // ---------- loading ----------
   async load(first = false) {
@@ -120,6 +122,24 @@ export class EvaluationComponent implements OnDestroy {
   locked() { return this.current?.status === 'approved'; }
   /** Generate, edit, approve, preview and download are for the psychologist (and admin); the assistant uploads and reads. */
   canWrite() { const r = this.api.me()?.role; return r === 'admin' || r === 'psychologist'; }
+  /** What is still missing before the evaluation can go on: identification, files, sections without a place or table,
+   *  plus the consistency checks the server ran on the base document (inspection.checks). */
+  pendings(): Pending[] {
+    const out: Pending[] = [], id = this.idModel;
+    if (id.name.trim().length < 2) out.push({level: 'danger', text: 'Falta o nome do paciente.', step: 0});
+    const gaps = ([['birth_date', 'data de nascimento'], ['sex', 'sexo'], ['schooling', 'escolaridade'], ['start_date', 'data de início'], ['end_date', 'data de finalização']] as const)
+      .filter(([k]) => !String(id[k] || '').trim()).map(([, l]) => l);
+    if (gaps.length) out.push({level: 'warn', text: 'Identificação incompleta: ' + gaps.join(', ') + '.', step: 0});
+    if (!this.docName('base')) out.push({level: 'danger', text: 'Falta o arquivo base (estagiária).', step: 1});
+    if (!this.docName('anamnesis')) out.push({level: 'danger', text: 'Falta a anamnese (psicóloga).', step: 1});
+    if (this.inspection && this.missing().length) out.push({level: 'warn', text: 'Seções sem lugar no arquivo base: ' + this.missing().join(', ') + '.', step: 1});
+    if (this.inspection && Object.keys(this.references).length) {
+      const noTable = this.available().filter(s => this.references[s.id] !== undefined && s.id !== MANUAL_KEY && s.id !== 'recomendacoes' && !this.refs(s.id).length).map(s => s.name);
+      if (noTable.length) out.push({level: 'warn', text: 'Sem tabela de resultados no arquivo base: ' + noTable.join(', ') + '.', step: 1});
+    }
+    for (const c of this.inspection?.checks || []) out.push({level: c.level, text: c.text, step: 1});
+    return out;
+  }
   /** Nothing can change: approved evaluation, or a role without write access. */
   readOnly() { return this.locked() || !this.canWrite(); }
   docName(kind: string) { return this.documents.filter(d => d.kind === kind).at(-1)?.filename || ''; }
@@ -320,11 +340,41 @@ export class EvaluationComponent implements OnDestroy {
     return 'escrita a partir das tabelas do arquivo base';
   }
   toggle(k: string) { this.reader.stop(); this.closeRefs(); this.gptOpen = ''; this.open = this.open === k ? '' : k; this.editing = ''; this.sectionInstr = ''; }
-  startEdit(k: string) { this.reader.stop(); this.editing = k; this.editText = this.text(k); this.sectionInstr = ''; setTimeout(() => (document.querySelector('textarea.draft.editing') as HTMLTextAreaElement | null)?.focus()); }
+  // ---------- autosave while editing: one version per editing session (merge:true on the server) ----------
+  private autoTimer: any = null; autoSaved = ''; autoSaving = false;
+  versionsOpen = '';
+  // ---------- standard texts (Configurações > Textos-padrão), inserted at the cursor ----------
+  snippets: any[] = []; private snippetsLoaded = false;
+  async loadSnippets() { if (this.snippetsLoaded || !this.canWrite()) return; this.snippetsLoaded = true; try { this.snippets = await this.api.req('GET', '/snippets'); } catch {} }
+  snippetsFor(k: string) { return this.snippets.filter(x => !x.section_key || x.section_key === k).map(x => ({label: x.title, value: x.id, group: x.section_key ? 'Desta seção' : 'Qualquer seção'})); }
+  insertSnippet(id: string) {
+    const sn = this.snippets.find(x => x.id === id); if (!sn) return;
+    const ta = document.querySelector('textarea.draft.editing') as HTMLTextAreaElement | null;
+    const at = ta ? ta.selectionStart : this.editText.length, end = ta ? ta.selectionEnd : at;
+    const before = this.editText.slice(0, at), sep = before && !/\s$/.test(before) ? ' ' : '';
+    this.editText = before + sep + sn.text + this.editText.slice(end);
+    this.autosaveLater(this.editing);
+    setTimeout(() => { if (ta) { const p = at + sep.length + sn.text.length; ta.focus(); ta.setSelectionRange(p, p); } });
+  }
+  autosaveLater(k: string) { clearTimeout(this.autoTimer); this.autoTimer = setTimeout(() => this.autosave(k), 2500); }
+  async autosave(k: string) {
+    this.autoTimer = null;
+    if (!k || this.editing !== k || !this.editText.trim() || this.readOnly() || this.editText === this.text(k)) return;
+    const content = this.editText; this.autoSaving = true;
+    try {
+      await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content, merge: true});
+      const s = this.section(k); if (s) { s.content = content; s.status = 'edited'; }
+      this.autoSaved = new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+    } catch {} finally { this.autoSaving = false; }
+  }
+  /** Leaves edit mode; text already saved automatically stays saved. */
+  async closeEdit() { clearTimeout(this.autoTimer); this.autoTimer = null; const saved = !!this.autoSaved; this.editing = ''; this.autoSaved = ''; if (saved) { await this.load(); this.changed.emit(); } }
+  startEdit(k: string) { this.reader.stop(); this.loadSnippets(); this.versionsOpen = ''; this.autoSaved = ''; this.editing = k; this.editText = this.text(k); this.sectionInstr = ''; setTimeout(() => (document.querySelector('textarea.draft.editing') as HTMLTextAreaElement | null)?.focus()); }
   async saveEdit(k: string) {
     await this.dictation.stop(); // the last dictated words enter the text before it is saved
     if (!this.editText.trim()) { this.api.notify('O texto não pode ficar vazio.'); return; }
-    try { await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content: this.editText}); this.editing = ''; await this.load(); this.changed.emit(); this.api.notify('Texto salvo. A seção voltou para revisão.'); } catch {}
+    clearTimeout(this.autoTimer); this.autoTimer = null;
+    try { await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content: this.editText, merge: true}); this.editing = ''; this.autoSaved = ''; await this.load(); this.changed.emit(); this.api.notify('Texto salvo. A seção voltou para revisão.'); } catch {}
   }
   openInstr(k: string) { this.sectionInstr = this.sectionInstr === k ? '' : k; this.editing = ''; }
   async regenerate(k: string, withInstruction = false, skipConfirm = false) {
@@ -357,7 +407,23 @@ export class EvaluationComponent implements OnDestroy {
       facts: ['O texto atual vai para o histórico', 'A conclusão volta para revisão'], ok: 'Gerar de novo'})) return;
     await this.regenerate(MANUAL_KEY, true, true);
   }
+  /** Things a final read usually misses: placeholders left by the pseudonymisation, empty text, a text far over the
+   *  suggested length, and the warnings the generation left (categories, numbers, gender). It never changes the text. */
+  finalCheck(keys: string[]): string[] {
+    const out: string[] = [];
+    for (const k of keys) {
+      const name = SECTIONS.find(s => s.id === k)?.name || k, t = this.text(k), limit = Number(this.instruction(k)?.limit) || 0;
+      if (!t.trim()) { out.push(`${name}: sem texto.`); continue; }
+      const marks = [...new Set(t.match(/\[[A-ZÇÃÉ_]+(?:_\d+)?\]/g) || [])];
+      if (marks.length) out.push(`${name}: marcador não trocado (${marks.join(', ')}).`);
+      if (limit && words(t) > limit * 1.5) out.push(`${name}: ${words(t)} palavras, bem acima das ${limit} sugeridas.`);
+      if (this.state(k) !== 'ap') for (const w of this.warnings(k)) out.push(`${name}: ${w}`);
+    }
+    return out;
+  }
   async approveAndNext(k: string) {
+    const issues = this.finalCheck([k]);
+    if (issues.length && !await this.confirm.ask({tone: 'review', title: 'Conferir antes de aprovar', facts: issues, ok: 'Aprovar mesmo assim', cancel: 'Voltar e revisar'})) return;
     try {
       await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content: this.text(k), approve: true});
       await this.load(); this.changed.emit();
@@ -371,7 +437,10 @@ export class EvaluationComponent implements OnDestroy {
   async approveAll() {
     const pending = this.available().filter(s => this.state(s.id) === 'pend');
     if (pending.length) { this.api.notify('Gere ou escreva todas as seções antes de aprovar: ' + pending.map(s => s.name).join(', ')); return; }
-    if (!await this.confirm.ask({title: 'Aprovar todas as seções?', body: 'Confirme que você revisou o laudo inteiro. Depois de aprovado, os textos ficam travados e o Word pode ser baixado.', ok: 'Aprovar todas'})) return;
+    const issues = this.finalCheck(this.available().map(s => s.id));
+    if (!await this.confirm.ask(issues.length
+      ? {tone: 'review', title: 'Conferência final: revise antes de aprovar', body: 'Encontramos pontos que costumam passar despercebidos. Depois de aprovado, os textos ficam travados.', facts: issues, ok: 'Aprovar mesmo assim', cancel: 'Voltar e revisar'}
+      : {title: 'Aprovar todas as seções?', body: 'A conferência automática não achou problemas. Confirme que você revisou o laudo inteiro: depois de aprovado, os textos ficam travados e o Word pode ser baixado.', ok: 'Aprovar todas'})) return;
     try { await this.api.req('POST', `/evaluations/${this.evaluationId}/approve`, {approveSections: true}); await this.load(); this.changed.emit(); this.api.notify('Todas as seções aprovadas. Já dá para baixar o Word.'); } catch {}
   }
   /** Word or PDF of the approved report (the PDF is the same Word converted on this computer). */

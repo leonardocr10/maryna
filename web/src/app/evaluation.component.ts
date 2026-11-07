@@ -113,6 +113,8 @@ export class EvaluationComponent implements OnDestroy {
     try { this.references = await this.api.req('GET', `/evaluations/${this.evaluationId}/references`); } catch { this.references = {}; }
   }
   refs(k: string) { return k === MANUAL_KEY ? [] : this.references[k] || []; }
+  /** Everything the base document has in this section, in Word order (kept in the Word file as it is). */
+  fileBlock(k: string): any[] { return (this.references as any)?._blocks?.[k] || []; }
   /** What the conclusion is built from: the texts of the result sections (no demand, no anamnesis), as the API sends them. */
   conclusionSources() { return this.applicable().filter(s => !NOT_IN_CONCLUSION.includes(s.id) && !this.isFixed(s.id) && this.text(s.id).trim()).map(s => ({name: s.name, text: this.text(s.id)})); }
   /** Reference material behind a section: section texts for the conclusion, tables for the others. */

@@ -323,6 +323,20 @@
           </div>
 
           <!-- Reference material: read-only, from the base document -->
+          <div *ngIf="fileBlock(s.id).length" class="file-text">
+            <div class="ft-head"><nl-icon name="doc"/><b>No arquivo base, nesta seção</b><small>Tudo o que o Word já tem neste bloco. Fica como está; o texto acima entra no campo de interpretação.</small></div>
+            <ng-container *ngFor="let b of fileBlock(s.id)">
+              <p *ngIf="b.type==='p'">{{b.text}}</p>
+              <div *ngIf="b.type==='table'" class="ref-scroll"><table class="dt">
+                <tr *ngFor="let row of b.grid; let r=index">
+                  <ng-container *ngFor="let c of row">
+                    <th *ngIf="r===0" [attr.rowspan]="c.rowspan" [attr.colspan]="c.colspan">{{c.text}}</th>
+                    <td *ngIf="r>0" [attr.rowspan]="c.rowspan" [attr.colspan]="c.colspan">{{c.text}}</td>
+                  </ng-container>
+                </tr>
+              </table></div>
+            </ng-container>
+          </div>
           <div *ngIf="refOpen===s.id" class="ed-tables">
             <div class="subh"><nl-icon name="table"/> {{s.id===MANUAL_KEY ? 'Textos das seções usados pela IA' : 'Tabelas de referência'}} <small>— do arquivo base, somente leitura</small></div>
             <div *ngFor="let t of (s.id===MANUAL_KEY ? conclusionSources() : [])" class="ref-text">

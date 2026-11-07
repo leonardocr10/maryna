@@ -68,6 +68,7 @@ const blankForm = () => ({name: '', description: '', audience: 'geral' as Audien
       <div class="macts">
         <button *ngIf="canWrite()" class="btn btn-secondary btn-sm" (click)="duplicate()"><nl-icon name="copy"/> Duplicar</button>
         <button class="btn btn-secondary btn-sm" (click)="download(detail.version?.version)"><nl-icon name="download"/> Baixar</button>
+        <button *ngIf="canWrite()" class="btn btn-secondary btn-sm btn-del" (click)="remove()" title="Excluir este modelo"><nl-icon name="trash"/> Excluir</button>
       </div>
     </div>
     <div class="itabs" role="tablist" aria-label="Detalhes do modelo">
@@ -181,6 +182,8 @@ const blankForm = () => ({name: '', description: '', audience: 'geral' as Audien
   <div class="modal nmodal" role="dialog" aria-modal="true" aria-labelledby="nm-title" (click)="$event.stopPropagation()" (keydown.escape)="creating=false">
     <h2 id="nm-title">Novo modelo de laudo</h2>
     <p class="muted">Envie o Word <b>em branco</b>, sem dados de paciente. O sistema confere as seções antes de salvar.</p>
+    <div class="ncols">
+    <div class="ncol">
     <div class="fgrid">
       <label class="fld wide"><span>Nome do modelo</span><input class="input" [(ngModel)]="form.name" maxlength="120" placeholder="Ex.: Laudo neuropsicológico – Adulto"></label>
       <label class="fld wide"><span>Descrição</span><input class="input" [(ngModel)]="form.description" maxlength="300"></label>
@@ -188,7 +191,12 @@ const blankForm = () => ({name: '', description: '', audience: 'geral' as Audien
       <label class="fld"><span>Etiquetas</span><input class="input" [(ngModel)]="form.tags" placeholder="Ex.: TDAH, TEA"></label>
     </div>
     <nl-drop-zone [inline]="true" title="Word do modelo (.docx)" [filename]="nFile?.name || ''" [busy]="validating" (file)="check($event)"></nl-drop-zone>
-    <nl-model-report *ngIf="nReport" [report]="nReport" [compact]="true"></nl-model-report>
+    </div>
+    <div class="ncol nrep">
+      <nl-model-report *ngIf="nReport" [report]="nReport"></nl-model-report>
+      <p *ngIf="!nReport" class="nempty muted">{{validating ? 'Conferindo o arquivo…' : 'Envie o Word do modelo para ver aqui as seções que o sistema encontrou.'}}</p>
+    </div>
+    </div>
     <div class="mbtns">
       <button class="btn btn-secondary" (click)="creating=false">Cancelar</button>
       <button class="btn btn-primary" [disabled]="saving || !nFile || form.name.trim().length<3 || (nReport && !nReport.blank)" (click)="create()"><nl-icon name="check"/> Salvar modelo</button>
@@ -229,6 +237,8 @@ const blankForm = () => ({name: '', description: '', audience: 'geral' as Audien
 .mht h2{font-size:20px;font-weight:700;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .mht p{font-size:13.5px;color:var(--text-2);margin-top:2px}
 .macts{display:flex;gap:8px;flex-wrap:wrap}
+.macts .btn-del{color:var(--danger)}
+.macts .btn-del:hover{border-color:var(--danger-border);background:var(--danger-bg)}
 .itabs{display:flex;gap:4px;padding:0 16px;border-bottom:1px solid var(--divider)}
 .itabs button{display:inline-flex;align-items:center;gap:8px;padding:11px 12px;border:0;background:none;border-bottom:2.5px solid transparent;font:500 14px var(--font);color:var(--text-2);cursor:pointer}
 .itabs button.on{color:var(--primary-text);border-bottom-color:var(--primary);font-weight:600}
@@ -287,8 +297,13 @@ const blankForm = () => ({name: '', description: '', audience: 'geral' as Audien
 .tbl td.acts{text-align:right;white-space:nowrap}
 .tbl td.acts .btn+.btn{margin-left:6px}
 .pad{padding:0 20px 20px}
-.nmodal{width:min(620px,calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto;display:flex;flex-direction:column;gap:14px}
+.nmodal{width:min(1100px,calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto;display:flex;flex-direction:column;gap:14px}
 .nmodal h2{font-size:20px;font-weight:700}
+.ncols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;align-items:start}
+.ncol{display:flex;flex-direction:column;gap:14px;min-width:0}
+.nrep{max-height:calc(100vh - 230px);overflow:auto;padding-right:4px}
+.nempty{display:grid;place-items:center;text-align:center;min-height:220px;padding:24px;border:1.5px dashed var(--border-card);border-radius:var(--radius-lg);font-size:13.5px}
+@media(max-width:860px){.ncols{grid-template-columns:minmax(0,1fr)}.nrep{max-height:none;overflow:visible}}
 .mbtns{display:flex;justify-content:flex-end;gap:8px}
 @media(max-width:1280px){.mgrid{grid-template-columns:clamp(240px,28vw,320px) minmax(0,1fr)}.mside{grid-column:1/-1;position:static}}
 @media(max-width:860px){.mgrid,.vgrid{grid-template-columns:minmax(0,1fr)}.fgrid{grid-template-columns:1fr}}
@@ -423,7 +438,7 @@ export class ModelsComponent implements OnInit {
   }
   async remove() {
     const ok = await this.confirm.ask({tone: 'danger', title: 'Excluir este modelo?',
-      body: `"${this.detail.name}" e todas as ${this.detail.versions?.length || 0} versões serão apagados. Avaliações já criadas não mudam.`, ok: 'Excluir modelo'});
+      body: `"${this.detail.name}" e todas as ${this.detail.versions?.length || 0} versões serão apagados. As avaliações que usam este modelo continuam com os textos e arquivos delas, mas passam a ficar sem modelo (as instruções da IA do modelo deixam de valer nelas). Não dá para desfazer.`, ok: 'Excluir modelo'});
     if (!ok) return;
     try { await this.api.req('DELETE', '/models/' + this.detail.id); this.api.notify('Modelo excluído.'); this.inner = 'preview'; await this.load(''); } catch {}
   }

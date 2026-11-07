@@ -22,7 +22,19 @@ test('complete model', () => {
   assert.equal(r.blank, true);
   assert.equal(r.tables, 1);
   assert.deepEqual(r.identification, [{label: 'Nome', filled: false}, {label: 'Data de nascimento', filled: false}]);
-  assert.equal(r.sections.find(s => s.key === 'personalidade').state, 'optional');
+  assert.equal(r.sections.find(s => s.key === 'personalidade'), undefined, 'a section the model does not have is not listed');
+});
+
+test('fixed heading boxes are listed in document order and the hypothesis is recognised', () => {
+  const ins = {markers: [{key: 'demanda', index: 0}, {key: 'conclusao', index: 4}, {key: 'hipotese', index: 6}], elements: [
+    {type: 'table', rows: [['DESCRIÇÃO DA DEMANDA']]}, {type: 'p', text: ''}, {type: 'table', rows: [['FONTES FUNDAMENTAIS DE INFORMAÇÕES:']]}, {type: 'p', text: 'Texto fixo fictício.'},
+    {type: 'table', rows: [['CONCLUSÃO/RESULTADOS']]}, {type: 'p', text: ''}, {type: 'table', rows: [['HIPÓTESE DIAGNÓSTICA:']]}], identification: {}};
+  const r = modelReport(ins, 'adulto');
+  const keys = r.sections.map(s => s.key);
+  assert.ok(keys.indexOf('fixo_2') > keys.indexOf('demanda') && keys.indexOf('fixo_2') < keys.indexOf('conclusao'));
+  assert.equal(r.sections.find(s => s.key === 'fixo_2').state, 'fixed');
+  assert.equal(r.sections.find(s => s.key === 'hipotese').state, 'ok');
+  assert.equal(r.sections.find(s => s.key === 'comportamento_diva'), undefined);
 });
 
 test('missing sections and title without field', () => {

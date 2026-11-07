@@ -6,10 +6,10 @@ export const MODEL_SECTIONS = [
   ['percepcao', 'Percepção'], ['memoria', 'Memória e aprendizagem'], ['atencao', 'Processos atencionais'],
   ['funcoes_executivas', 'Funções executivas'], ['comportamento', 'Comportamento'],
   ['personalidade', 'Bateria Fatorial da Personalidade'], ['comportamento_diva', 'Comportamento / DIVA'],
-  ['conclusao', 'Conclusão'], ['recomendacoes', 'Indicações e recomendações'],
+  ['conclusao', 'Conclusão'], ['hipotese', 'Hipótese diagnóstica'], ['recomendacoes', 'Indicações e recomendações'],
 ];
 /** Behaviour sub-sections not every model has. */
-const OPTIONAL = new Set(['personalidade', 'comportamento_diva']);
+const OPTIONAL = new Set(['personalidade', 'comportamento_diva', 'hipotese']);
 /** Percepção is only applied to people under 17. */
 const CHILD_ONLY = new Set(['percepcao']);
 /** Sections whose text interprets their own score tables. */
@@ -38,14 +38,21 @@ export function modelReport(inspected, audience = 'geral') {
     const required = !OPTIONAL.has(key) && (!CHILD_ONLY.has(key) || childOnlyRequired);
     const m = markers.find(x => x.key === key);
     let state, note;
-    if (m) { state = 'ok'; note = 'Tem o campo onde o texto é inserido.'; }
+    if (m) { state = 'ok'; note = key === 'hipotese' ? 'Escrita pela psicóloga; a IA não redige hipótese diagnóstica.' : 'Tem o campo onde o texto é inserido.'; }
     else if (titled.has(key)) { state = 'auto'; note = 'Tem o título, mas não o campo "Interpretação". Ao baixar o Word, o sistema cria o campo logo após as tabelas.'; }
     else if (!required) { state = 'optional'; note = OPTIONAL.has(key) ? 'Opcional: só entra quando o modelo tem esse campo.' : 'Não se aplica a esta faixa etária.'; }
     else if (domains.has(key)) { state = 'missing'; note = 'O título existe, mas falta o campo "Interpretação" dessa seção.'; }
     else { state = 'missing'; note = 'Não existe no modelo. A IA não terá onde escrever esta seção.'; }
     const old = m && key !== 'demanda' && m.existing_paragraphs > 0;
-    return {key, name, state, required, note, old_text: !!old};
-  });
+    const pos = m ? m.index : inspected?.title_ranges?.[key] ? inspected.title_ranges[key][0] : null;
+    return {key, name, state, required, note, old_text: !!old, pos};
+  })
+    // a section the model does not have is simply not listed
+    .filter(s => !(s.state === 'optional' && OPTIONAL.has(s.key)));
+  // Headings of fixed parts the intern fills (sources, instruments applied...): listed so the model reads as in Word.
+  const listed = sections.map(s => s.pos).filter(p => p !== null);
+  const fixed = fixedHeadings(inspected, markers).filter(h => !listed.includes(h.pos));
+  const ordered = [...sections.filter(s => s.pos !== null), ...fixed].sort((a, b) => a.pos - b.pos).concat(sections.filter(s => s.pos === null));
 
   // Fields appear in the order of SECTIONS when the document follows the expected structure.
   const order = MODEL_SECTIONS.map(([k]) => k);
@@ -69,9 +76,31 @@ export function modelReport(inspected, audience = 'geral') {
   if (!idEntries.length) warnings.push({level: 'warn', text: 'Não foram encontrados os campos de identificação (Nome, Data de nascimento…). Eles não serão preenchidos sozinhos.'});
 
   const counted = sections.filter(s => s.state !== 'optional');
+  const shown = ordered.map(({pos, ...s}) => s);
   const ready = counted.filter(s => s.state === 'ok' || s.state === 'auto').length;
   const status = missing.length || filledId.length ? 'incomplete' : warnings.length ? 'attention' : 'complete';
-  return {status, ready, total: counted.length, sections, identification, tables, warnings, blank: !filledId.length};
+  return {status, ready, total: counted.length, sections: shown, identification, tables, warnings, blank: !filledId.length};
+}
+
+/**
+ * One-cell heading boxes of the document that are not a section the system writes (e.g. "FONTES FUNDAMENTAIS DE
+ * INFORMAÇÕES", "INSTRUMENTOS/AVALIAÇÕES APLICADAS"): their text comes from the file and is never changed.
+ */
+export function fixedHeadings(inspected, markers = inspected?.markers || []) {
+  const els = inspected?.elements || [];
+  const first = Math.min(...markers.map(m => m.index), els.length);
+  const used = new Set(markers.flatMap(m => [m.index, m.section_start != null ? m.section_start - 1 : -1]));
+  for (const [s] of Object.values(inspected?.title_ranges || {})) used.add(s - 1);
+  const out = [];
+  els.forEach((e, i) => {
+    if (i < first || used.has(i) || e.type !== 'table') return;
+    const cells = [...new Set(e.rows.flat().map(c => String(c).trim()).filter(Boolean))];
+    if (cells.length !== 1) return;
+    const t = cells[0].replace(/\s+/g, ' ').replace(/\s*:\s*$/, '');
+    if (t.length < 4 || t.length > 80 || t !== t.toUpperCase() || /^INTERPRETA/.test(t)) return;
+    out.push({key: 'fixo_' + i, name: t.charAt(0) + t.slice(1).toLowerCase(), state: 'fixed', required: false, note: 'Texto do arquivo base, preenchido pela estagiária. O sistema não altera.', old_text: false, pos: i});
+  });
+  return out;
 }
 
 /** Normalises the metadata sent by the screen. */

@@ -19,6 +19,7 @@ FIXED=[
  ('demanda',('DESCRIÇÃO DA DEMANDA',)),
  ('anamnesis',('ANAMNESE',)),
  ('conclusao',('CONCLUSÃO',)),
+ ('hipotese',('HIPÓTESE DIAGNÓSTICA','HIPÓTESES DIAGNÓSTICAS')),
  ('recomendacoes',('INDICAÇÕES E RECOMENDAÇÕES','SUGESTÕES E ENCAMINHAMENTOS')),
 ]
 def clean(v):return re.sub(r'\s+',' ',v or '').strip()
@@ -169,6 +170,16 @@ def title_ranges(elements,markers):
   if k in has_field or k in out:continue
   out[k]=[i+1,min([s for s in stops if s>i],default=len(elements))]
  return out
+# Closing line with the place and date of the report ("Uberlândia, 30 de outubro de 2026."): the only fixed text the
+# psychologist may change, as one whole line. The last match in the document is used (it sits above the signature).
+PLACE_DATE_RE=re.compile(r'^[A-ZÀ-Ý][^,\d]{1,60},\s*\d{1,2}\s+de\s+[A-Za-zçÇ]+\s+de\s+\d{4}\.?$')
+def place_date_paragraph(doc):
+ found=None
+ for ch in doc.element.body.iterchildren():
+  if ch.tag.endswith('}p'):
+   p=Paragraph(ch,doc)
+   if PLACE_DATE_RE.match(clean(p.text)):found=p
+ return found
 def inspect(path):
  d=open_docx(path);elements=list(all_elements(d));markers=[];m=Markers()
  children=[ch for ch in d.element.body.iterchildren() if ch.tag.endswith('}p') or ch.tag.endswith('}tbl')]
@@ -183,7 +194,7 @@ def inspect(path):
    markers.append({'key':k,'index':i,'label':txt,'existing_paragraphs':sum(1 for ch in old if clean(Paragraph(ch,d).text)),'existing_text':'\n\n'.join(t for t in (Paragraph(ch,d).text.strip() for ch in old) if t)})
  section_ranges(elements,markers)
  titled=sorted({domain_of(e['text'] if e['type']=='p' else ' '.join(x for row in e['rows'] for x in row)) for e in elements}-{None})
- return {'elements':elements,'markers':markers,'titled_domains':titled,'title_ranges':title_ranges(elements,markers),'identification':identification(d),'warnings':['Conferir visualmente a ordem dos marcadores e os resultados.']}
+ return {'elements':elements,'markers':markers,'titled_domains':titled,'title_ranges':title_ranges(elements,markers),'identification':identification(d),'place_date':(lambda p:clean(p.text) if p is not None else None)(place_date_paragraph(d)),'warnings':['Conferir visualmente a ordem dos marcadores e os resultados.']}
 
 REPORT_FONT='Arial';REPORT_HALF_POINTS='22'  # Arial 11 pt
 def run_props(bold=False,red=False):
@@ -449,6 +460,10 @@ def export(base,out,sections,highlight=False,fields=None,rich=None):
  before=sha256(base)
  d=open_docx(base);seen=[];m=Markers();replaced={}
  filled=fill_fields(d,{k:clean(v) for k,v in (fields or {}).items() if clean(v)})
+ place=clean((fields or {}).get('__local_data'))
+ if place:
+  p=place_date_paragraph(d)
+  if p is not None and (clean(p.text)==place or replace_span(p,0,len(p.text),place)):filled.append('__local_data')
  anchors=fieldless_anchors(d);added=[]
  for ch in list(d.element.body.iterchildren()):
   if not (ch.tag.endswith('}p') or ch.tag.endswith('}tbl')) or ch.getparent() is None:continue

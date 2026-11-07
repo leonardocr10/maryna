@@ -234,3 +234,8 @@ nl-rich-editor .rte-area { font: 14.5px/1.65 var(--font); color: var(--text); }
 .mode-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid var(--border-card)}
 .mode-row .mlabel{font-size:13px;font-weight:600;color:var(--text)}
 .mode-row small{font-size:12.5px;color:var(--text-3);flex-basis:100%}
+/* Closing place/date line, in Identificação */
+.place-row{display:flex;flex-direction:column;gap:6px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border-card)}
+.place-row .mlabel{font-size:13px;font-weight:600;color:var(--text)}
+.place-in{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.place-in .input{flex:1;min-width:220px}
+.place-row small{font-size:12.5px;color:var(--text-3)}

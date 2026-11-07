@@ -21,11 +21,11 @@ import {SectionVersionsComponent} from './ui/section-versions.component';
 import {DevolutivaComponent} from './ui/devolutiva.component';
 import {PlanComponent} from './ui/plan.component';
 import {DeliveryComponent} from './ui/delivery.component';
-import {CONCLUSION_GUIDANCE, OPTIONAL_SECTIONS, PERCEPTION_MAX_AGE, SECTIONS, SECTION_STATE, STATUS, SectionState, ageText, ageYears, brDate, brl, int, words} from './shared';
+import {CONCLUSION_GUIDANCE, HAND_ONLY, OPTIONAL_SECTIONS, PERCEPTION_MAX_AGE, SECTIONS, SECTION_STATE, STATUS, SectionState, ageText, ageYears, brDate, brl, int, words} from './shared';
 
 /** Section the AI only writes from the psychologist's own guidance (never in "Gerar laudo"). */
 const MANUAL_KEY = 'conclusao';
-const NOT_IN_CONCLUSION = ['demanda', 'anamnesis', 'conclusao', 'recomendacoes'];
+const NOT_IN_CONCLUSION = ['demanda', 'anamnesis', 'conclusao', 'hipotese', 'recomendacoes'];
 /** Copied from the base document as written; the AI only writes it when asked. */
 const DEMAND_KEY = 'demanda';
 
@@ -93,6 +93,7 @@ export class EvaluationComponent implements OnDestroy {
       else if (this.locked()) this.timer.finish();
       if (first) {
         const c = this.current;
+        this.placeDate = c.place_date || '';
         this.idModel = {name: c.patient_name || '', birth_date: c.birth_date || '', sex: c.sex || '', schooling: c.schooling || '', start_date: c.start_date || '', end_date: c.end_date || ''};
         this.closeRefs(); this.inspection = null; this.privacy = null; this.gen = {}; this.open = ''; this.editing = ''; this.mode = 'secoes';
         this.loadModels();
@@ -207,6 +208,23 @@ export class EvaluationComponent implements OnDestroy {
   warnings(k: string): string[] { try { return JSON.parse(this.section(k)?.source_summary || '[]'); } catch { return []; } }
   /** Manual evaluations never call the AI: the professional writes every section. */
   aiOn() { return this.current?.ai_mode !== 'manual'; }
+  /** Closing "Cidade, data." line: what the evaluation saved, else what the base document says. */
+  placeDate = '';
+  placeInFile() { return this.inspection?.place_date || ''; }
+  async savePlaceDate(v = this.placeDate) {
+    const value = (v || '').replace(/\s+/g, ' ').trim();
+    if (value === (this.current?.place_date || '') || this.readOnly()) return;
+    try { await this.api.req('PUT', `/evaluations/${this.evaluationId}/place-date`, {value}); this.current = {...this.current, place_date: value || null}; this.placeDate = value; this.api.notify(value ? 'Local e data atualizados.' : 'Local e data voltam a ser os do arquivo.'); } catch {}
+  }
+  /** City of the line in use + today's date in words ("Uberlândia, 7 de novembro de 2026."). */
+  todayPlaceDate() {
+    const base = this.placeDate || this.placeInFile();
+    const city = base.includes(',') ? base.split(',')[0].trim() : '';
+    const d = new Date(), months = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    const text = `${d.getDate()} de ${months[d.getMonth()]} de ${d.getFullYear()}.`;
+    this.placeDate = city ? `${city}, ${text}` : text;
+    if (city) this.savePlaceDate();
+  }
   async setAiMode(mode: 'ai' | 'manual') {
     if ((this.current?.ai_mode || 'ai') === mode || this.readOnly()) return;
     try { await this.api.req('PUT', `/evaluations/${this.evaluationId}/mode`, {mode}); this.current = {...this.current, ai_mode: mode}; this.changed.emit(); this.api.notify(mode === 'manual' ? 'Avaliação manual: a IA fica desligada.' : 'IA ligada nesta avaliação.'); } catch {}
@@ -279,7 +297,9 @@ export class EvaluationComponent implements OnDestroy {
   }
 
   // ---------- step 3: generation ----------
-  autoKeys() { return this.available().map(s => s.id).filter(k => k !== MANUAL_KEY && k !== DEMAND_KEY); }
+  autoKeys() { return this.available().map(s => s.id).filter(k => k !== MANUAL_KEY && k !== DEMAND_KEY && !HAND_ONLY.includes(k)); }
+  /** Sections the AI never writes (the diagnostic hypothesis). */
+  isHand(k: string) { return HAND_ONLY.includes(k); }
   autoDrafted() { return this.autoKeys().filter(k => this.state(k) !== 'pend').length; }
   demandInFile() { return (this.inspection?.markers || []).find((m: any) => m.key === DEMAND_KEY)?.existing_text || ''; }
   private same(a: string, b: string) { return (a || '').replace(/\s+/g, ' ').trim() === (b || '').replace(/\s+/g, ' ').trim(); }
@@ -383,6 +403,7 @@ export class EvaluationComponent implements OnDestroy {
     if (k === DEMAND_KEY || k === 'anamnesis') return 'escrita a partir da anamnese';
     if (k === MANUAL_KEY) return 'escrita a partir das seções de resultados';
     if (k === 'recomendacoes') return 'escrita a partir das seções do laudo';
+    if (this.isHand(k)) return 'escrita pela psicóloga, sem IA';
     return 'escrita a partir das tabelas do arquivo base';
   }
   toggle(k: string) { this.reader.stop(); this.closeRefs(); this.gptOpen = ''; this.open = this.open === k ? '' : k; this.editing = ''; this.sectionInstr = ''; }

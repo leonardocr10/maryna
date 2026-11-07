@@ -46,6 +46,14 @@
         <div class="card-head"><h2>Identificação</h2><small>{{idSaving ? 'Salvando…' : locked() ? 'Travada (avaliação aprovada)' : !canWrite() ? 'Somente leitura para o seu papel' : 'Salva automaticamente · campos em branco usam o arquivo base'}}</small></div>
         <div class="card-body">
           <nl-identity-form [model]="idModel" (modelChange)="onIdentity($event)" [disabled]="readOnly()"></nl-identity-form>
+          <div class="place-row">
+            <label for="place-date" class="mlabel">Local e data (final do laudo)</label>
+            <div class="place-in">
+              <input id="place-date" class="input" [(ngModel)]="placeDate" (blur)="savePlaceDate()" (keyup.enter)="savePlaceDate()" [disabled]="readOnly()" [placeholder]="placeInFile() || 'Ex.: Uberlândia, 30 de outubro de 2026.'" maxlength="120">
+              <button *ngIf="!readOnly()" type="button" class="btn btn-secondary btn-sm" (click)="todayPlaceDate()"><nl-icon name="calendar"/> Data de hoje</button>
+            </div>
+            <small>{{placeInFile() ? (placeDate ? 'No Word, a linha "' + placeInFile() + '" é trocada por este texto.' : 'Em branco: fica "' + placeInFile() + '", como está no arquivo base.') : 'O arquivo base não tem a linha de local e data (ex.: "Uberlândia, 30 de outubro de 2026.").'}}</small>
+          </div>
           <div class="mode-row">
             <span class="mlabel">Como esta avaliação é escrita</span>
             <div class="theme-switch" role="group" aria-label="Modo da avaliação">
@@ -304,12 +312,12 @@
               <button *ngIf="(section(s.id)?.version || 1) > 1" class="btn btn-secondary btn-sm" [class.on]="versionsOpen===s.id" (click)="versionsOpen = versionsOpen===s.id ? '' : s.id" [attr.aria-expanded]="versionsOpen===s.id"><nl-icon name="restore"/> Versões ({{(section(s.id)?.version || 1) - 1}})</button>
               <button *ngIf="text(s.id)" class="btn btn-secondary btn-sm" (click)="copyText(s.id)"><nl-icon [name]="copied===s.id ? 'check' : 'copy'"/> {{copied===s.id ? 'Copiado' : 'Copiar'}}</button>
               <ng-container *ngIf="!readOnly()">
-                <button *ngIf="s.id!==MANUAL_KEY && aiOn()" class="btn btn-secondary btn-sm" [class.on]="gptOpen===s.id" [disabled]="gptLoading===s.id" (click)="openGpt(s.id)" title="Copia o pedido com as tabelas e a instrução desta seção e abre o ChatGPT"><nl-icon name="external"/> {{gptLoading===s.id ? 'Preparando…' : 'ChatGPT'}}</button>
-                <button *ngIf="s.id!==MANUAL_KEY && aiOn()" class="btn btn-secondary btn-sm" [class.on]="sectionInstr===s.id" (click)="openInstr(s.id)" [attr.aria-expanded]="sectionInstr===s.id"><nl-icon name="chat"/> Instrução</button>
+                <button *ngIf="s.id!==MANUAL_KEY && !isHand(s.id) && aiOn()" class="btn btn-secondary btn-sm" [class.on]="gptOpen===s.id" [disabled]="gptLoading===s.id" (click)="openGpt(s.id)" title="Copia o pedido com as tabelas e a instrução desta seção e abre o ChatGPT"><nl-icon name="external"/> {{gptLoading===s.id ? 'Preparando…' : 'ChatGPT'}}</button>
+                <button *ngIf="s.id!==MANUAL_KEY && !isHand(s.id) && aiOn()" class="btn btn-secondary btn-sm" [class.on]="sectionInstr===s.id" (click)="openInstr(s.id)" [attr.aria-expanded]="sectionInstr===s.id"><nl-icon name="chat"/> Instrução</button>
                 <button class="btn btn-secondary btn-sm" [class.on]="editing===s.id" [disabled]="editing===s.id" (click)="startEdit(s.id)"><nl-icon name="edit"/> {{text(s.id) ? 'Editar' : 'Escrever'}}</button>
                 <button *ngIf="s.id===DEMAND_KEY && demandInFile() && !demandIsFromFile()" class="btn btn-secondary btn-sm" (click)="useFileDemand()"><nl-icon name="doc"/> Usar o texto do arquivo</button>
                 <button *ngIf="s.id===DEMAND_KEY && aiOn()" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="generateDemand()"><nl-icon name="spark"/> {{gen[s.id]==='running'?'Gerando…':'Gerar com IA'}}</button>
-                <button *ngIf="s.id!==MANUAL_KEY && s.id!==DEMAND_KEY && aiOn()" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="regenerate(s.id)"><nl-icon [name]="text(s.id) ? 'restore' : 'spark'"/> {{gen[s.id]==='running'?'Gerando…':text(s.id)?'Regenerar':'Gerar com IA'}}</button>
+                <button *ngIf="s.id!==MANUAL_KEY && s.id!==DEMAND_KEY && !isHand(s.id) && aiOn()" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="regenerate(s.id)"><nl-icon [name]="text(s.id) ? 'restore' : 'spark'"/> {{gen[s.id]==='running'?'Gerando…':text(s.id)?'Regenerar':'Gerar com IA'}}</button>
               </ng-container>
             </div>
           </div>

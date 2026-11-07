@@ -12,6 +12,7 @@ export const SECTIONS = [
   {id: 'personalidade', name: 'Bateria Fatorial da Personalidade'},
   {id: 'comportamento_diva', name: 'Comportamento / DIVA'},
   {id: 'conclusao', name: 'Conclusão'},
+  {id: 'hipotese', name: 'Hipótese diagnóstica'},
   {id: 'recomendacoes', name: 'Indicações e recomendações'},
 ];
 
@@ -68,7 +69,9 @@ export const PERCEPTION_MAX_AGE = 17;
 /** Pre-filled guidance for the conclusion (same text as the API default). */
 export const CONCLUSION_GUIDANCE = 'Fazer texto discorrido de conclusão e raciocínio clínico de forma um pouco resumida, vinculando dados e resultados de forma coerente e bem estruturada, e relatar no final que apresenta características ';
 /** Behaviour sub-sections not every base document has: shown only when the document has their field. */
-export const OPTIONAL_SECTIONS = ['personalidade', 'comportamento_diva'];
+export const OPTIONAL_SECTIONS = ['personalidade', 'comportamento_diva', 'hipotese'];
+/** Written by the psychologist only (no AI button, never drafted automatically). */
+export const HAND_ONLY = ['hipotese'];
 
 export type EvalStatus = 'rs' | 'rv' | 'ap';
 export const STATUS: Record<EvalStatus, {label: string; css: string}> = {rs: {label: 'Rascunho', css: 'idle'}, rv: {label: 'Em revisão', css: 'warn'}, ap: {label: 'Aprovada', css: 'ok'}};

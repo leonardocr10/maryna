@@ -123,13 +123,14 @@ export const examplesFor = (key, instrumentExamples = []) => [...(SECTION_EXAMPL
 export const STYLE_EXAMPLE_NOTE = 'EXEMPLO APROVADO DE ESTILO (NÃO É A PESSOA AVALIADA): use-o só como referência de extensão, linguagem, fluidez e estrutura narrativa. Nunca transporte resultados, sintomas, capacidades ou conclusões do exemplo; tudo deve vir dos dados desta seção, e o sexo segue a regra indicada.';
 
 /** Instruments named in a section's material, with the extra guidance to send. */
-export function instrumentGuides(text) {
+/** overrides: {instrumentId: guide} written by the clinic in the instrument library (instrument_guides). */
+export function instrumentGuides(text, overrides = {}) {
   const found = INSTRUMENTS.filter(i => i.re.test(String(text || '')));
   return {
     ids: found.map(i => i.id),
     multi: found.some(i => i.multi) || found.length > 1,
     examples: [...new Set(found.map(i => i.example).filter(Boolean))].map(k => STYLE_EXAMPLES[k]),
-    text: found.length ? 'ORIENTAÇÕES ESPECÍFICAS DOS INSTRUMENTOS DESTA SEÇÃO (respeite os construtos e limites de cada um): ' + found.map(i => i.guide).join(' ') : '',
+    text: found.length ? 'ORIENTAÇÕES ESPECÍFICAS DOS INSTRUMENTOS DESTA SEÇÃO (respeite os construtos e limites de cada um): ' + found.map(i => overrides[i.id] || i.guide).join(' ') : '',
   };
 }
 

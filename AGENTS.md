@@ -16,7 +16,7 @@ Você está trabalhando no software de auxílio à elaboração de laudos neurop
 11. Ao concluir cada entrega, rodar testes e relatar os itens realmente prontos e os bloqueios de produção.
 
 ## Prompts da IA
-Todos os prompts (papel clínico, tarefas por seção, guias por instrumento, extensão de referência e parâmetros da API) ficam em `api/src/prompts.mjs`. Não duplicar instruções no `server.mjs`. Validação manual com dados sintéticos: `node --env-file=.env scripts/validate-interpretation.mjs <modelo>` (chamada paga).
+Todos os prompts (papel clínico, tarefas por seção, guias por instrumento, extensão de referência e parâmetros da API) ficam em `api/src/prompts.mjs`. Não duplicar instruções no `server.mjs`. Validação manual com dados sintéticos: `node --env-file=.env scripts/validate-interpretation.mjs <modelo>` ou a suíte `npm run validar:ia -- <modelo>` em `api/` (casos em `api/scripts/validation-cases.mjs`; chamadas pagas; `--dry` só monta os pedidos). Rode a suíte depois de mudar prompts, guias ou o modelo.
 
 ## Prioridades imediatas
 Ver `docs/BACKLOG_CODEX.md`.

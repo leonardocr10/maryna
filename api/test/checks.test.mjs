@@ -38,3 +38,13 @@ test('empty result tables and instruments without results', () => {
   assert.ok(out.some(t => /1 tabela de resultados está sem valores/.test(t)));
   assert.ok(out.some(t => /cita .*RAVLT.*WAIS-III \/ WISC-IV|cita .*WAIS-III \/ WISC-IV.*RAVLT/.test(t)));
 });
+
+test('plan against the base document', async () => {
+  const {planChecks} = await import('../src/checks.mjs');
+  const b = base({}, [table([['RAVLT', 'Pontos'], ['A1', '5']])]);
+  const out = planChecks(b, [{instrument: 'RAVLT', status: 'applied'}, {instrument: 'Stroop', status: 'applied'}, {instrument: 'Teste Sintético X', status: 'planned'}]);
+  assert.equal(out.length, 2);
+  assert.match(out[0].text, /sem resultados no arquivo base: Stroop\./);
+  assert.match(out[1].text, /Teste Sintético X/);
+  assert.deepEqual(planChecks(b, [{instrument: 'RAVLT', status: 'applied'}]), []);
+});

@@ -48,3 +48,15 @@ export function consistencyChecks(base, anamnesisText, e, today = new Date().toI
   if (missing.length) warn(`A anamnese cita ${missing.join(', ')}, mas o arquivo base não tem resultados desse instrumento.`);
   return out;
 }
+
+/** Plan against the base document: instruments marked as applied with no results in it, and what is still only planned. */
+export function planChecks(base, items) {
+  const out = [], baseText = fold((base?.elements || []).map(x => x.type === 'table' ? x.rows.flat().join(' ') : x.text || '').join(' '));
+  const found = name => { const known = INSTRUMENTS.find(i => i.name === name); return known ? known.re.test(baseText) || known.re.test(fold(name)) && baseText.includes(fold(name)) : baseText.includes(fold(name)); };
+  const applied = (items || []).filter(i => i.status === 'applied').map(i => i.instrument);
+  const missing = applied.filter(n => !found(n));
+  if (missing.length) out.push({level: 'warn', text: `Aplicados no plano, mas sem resultados no arquivo base: ${missing.join(', ')}.`});
+  const pending = (items || []).filter(i => i.status === 'planned').map(i => i.instrument);
+  if (pending.length) out.push({level: 'info', text: `Ainda não marcados como aplicados no plano: ${pending.join(', ')}.`});
+  return out;
+}

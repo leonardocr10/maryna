@@ -26,7 +26,9 @@ Requisitos no computador: **Node.js 22.13+** e **Python 3.11+**. Se faltarem, o 
 - Dois cliques em `iniciar.bat`: abre neste PC (http://localhost:9091) e na rede local (http://<IP-desta-máquina>:9091). Na primeira vez instala as dependências e cria `api/.env` com segredos aleatórios.
 - Equivalente pelo terminal, na raiz: `npm run setup` (uma vez), `npm run dev` ou `npm run dev:lan`, `npm test`.
 
-**Levar para outro computador / backup:** copie a pasta do projeto inteira. O que importa são `api/data/` (banco), `api/storage/` (DOCX criptografados) e `api/.env` (contém `FILE_ENCRYPTION_KEY`; sem ele os DOCX não abrem). Esses três ficam fora do Git e contêm dados de pacientes: guarde com cuidado.
+**Backup:** o sistema faz sozinho um backup criptografado por dia em `api/backups/` (os 14 mais recentes) e, em Configurações > Dados e backup, baixa uma **cópia com senha** para guardar fora do computador (abre em qualquer computador; leva a chave dos documentos protegida pela senha). Restaurar, com o sistema fechado: `npm run backup:restaurar -- caminho\do\arquivo.nlbk` (os dados atuais são guardados à parte, nunca apagados).
+
+**Levar para outro computador:** restaure uma cópia com senha, ou copie a pasta do projeto inteira. O que importa são `api/data/` (banco), `api/storage/` (DOCX criptografados) e `api/.env` (contém `FILE_ENCRYPTION_KEY`; sem ele os DOCX não abrem). Esses três ficam fora do Git e contêm dados de pacientes: guarde com cuidado.
 
 **Vindo de uma versão com MySQL:** mantenha `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` e `DB_PASSWORD` no `api/.env` e rode `npm run db:migrar-mysql` uma vez. O MySQL só é lido, nunca alterado.
 
@@ -61,6 +63,16 @@ Ditado por voz: o botão de microfone nos campos de texto (edição das seções
 - **Prazos:** a data de finalização vira prazo no painel ("Atrasadas", "Vencem em 7 dias").
 - **Relatórios:** avaliações criadas e aprovadas por mês, tempo médio de trabalho e gasto estimado com IA.
 - **Devolutiva para a família** (ou para a própria pessoa, se adulta): depois do laudo aprovado, um texto em linguagem simples feito só a partir dos textos aprovados do laudo (demanda, interpretações, conclusão, recomendações), sem tabelas, sem anamnese, sem números nem classificações e sem acrescentar diagnóstico. É rascunho de IA (ou escrito à mão), com histórico, editado e aprovado pela psicóloga; o Word separado só sai depois da aprovação. Prompt em `api/src/prompts.mjs` (`devolutivaTask`, `DEVOLUTIVA_SYSTEM`).
+- **Plano de avaliação e sessões:** a psicóloga escolhe os instrumentos (lista da Biblioteca ou texto livre); quem aplica marca cada um. As sessões (anamnese, aplicação, devolutiva) aparecem no painel em "Sessões dos próximos 7 dias". A avaliação avisa instrumento marcado como aplicado sem resultado no arquivo base.
+- **Consentimento:** atendimento e uso de IA registrados por avaliação (quem e quando). Sem o consentimento para IA, a geração (API e modo ChatGPT) fica bloqueada (`REQUIRE_AI_CONSENT=false` desliga).
+- **Qualidade da IA** (Relatórios): quanto a psicóloga altera, por seção, o texto da IA antes de aprovar (0% = aprovado como veio).
+- **Reavaliação:** cada seção mostra o texto aprovado da avaliação anterior do mesmo paciente, só para comparar (não vai para a IA).
+- **Biblioteca de testes:** os instrumentos reconhecidos e o guia que a IA recebe; a psicóloga pode escrever o guia da clínica (padrão em `api/src/prompts.mjs`).
+- **Entrega do laudo:** data, para quem e como; a avaliação aparece como "Entregue". Devolutiva também em PDF.
+- **Auditoria** (Configurações, administrador): quem abriu, criou, editou, aprovou, baixou ou excluiu, com filtros. Só a ação, nunca o conteúdo.
+- **Prazo de guarda** (Configurações > Dados e backup): laudos aprovados há mais de `RETENTION_YEARS` anos (padrão 5) aparecem para decisão; nada é apagado sozinho.
+- **Verificação em duas etapas:** em Minha conta, com aplicativo autenticador (TOTP). O administrador zera a de quem perder o celular.
+- **Validação da IA:** `npm --prefix api run validar:ia -- [modelo]` roda casos sintéticos (`api/scripts/validation-cases.mjs`) e confere números, categorias, gênero, extensão e termos proibidos; `--dry` só monta os pedidos. Chamada paga; relatório em `api/validacao/`.
 - **Esqueci minha senha:** sem serviço de e-mail, o pedido aparece para o administrador em Configurações > Usuários, que passa uma senha temporária.
 
 ## Endpoints
@@ -69,6 +81,9 @@ Ditado por voz: o botão de microfone nos campos de texto (edição das seções
 - `GET /api/evaluations/:id/review` · `POST /api/evaluations/:id/submit` · `POST /api/evaluations/:id/notes` (pedido de correção) · `POST /api/evaluations/:id/notes/:nid/resolve`
 - `GET /api/evaluations/:id/sections/:key/history` · `POST /api/evaluations/:id/sections/:key/restore` · `PUT .../sections/:key` aceita `merge:true` (salvamento automático)
 - `GET/PUT /api/evaluations/:id/devolutiva` · `POST .../devolutiva/generate` · `POST .../devolutiva/reopen` · `POST .../devolutiva/export` (Word, só aprovada)
+- `GET/POST/PUT/DELETE /api/evaluations/:id/plan` e `/sessions` · `GET /api/sessions` · `PUT /api/evaluations/:id/consent` · `PUT /api/evaluations/:id/delivery` · `GET /api/evaluations/:id/previous`
+- `GET /api/backups` · `POST /api/backups` · `POST /api/backups/export` · `GET /api/retention` · `GET /api/audit` · `GET /api/stats/ai-quality` · `GET/PUT /api/instruments`
+- `POST /api/me/mfa/setup|enable|disable` · `POST /api/users/:id/mfa/reset`
 - `GET/POST /api/snippets` · `PUT/DELETE /api/snippets/:id` · `POST /api/password-requests` (sem login)
 - `GET/POST /api/users` · `PUT /api/users/:id` (nome, papel, ativo) · `POST /api/users/:id/password` (senha temporária) — só administrador
 - `GET/POST /api/patients`
@@ -87,10 +102,10 @@ Ditado por voz: o botão de microfone nos campos de texto (edição das seções
 ## Limitações abertas antes de produção
 - Corrigir e validar o posicionamento visual de inserções para todos os diferentes modelos DOCX; preservar espaçamento, numeração de páginas e eventuais caixas de texto. Adicionar testes por modelos anonimizados.
 - Pseudonimização (`api/src/privacy.mjs`): nome, data de nascimento, autora, CRP, telefone, e-mail, clínica e nomes após palavras-guia (Dr., psi, pediatra, colégio…) viram marcadores como `[PACIENTE]` antes do envio e voltam no texto final. A psicóloga confere e completa a lista na tela. Nomes soltos sem palavra-guia podem escapar: a lista precisa ser revisada. Ainda faltam base legal, política de retenção e contrato antes de uso clínico.
-- Persistir somente arquivos criptografados, mas conteúdo de seções e dados do paciente estão no arquivo SQLite sem criptografia: implementar criptografia de banco, backup criptografado, monitoramento, rotação de segredos, segregação de funções e política de expurgo.
+- Os DOCX e os backups são criptografados, mas o arquivo do banco (textos das seções e dados do paciente) não: o SQLite embutido não criptografa o arquivo. Até haver criptografia de banco, use criptografia de disco do Windows (BitLocker) no computador do sistema. Faltam também monitoramento e rotação de segredos.
 - Contas e papéis: o administrador cria contas (Configurações > Usuários) com senha temporária, troca o papel, desativa e redefine senha; a troca vale na hora, pois cada requisição relê a conta. Ainda faltam MFA e recuperação de senha por e-mail. Adicionar antes de liberar acesso remoto.
 - Aprovação registra usuário e horário (`approved_by`/`approved_at`), mas ainda não há política de completude por template nem bloqueio de versão por assinatura.
-- Não há geração de PDF operacional: adicionar conversor com validação visual.
+- PDF do laudo e da devolutiva dependem do Word ou do LibreOffice instalados no computador; falta comparação visual automatizada. A assinatura digital (ICP-Brasil/gov.br) é feita fora do sistema, no PDF ou no Word.
 - A conferência de pontuação não realiza normatização nem cálculo psicológico. A IA não pode inventar normas ou classificar testes.
 - Não copiar instrumentos restritos nem tabelas normativas licenciadas para o sistema sem permissão.
 - Testar robustez de DOCX malformado e proteção contra decompression bomb e abuso; isolamento do worker.

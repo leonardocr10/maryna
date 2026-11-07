@@ -12,9 +12,9 @@ import {IconComponent} from './ui/icon.component';
 import {ConfirmDialogComponent} from './ui/confirm-dialog.component';
 import {DashboardComponent} from './dashboard.component';
 import {PatientsComponent} from './patients.component';
-import {ComingSoonComponent} from './coming-soon.component';
 import {ModelsComponent} from './models.component';
 import {ReportsComponent} from './reports.component';
+import {LibraryComponent} from './library.component';
 
 type Screen = 'home' | 'evaluation' | 'new' | 'settings' | 'patients' | 'models' | 'library' | 'reports';
 const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 'models', 'library', 'reports'];
@@ -22,7 +22,7 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule, NewEvaluationComponent, EvaluationComponent, SettingsComponent, IconComponent, ConfirmDialogComponent, DashboardComponent, PatientsComponent, ComingSoonComponent, ModelsComponent, ReportsComponent],
+  imports: [CommonModule, FormsModule, NewEvaluationComponent, EvaluationComponent, SettingsComponent, IconComponent, ConfirmDialogComponent, DashboardComponent, PatientsComponent, ModelsComponent, ReportsComponent, LibraryComponent],
   template: `
 <!-- Theme switch, shared by the login screen and the top bar -->
 <ng-template #themeSwitch>
@@ -69,9 +69,11 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
       <div class="field"><label for="lg-email">E-mail</label>
         <div class="with-ico"><nl-icon name="mail"/><input id="lg-email" class="input" type="email" name="email" [(ngModel)]="email" autocomplete="username" placeholder="seu@email.com"></div></div>
       <div class="field"><label for="lg-pw">Senha</label>
-        <div class="with-ico"><nl-icon name="lock"/><input id="lg-pw" class="input" [type]="showPw ? 'text' : 'password'" name="password" [(ngModel)]="password" autocomplete="current-password">
+        <div class="with-ico"><nl-icon name="lock"/><input id="lg-pw" class="input" [type]="showPw ? 'text' : 'password'" name="password" [(ngModel)]="password" autocomplete="current-password" [readonly]="mfaStep">
           <button type="button" class="pw-eye" (click)="showPw=!showPw" [attr.aria-label]="showPw ? 'Ocultar senha' : 'Mostrar senha'" [attr.aria-pressed]="showPw"><nl-icon [name]="showPw ? 'eyeoff' : 'eye'"/></button></div></div>
-      <button class="btn btn-primary btn-block" type="submit" [disabled]="!email||!password||loggingIn"><nl-icon name="login"/> {{loggingIn ? 'Entrando…' : 'Entrar'}}</button>
+      <div *ngIf="mfaStep" class="field"><label for="lg-code">Código do aplicativo autenticador</label>
+        <div class="with-ico"><nl-icon name="shield"/><input id="lg-code" class="input mono" name="code" [(ngModel)]="mfaCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000"></div></div>
+      <button class="btn btn-primary btn-block" type="submit" [disabled]="!email||!password||loggingIn||(mfaStep && mfaCode.trim().length!==6)"><nl-icon name="login"/> {{loggingIn ? 'Entrando…' : 'Entrar'}}</button>
       <button type="button" class="link forgot" (click)="forgot=true;forgotSent=false">Esqueci minha senha</button>
       <p class="login-meta"><span><nl-icon name="shield"/> Ambiente seguro e confidencial (LGPD)</span></p>
     </form>
@@ -129,13 +131,11 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
         <nl-dashboard *ngIf="screen()==='home' || (screen()==='evaluation' && !selectedId())" [evaluations]="evaluations()" [query]="search" (queryChange)="search=$event" (open)="open($event)" (create)="go('new')"></nl-dashboard>
         <nl-patients *ngIf="screen()==='patients'" [evaluations]="evaluations()" (open)="open($event)" (create)="go('new')" (created)="onCreated({id: $event, generate: false})"></nl-patients>
         <nl-new-evaluation *ngIf="screen()==='new'" (closed)="goHome()" (created)="onCreated($event)"></nl-new-evaluation>
-        <nl-settings *ngIf="screen()==='settings'"></nl-settings>
+        <nl-settings *ngIf="screen()==='settings'" (open)="open($event)"></nl-settings>
         <nl-evaluation *ngIf="screen()==='evaluation' && selectedId()" [id]="selectedId()" [autoGenerate]="autoGenerate"
           (changed)="load()" (deleted)="onDeleted()" (generatingChange)="generating=$event" (back)="goHome()"></nl-evaluation>
         <nl-models *ngIf="screen()==='models'"></nl-models>
-        <nl-coming-soon *ngIf="screen()==='library'" title="Biblioteca de testes" subtitle="Instrumentos e guias de interpretação usados pela IA." icon="lib"
-          plan="Os guias por instrumento já existem dentro do sistema, mas ainda não há uma tela para consultar ou editar."
-          [items]="['Lista dos instrumentos reconhecidos nas tabelas do arquivo base','Guia de interpretação de cada instrumento','Faixas etárias de aplicação']"></nl-coming-soon>
+        <nl-library *ngIf="screen()==='library'"></nl-library>
         <nl-reports *ngIf="screen()==='reports'" [evaluations]="evaluations()"></nl-reports>
       </div>
     </main>
@@ -260,7 +260,7 @@ export class AppComponent {
   theme = inject(ThemeService);
   STATUS = STATUS; brDate = brDate; clock = clock; duration = duration;
   email = ''; password = ''; showPw = false; loggingIn = false;
-  pwTemp = ''; pwNew = ''; pwRepeat = ''; forgot = false; forgotSent = false;
+  pwTemp = ''; pwNew = ''; pwRepeat = ''; forgot = false; forgotSent = false; mfaStep = false; mfaCode = '';
 
   // Open screen/evaluation survive a page reload (kept per browser tab).
   private saved = (() => { try { return JSON.parse(sessionStorage.getItem('nl_view') || '{}'); } catch { return {}; } })();
@@ -286,7 +286,8 @@ export class AppComponent {
   async login() {
     this.loggingIn = true;
     try {
-      await this.api.login(this.email, this.password);
+      if (await this.api.login(this.email, this.password, this.mfaStep ? this.mfaCode : undefined) === 'mfa') { this.mfaStep = true; setTimeout(() => (document.querySelector('#lg-code') as HTMLInputElement | null)?.focus()); return; }
+      this.mfaStep = false; this.mfaCode = '';
       if (this.mustChange()) this.pwTemp = this.password;
       this.password = ''; this.showPw = false;
       if (!this.mustChange()) await this.load();

@@ -61,6 +61,8 @@ async function withFiles(token = tokens.psy) {
   const id = await newEvaluation(token);
   assert.equal((await upload(token, id, 'base', fs.readFileSync(path.join(tmp, 'base.docx')))).status, 201);
   assert.equal((await upload(token, id, 'anamnesis', fs.readFileSync(path.join(tmp, 'anamnese.docx')))).status, 201);
+  // consent for AI use, required before any generation
+  assert.equal((await api('PUT', `/api/evaluations/${id}/consent`, {token: tokens.psy, body: {care: true, ai: true}})).status, 200);
   return id;
 }
 
@@ -97,7 +99,7 @@ before(async () => {
     env: {...process.env, ADMIN_EMAIL: '', ADMIN_PASSWORD: '', TTS_PROVIDER: '', DICTATION_ENABLED: 'false', API_RATE_LIMIT: '100000', PORT: String(port), HOST: '127.0.0.1',
       DB_FILE: path.join(tmp, 'data.db'), STORAGE_DIR: path.join(tmp, 'storage'), JWT_SECRET: randomBytes(32).toString('hex'),
       FILE_ENCRYPTION_KEY: KEY, PYTHON_BIN: PYTHON, OPENAI_API_KEY: 'sk-test-sintetica', OPENAI_BASE_URL: `http://127.0.0.1:${fakeAI.address().port}/v1`,
-      AI_ENABLED: 'true', ALLOW_EXTERNAL_AI: 'true', GENERATED_TEXT_RED: 'false'},
+      AI_ENABLED: 'true', ALLOW_EXTERNAL_AI: 'true', BACKUP_DIR: path.join(tmp, 'backups'), BACKUP_AUTO: 'false', GENERATED_TEXT_RED: 'false'},
   });
   let stderr = '';
   server.stderr.on('data', d => stderr += d);
@@ -570,4 +572,174 @@ test('devolutiva: only from the approved report, pseudonymised, approved before 
   assert.equal(d.prepare('SELECT COUNT(*) n FROM devolutivas WHERE evaluation_id=?').get(id).n, 0);
   assert.equal(d.prepare('SELECT COUNT(*) n FROM devolutiva_history WHERE evaluation_id=?').get(id).n, 0);
   d.close();
+});
+
+// ---- Consent, plan, sessions, backup, retention ----
+test('AI generation needs the consent for AI use', async () => {
+  const id = await withFiles();
+  assert.equal((await api('PUT', `/api/evaluations/${id}/consent`, {token: tokens.assistant, body: {care: true, ai: true}})).status, 403);
+  await api('PUT', `/api/evaluations/${id}/consent`, {token: tokens.psy, body: {care: true, ai: false}});
+  const calls = aiRequests.length;
+  const r = await api('POST', `/api/evaluations/${id}/generate/anamnesis`, {token: tokens.psy, body: {}});
+  assert.equal(r.status, 409);
+  assert.match(r.data.error, /consentimento/);
+  assert.equal((await api('POST', `/api/evaluations/${id}/prompt/anamnesis`, {token: tokens.psy, body: {}})).status, 409, 'manual ChatGPT mode too');
+  assert.equal(aiRequests.length, calls);
+  const plan = await api('PUT', `/api/evaluations/${id}/consent`, {token: tokens.psy, body: {care: true, ai: true}});
+  assert.ok(plan.data.consent.consent_ai_at);
+  assert.equal((await api('POST', `/api/evaluations/${id}/generate/anamnesis`, {token: tokens.psy, body: {}})).status, 200);
+});
+
+test('assessment plan and sessions', async () => {
+  const id = await withFiles();
+  const ev = `/api/evaluations/${id}`;
+  assert.equal((await api('POST', ev + '/plan', {token: tokens.assistant, body: {instrument: 'RAVLT'}})).status, 403, 'the psychologist plans');
+  let p = (await api('POST', ev + '/plan', {token: tokens.psy, body: {instruments: ['Teste 0', 'Stroop', 'stroop']}})).data;
+  assert.deepEqual(p.items.map(i => i.instrument), ['Teste 0', 'Stroop'], 'no duplicates');
+  assert.ok(p.catalog.includes('RAVLT'));
+  p = (await api('POST', ev + '/sessions', {token: tokens.assistant, body: {date: '2026-11-20', time: '14:00', kind: 'aplicacao'}})).data;
+  const sid = p.sessions[0].id;
+  const stroop = p.items.find(i => i.instrument === 'Stroop');
+  p = (await api('PUT', `${ev}/plan/${stroop.id}`, {token: tokens.assistant, body: {status: 'applied', session_id: sid}})).data;
+  assert.equal(p.items.find(i => i.id === stroop.id).applied_by_name, 'assistant');
+  // the base has "Teste 0" but no Stroop results: inspect warns
+  const ins = await api('POST', ev + '/inspect', {token: tokens.psy});
+  assert.ok(ins.data.checks.some(c => /sem resultados no arquivo base: Stroop/.test(c.text)));
+  assert.ok(ins.data.checks.some(c => c.level === 'info' && /Teste 0/.test(c.text)));
+  const week = await api('GET', '/api/sessions?from=2026-11-01&to=2026-11-30', {token: tokens.assistant});
+  assert.ok(week.data.some(s => s.id === sid && s.patient_name === PATIENT));
+  assert.equal((await api('POST', ev + '/sessions', {token: tokens.psy, body: {date: 'amanhã'}})).status, 400);
+  assert.equal((await api('DELETE', `${ev}/sessions/${sid}`, {token: tokens.assistant})).status, 200);
+  assert.equal((await api('DELETE', ev, {token: tokens.psy})).status, 200);
+  const d = db();
+  assert.equal(d.prepare('SELECT COUNT(*) n FROM evaluation_plan WHERE evaluation_id=?').get(id).n, 0);
+  d.close();
+});
+
+test('backups: admin only, encrypted, restorable; password copy opens elsewhere', async () => {
+  const {unpackBackup, restoreBackup} = await import('../src/backup.mjs');
+  await withFiles();
+  assert.equal((await api('POST', '/api/backups', {token: tokens.psy})).status, 403);
+  const made = await api('POST', '/api/backups', {token: tokens.admin});
+  assert.equal(made.status, 201);
+  const file = path.join(tmp, 'backups', made.data.name);
+  const buf = fs.readFileSync(file);
+  assert.ok(!buf.includes(Buffer.from(PATIENT)), 'patient data is not readable in the file');
+  const listed = (await api('GET', '/api/backups', {token: tokens.admin})).data;
+  assert.equal(listed.backups[0].name, made.data.name);
+  // restore into an empty folder and read the database
+  const dir = fs.mkdtempSync(path.join(tmp, 'restore-'));
+  const r = restoreBackup(buf, {dbFile: path.join(dir, 'x.db'), storageDir: path.join(dir, 'storage'), machineKey: KEY});
+  const restored = new DatabaseSync(path.join(dir, 'x.db'));
+  const live = db();
+  assert.equal(restored.prepare('SELECT COUNT(*) n FROM evaluations').get().n, r.manifest.counts.evaluations);
+  assert.ok(restored.prepare('SELECT COUNT(*) n FROM evaluations').get().n >= 1);
+  assert.equal(fs.readdirSync(path.join(dir, 'storage')).length, live.prepare('SELECT COUNT(*) n FROM documents').get().n);
+  restored.close(); live.close();
+  // password copy
+  assert.equal((await api('POST', '/api/backups/export', {token: tokens.admin, body: {password: 'curta'}})).status, 400);
+  const copy = await api('POST', '/api/backups/export', {token: tokens.admin, body: {password: 'senha-backup-sintetica'}});
+  assert.equal(copy.status, 200);
+  const opened = unpackBackup(copy.data, {password: 'senha-backup-sintetica'});
+  assert.equal(opened.manifest.file_key, KEY, 'carries the documents key');
+});
+
+test('retention lists approved reports past the keeping period', async () => {
+  const id = await withFiles();
+  await api('PUT', `/api/evaluations/${id}/sections/anamnesis`, {token: tokens.psy, body: {content: 'Texto sintético.'}});
+  await api('POST', `/api/evaluations/${id}/approve`, {token: tokens.psy, body: {approveSections: true}});
+  const d = db();
+  d.prepare("UPDATE evaluations SET approved_at='2015-01-10T10:00:00Z' WHERE id=?").run(id);
+  d.close();
+  assert.equal((await api('GET', '/api/retention', {token: tokens.assistant})).status, 403);
+  const r = await api('GET', '/api/retention', {token: tokens.psy});
+  assert.equal(r.data.years, 5);
+  const row = r.data.expired.find(x => x.id === id);
+  assert.equal(row.keep_until, '2020-01-10');
+});
+
+// ---- AI quality, previous evaluation, instrument library, delivery, audit, two-step verification ----
+test('AI quality measures how much the approved text differs from the AI one', async () => {
+  const id = await withFiles();
+  await api('POST', `/api/evaluations/${id}/generate/inteligencia`, {token: tokens.psy, body: {}});
+  await api('PUT', `/api/evaluations/${id}/sections/inteligencia`, {token: tokens.psy, body: {content: 'Texto inteiramente reescrito pela psicóloga sintética.', approve: true}});
+  assert.equal((await api('GET', '/api/stats/ai-quality', {token: tokens.assistant})).status, 403);
+  const q = (await api('GET', '/api/stats/ai-quality', {token: tokens.psy})).data.sections.find(s => s.section_key === 'inteligencia');
+  assert.ok(q && q.texts >= 1 && q.max_changed === 100, JSON.stringify(q));
+  assert.equal(q.name, 'Habilidades intelectuais');
+});
+
+test('re-evaluation shows the previous approved texts of the same patient', async () => {
+  const first = await withFiles();
+  await api('PUT', `/api/evaluations/${first}/sections/anamnesis`, {token: tokens.psy, body: {content: 'Anamnese anterior sintética.'}});
+  await api('POST', `/api/evaluations/${first}/approve`, {token: tokens.psy, body: {approveSections: true}});
+  const patient = (await api('GET', `/api/evaluations/${first}`, {token: tokens.psy})).data.evaluation.patient_id;
+  const second = (await api('POST', '/api/evaluations', {token: tokens.psy, body: {patient_id: patient}})).data.id;
+  const r = await api('GET', `/api/evaluations/${second}/previous`, {token: tokens.assistant});
+  assert.equal(r.data.previous.id, first);
+  assert.equal(r.data.previous.sections.anamnesis, 'Anamnese anterior sintética.');
+  assert.equal((await api('GET', `/api/evaluations/${first}/previous`, {token: tokens.psy})).data.previous, null, 'nothing before the first');
+});
+
+test('the clinic guide of an instrument replaces the default one in the request', async () => {
+  const list = (await api('GET', '/api/instruments', {token: tokens.assistant})).data;
+  const stroop = list.find(i => i.id === 'stroop');
+  assert.ok(stroop.default_guide.length > 30);
+  assert.equal((await api('PUT', '/api/instruments/stroop', {token: tokens.assistant, body: {guide: 'x'.repeat(40)}})).status, 403);
+  assert.equal((await api('PUT', '/api/instruments/stroop', {token: tokens.psy, body: {guide: 'curto'}})).status, 400);
+  // the synthetic base has no instrument names, so the stored override is checked (instrumentGuides itself is unit tested)
+  assert.equal((await api('PUT', '/api/instruments/stroop', {token: tokens.psy, body: {guide: 'GUIA DA CLÍNICA SINTÉTICO para o Stroop, com mais de trinta caracteres.'}})).status, 200);
+  assert.match((await api('GET', '/api/instruments', {token: tokens.psy})).data.find(i => i.id === 'stroop').custom_guide, /GUIA DA CLÍNICA/);
+  assert.equal((await api('PUT', '/api/instruments/stroop', {token: tokens.psy, body: {guide: ''}})).status, 200);
+  assert.equal((await api('GET', '/api/instruments', {token: tokens.psy})).data.find(i => i.id === 'stroop').custom_guide, null);
+});
+
+test('delivery of the approved report is recorded', async () => {
+  const id = await withFiles();
+  const url = `/api/evaluations/${id}/delivery`;
+  assert.equal((await api('PUT', url, {token: tokens.psy, body: {delivered_to: 'Responsáveis sintéticos'}})).status, 409, 'only after approval');
+  await api('PUT', `/api/evaluations/${id}/sections/anamnesis`, {token: tokens.psy, body: {content: 'Texto sintético.'}});
+  await api('POST', `/api/evaluations/${id}/approve`, {token: tokens.psy, body: {approveSections: true}});
+  assert.equal((await api('PUT', url, {token: tokens.assistant, body: {delivered_to: 'X'}})).status, 403);
+  const r = await api('PUT', url, {token: tokens.psy, body: {date: '2026-11-10', delivered_to: 'Responsáveis sintéticos', mode: 'presencial'}});
+  assert.equal(r.data.delivered_at, '2026-11-10');
+  const row = (await api('GET', '/api/evaluations', {token: tokens.psy})).data.find(e => e.id === id);
+  assert.equal(row.delivered_to, 'Responsáveis sintéticos');
+  assert.equal((await api('PUT', url, {token: tokens.psy, body: {clear: true}})).data.delivered_at, null);
+});
+
+test('audit trail: admin only, records who opened an evaluation once per hour', async () => {
+  const id = await withFiles();
+  await api('GET', `/api/evaluations/${id}`, {token: tokens.assistant});
+  await api('GET', `/api/evaluations/${id}`, {token: tokens.assistant});
+  assert.equal((await api('GET', '/api/audit', {token: tokens.psy})).status, 403);
+  const r = await api('GET', `/api/audit?evaluation=${id}&action=opened`, {token: tokens.admin});
+  assert.equal(r.status, 200);
+  assert.equal(r.data.rows.filter(x => x.actor_name === 'assistant').length, 1);
+  assert.equal(r.data.rows[0].patient_name, PATIENT);
+  const all = await api('GET', `/api/audit?evaluation=${id}&limit=2`, {token: tokens.admin});
+  assert.ok(all.data.total >= 3 && all.data.rows.length === 2);
+});
+
+test('two-step verification: setup, login with code, no replay, admin reset', async () => {
+  const {totpAt} = await import('../src/totp.mjs');
+  const u = await account('duas-etapas@exemplo.test', 'psychologist');
+  const setup = await api('POST', '/api/me/mfa/setup', {token: u.token});
+  assert.match(setup.data.uri, /^otpauth:\/\/totp\//);
+  assert.equal((await api('POST', '/api/me/mfa/enable', {token: u.token, body: {code: '000000'}})).status, 400);
+  const step = Math.floor(Date.now() / 30000);
+  const on = await api('POST', '/api/me/mfa/enable', {token: u.token, body: {code: totpAt(setup.data.secret, step)}});
+  assert.equal(on.data.mfa_enabled, true);
+  const d = db();
+  assert.ok(!String(d.prepare('SELECT totp_secret FROM users WHERE id=?').get(u.id).totp_secret).includes(setup.data.secret), 'secret stored encrypted');
+  d.close();
+  const first = await login('duas-etapas@exemplo.test', u.password);
+  assert.equal(first.data.mfa_required, true);
+  assert.equal(first.data.token, undefined, 'no token without the code');
+  assert.equal((await api('POST', '/api/login', {body: {email: 'duas-etapas@exemplo.test', password: u.password, code: totpAt(setup.data.secret, step)}})).status, 401, 'same code again is refused');
+  const ok = await api('POST', '/api/login', {body: {email: 'duas-etapas@exemplo.test', password: u.password, code: totpAt(setup.data.secret, step + 1)}});
+  assert.equal(ok.status, 200);
+  assert.ok(ok.data.token);
+  assert.equal((await api('POST', `/api/users/${u.id}/mfa/reset`, {token: tokens.admin})).data.mfa_enabled, false);
+  assert.ok((await login('duas-etapas@exemplo.test', u.password)).data.token, 'password only after the reset');
 });

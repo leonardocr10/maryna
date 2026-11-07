@@ -20,3 +20,8 @@ api/data/
 # Local Piper voice (downloaded by scripts/setup-voice.mjs)
 worker/voices/
 amostras-voz/
+# Backups criptografados com dados de pacientes
+backups/
+*.nlbk
+# Relatórios da suíte de validação da IA
+api/validacao/

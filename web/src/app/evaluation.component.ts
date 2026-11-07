@@ -16,6 +16,8 @@ import {Identity, IdentityFormComponent, emptyIdentity} from './ui/identity-form
 import {Pending, ReviewPanelComponent} from './ui/review-panel.component';
 import {SectionVersionsComponent} from './ui/section-versions.component';
 import {DevolutivaComponent} from './ui/devolutiva.component';
+import {PlanComponent} from './ui/plan.component';
+import {DeliveryComponent} from './ui/delivery.component';
 import {CONCLUSION_GUIDANCE, OPTIONAL_SECTIONS, PERCEPTION_MAX_AGE, SECTIONS, SECTION_STATE, STATUS, SectionState, ageText, ageYears, brDate, brl, int, words} from './shared';
 
 /** Section the AI only writes from the psychologist's own guidance (never in "Gerar laudo"). */
@@ -39,7 +41,7 @@ async function writeClipboard(text: string): Promise<boolean> {
 @Component({
   selector: 'nl-evaluation',
   standalone: true,
-  imports: [CommonModule, FormsModule, DropZoneComponent, IdentityFormComponent, IconComponent, FilterSelectComponent, DictateComponent, ReviewPanelComponent, SectionVersionsComponent, DevolutivaComponent],
+  imports: [CommonModule, FormsModule, DropZoneComponent, IdentityFormComponent, IconComponent, FilterSelectComponent, DictateComponent, ReviewPanelComponent, SectionVersionsComponent, DevolutivaComponent, PlanComponent, DeliveryComponent],
   templateUrl: './evaluation.component.html',
   styleUrl: './evaluation.component.css',
 })
@@ -80,6 +82,7 @@ export class EvaluationComponent implements OnDestroy {
 
   // ---------- loading ----------
   async load(first = false) {
+    if (first) { this.previous = null; this.prevOpen = ''; this.loadPrevious(); }
     try {
       const r = await this.api.req('GET', '/evaluations/' + this.evaluationId);
       this.current = r.evaluation; this.documents = r.documents || []; this.sections = r.sections || []; this.usage = r.usage;
@@ -344,6 +347,9 @@ export class EvaluationComponent implements OnDestroy {
   // ---------- autosave while editing: one version per editing session (merge:true on the server) ----------
   private autoTimer: any = null; autoSaved = ''; autoSaving = false;
   versionsOpen = '';
+  /** Patient's previous approved evaluation (re-evaluation), for comparison only. */
+  previous: any = null; prevOpen = '';
+  async loadPrevious() { try { this.previous = (await this.api.req<any>('GET', `/evaluations/${this.evaluationId}/previous`)).previous; } catch { this.previous = null; } }
   // ---------- standard texts (Configurações > Textos-padrão), inserted at the cursor ----------
   snippets: any[] = []; private snippetsLoaded = false;
   async loadSnippets() { if (this.snippetsLoaded || !this.canWrite()) return; this.snippetsLoaded = true; try { this.snippets = await this.api.req('GET', '/snippets'); } catch {} }

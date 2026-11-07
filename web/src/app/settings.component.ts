@@ -1,4 +1,4 @@
-import {Component, inject} from '@angular/core';
+import {Component, EventEmitter, Output, inject} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {FormsModule} from '@angular/forms';
 import {Api} from './api.service';
@@ -9,12 +9,14 @@ import {ThemeService} from './theme.service';
 import {IconComponent} from './ui/icon.component';
 import {UsersComponent} from './users.component';
 import {SnippetsComponent} from './snippets.component';
+import {DataComponent} from './data.component';
+import {AuditComponent} from './audit.component';
 
 /** Settings with vertical tabs: Minha conta / IA e custos / Tempo / Aparência / Usuários (admin). */
 @Component({
   selector: 'nl-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule, FilterSelectComponent, IconComponent, UsersComponent, SnippetsComponent],
+  imports: [CommonModule, FormsModule, FilterSelectComponent, IconComponent, UsersComponent, SnippetsComponent, DataComponent, AuditComponent],
   template: `
 <div class="pagehead"><span class="hicon"><nl-icon name="gear"/></span><div><h1>Configurações</h1><p>Conta, inteligência artificial, custos, tempo de trabalho e aparência.</p></div></div>
 <div class="layout">
@@ -24,10 +26,14 @@ import {SnippetsComponent} from './snippets.component';
     <button type="button" role="tab" [attr.aria-selected]="tab==='tempo'" [class.on]="tab==='tempo'" (click)="tab='tempo';timer.loadStats()"><span class="vi"><nl-icon name="clock"/></span><span><strong>Tempo</strong><span>Média por avaliação</span></span></button>
     <button type="button" role="tab" [attr.aria-selected]="tab==='aparencia'" [class.on]="tab==='aparencia'" (click)="tab='aparencia'"><span class="vi"><nl-icon name="sun"/></span><span><strong>Aparência</strong><span>Tema claro ou escuro</span></span></button>
     <button *ngIf="api.me()?.role !== 'assistant'" type="button" role="tab" [attr.aria-selected]="tab==='textos'" [class.on]="tab==='textos'" (click)="tab='textos'"><span class="vi"><nl-icon name="list"/></span><span><strong>Textos-padrão</strong><span>Parágrafos que você sempre usa</span></span></button>
+    <button *ngIf="api.isAdmin()" type="button" role="tab" [attr.aria-selected]="tab==='auditoria'" [class.on]="tab==='auditoria'" (click)="tab='auditoria'"><span class="vi"><nl-icon name="list"/></span><span><strong>Auditoria</strong><span>Quem fez o quê e quando</span></span></button>
+    <button *ngIf="api.isAdmin()" type="button" role="tab" [attr.aria-selected]="tab==='dados'" [class.on]="tab==='dados'" (click)="tab='dados'"><span class="vi"><nl-icon name="shield"/></span><span><strong>Dados e backup</strong><span>Backup e prazo de guarda</span></span></button>
     <button *ngIf="api.isAdmin()" type="button" role="tab" [attr.aria-selected]="tab==='usuarios'" [class.on]="tab==='usuarios'" (click)="tab='usuarios'"><span class="vi"><nl-icon name="users"/></span><span><strong>Usuários</strong><span>Contas e papéis</span></span></button>
   </nav>
 
   <div class="panel" *ngIf="tab==='usuarios' && api.isAdmin()"><nl-users></nl-users></div>
+  <div class="panel" *ngIf="tab==='auditoria' && api.isAdmin()"><nl-audit (open)="open.emit($event)"></nl-audit></div>
+  <div class="panel" *ngIf="tab==='dados' && api.isAdmin()"><nl-data (open)="open.emit($event)"></nl-data></div>
   <div class="panel" *ngIf="tab==='textos' && api.me()?.role !== 'assistant'"><nl-snippets></nl-snippets></div>
 
   <div class="panel" *ngIf="tab==='aparencia'">
@@ -64,6 +70,27 @@ import {SnippetsComponent} from './snippets.component';
   </div>
 
   <div class="panel" *ngIf="tab==='conta'">
+    <section class="card">
+      <div class="card-head"><h2>Verificação em duas etapas</h2><span [class]="'badge ' + (api.me()?.mfa_enabled ? 'ok' : 'idle')">{{api.me()?.mfa_enabled ? 'Ativa' : 'Desligada'}}</span></div>
+      <div class="card-body form">
+        <p class="muted small">Além da senha, o login pede um código de 6 dígitos do aplicativo autenticador do celular (Google Authenticator, Microsoft Authenticator, Authy). Recomendado antes de acessar o sistema de fora da clínica.</p>
+        <ng-container *ngIf="!api.me()?.mfa_enabled">
+          <button *ngIf="!mfa" class="btn btn-secondary" [disabled]="saving" (click)="mfaSetup()"><nl-icon name="shield"/> Ativar</button>
+          <ng-container *ngIf="mfa">
+            <p class="small">1. No aplicativo, escolha <b>Adicionar conta &gt; Inserir chave</b> (ou "Digitar chave de configuração"), conta <b>{{api.me()?.email}}</b>, tipo <b>baseada em tempo</b>, e digite a chave:</p>
+            <p class="mono key">{{groupKey(mfa.secret)}}</p>
+            <p class="small">No celular, também dá para tocar neste link: <a [href]="mfa.uri">abrir no aplicativo autenticador</a>.</p>
+            <div class="field"><label>2. Digite o código que aparece no aplicativo</label><input class="input mono code" [(ngModel)]="mfaCode" inputmode="numeric" maxlength="6" placeholder="000000"></div>
+            <div class="row"><button class="btn btn-primary" [disabled]="saving || mfaCode.trim().length!==6" (click)="mfaEnable()">Confirmar e ativar</button><button class="btn btn-secondary" (click)="mfa=null">Cancelar</button></div>
+          </ng-container>
+        </ng-container>
+        <ng-container *ngIf="api.me()?.mfa_enabled">
+          <p class="small">Para desligar, confirme a senha e um código do aplicativo. Se perder o celular, peça ao administrador para zerar.</p>
+          <div class="row"><input class="input" type="password" [(ngModel)]="mfaPw" placeholder="Senha" autocomplete="current-password"><input class="input mono code" [(ngModel)]="mfaCode" inputmode="numeric" maxlength="6" placeholder="Código">
+            <button class="btn btn-secondary" [disabled]="saving || !mfaPw || mfaCode.trim().length!==6" (click)="mfaDisable()">Desligar</button></div>
+        </ng-container>
+      </div>
+    </section>
     <section class="card">
       <div class="card-head"><h2>Trocar senha</h2></div>
       <div class="card-body form">
@@ -186,6 +213,8 @@ nl-icon{--ico-size:16px}
 .panel{flex:1;min-width:min(480px,100%);display:flex;flex-direction:column;gap:16px}
 .form{display:flex;flex-direction:column;gap:16px;max-width:520px}
 .small{font-size:13px}
+.key{font-size:17px;letter-spacing:.04em;padding:8px 12px;background:var(--chip);border-radius:8px;align-self:flex-start;user-select:all}
+.code{max-width:140px;letter-spacing:.2em}
 .strength{height:6px;background:var(--track);border-radius:6px;overflow:hidden;margin-top:4px}
 .strength div{height:100%;background:var(--warn-dot);transition:width .2s}
 .strength div.good{background:var(--ok-dot)}
@@ -238,9 +267,12 @@ export class SettingsComponent {
   brl = brl; int = int; brDate = brDate;
   timer = inject(WorkTimer); duration = duration;
   theme = inject(ThemeService);
-  tab: 'conta' | 'ia' | 'tempo' | 'aparencia' | 'usuarios' | 'textos' = 'conta';
+  tab: 'conta' | 'ia' | 'tempo' | 'aparencia' | 'usuarios' | 'textos' | 'dados' | 'auditoria' = 'conta';
+  /** Opens an evaluation (from the retention list). */
+  @Output() open = new EventEmitter<string>();
   t() { return this.timer.stats(); }
   pwCurrent = ''; pwNext = ''; saving = false;
+  mfa: {secret: string; uri: string} | null = null; mfaCode = ''; mfaPw = '';
   model = 'gpt-4.1'; enabled = false; configured = false; privacyGate = false; usage: any = null; creditOpen = false; creditInput = '';
   testing = false; test: any = null;
   details: any = null; period = '30'; view: 'evaluation' | 'day' | 'section' | 'model' | 'recent' = 'evaluation';
@@ -286,6 +318,11 @@ export class SettingsComponent {
     try { await this.api.req('PUT', '/ai/settings', {model: this.model, enabled: this.enabled}); this.api.notify('Configuração salva.'); await this.load(); }
     catch {} finally { this.saving = false; }
   }
+  /** Secret in groups of four, easier to type in the app. */
+  groupKey(k: string) { return (k.match(/.{1,4}/g) || []).join(' '); }
+  async mfaSetup() { this.saving = true; try { this.mfa = await this.api.req('POST', '/me/mfa/setup'); this.mfaCode = ''; } catch {} finally { this.saving = false; } }
+  async mfaEnable() { this.saving = true; try { this.api.me.set(await this.api.req('POST', '/me/mfa/enable', {code: this.mfaCode})); this.mfa = null; this.mfaCode = ''; this.api.notify('Verificação em duas etapas ativada.'); } catch {} finally { this.saving = false; } }
+  async mfaDisable() { this.saving = true; try { this.api.me.set(await this.api.req('POST', '/me/mfa/disable', {password: this.mfaPw, code: this.mfaCode})); this.mfaPw = this.mfaCode = ''; this.api.notify('Verificação em duas etapas desligada.'); } catch {} finally { this.saving = false; } }
   async changePassword() {
     this.saving = true;
     // the server ends the other sessions and returns a fresh token for this one

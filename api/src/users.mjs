@@ -54,4 +54,4 @@ export function guardChange(actorId, target, changes, otherActiveAdmins) {
 
 /** What the account list shows (never the password hash). */
 export const publicUser = u => ({id: u.id, name: u.name, email: u.email, role: u.role, active: !!u.active,
-  must_change_password: !!u.must_change_password, created_at: u.created_at, last_login_at: u.last_login_at || null});
+  must_change_password: !!u.must_change_password, mfa_enabled: !!u.totp_enabled_at, created_at: u.created_at, last_login_at: u.last_login_at || null});

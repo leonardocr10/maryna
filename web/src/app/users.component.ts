@@ -7,7 +7,7 @@ import {FilterSelectComponent} from './ui/filter-select.component';
 import {IconComponent} from './ui/icon.component';
 import {brDate} from './shared';
 
-interface Account {id: string; name: string; email: string; role: Role; active: boolean; must_change_password: boolean; created_at: string; last_login_at: string | null; evaluations: number; approvals: number; reset_requested_at: string | null}
+interface Account {id: string; name: string; email: string; role: Role; active: boolean; must_change_password: boolean; mfa_enabled?: boolean; created_at: string; last_login_at: string | null; evaluations: number; approvals: number; reset_requested_at: string | null}
 
 /** Temporary password the admin hands over; the person must replace it at the first login. */
 function tempPassword() {
@@ -80,12 +80,14 @@ function tempPassword() {
               <span *ngIf="!u.active" class="badge idle">Desativada</span>
               <span *ngIf="u.active && u.must_change_password" class="badge warn">Aguardando 1º acesso</span>
               <span *ngIf="u.active && !u.must_change_password && !u.reset_requested_at" class="badge ok">Ativa</span>
+              <span *ngIf="u.mfa_enabled" class="badge idle" title="Verificação em duas etapas ativa">2 etapas</span>
             </td>
             <td>{{u.last_login_at ? when(u.last_login_at) : 'Nunca'}}</td>
             <td class="num" [title]="u.approvals + ' aprovada(s) por esta conta'">{{u.evaluations}}</td>
             <td class="acts">
               <ng-container *ngIf="u.id !== api.me()?.id">
                 <button type="button" class="link" [disabled]="busy || !u.active" (click)="reset(u)">Redefinir senha</button>
+                <button *ngIf="u.mfa_enabled" type="button" class="link" [disabled]="busy" (click)="resetMfa(u)">Zerar 2 etapas</button>
                 <button type="button" [class]="u.active ? 'link link-danger' : 'link'" [disabled]="busy" (click)="toggle(u)">{{u.active ? 'Desativar' : 'Reativar'}}</button>
               </ng-container>
             </td>
@@ -172,6 +174,10 @@ export class UsersComponent implements OnInit {
     if (!ok) return;
     const password = tempPassword();
     await this.run(async () => { await this.api.req('POST', `/users/${u.id}/password`, {password}); this.shown = {name: u.name, password}; });
+  }
+  async resetMfa(u: Account) {
+    if (!await this.confirm.ask({title: `Zerar a verificação em duas etapas de ${u.name}?`, body: 'Use quando a pessoa perder o celular. As sessões abertas dela terminam e ela entra só com a senha até ativar de novo.', ok: 'Zerar'})) return;
+    await this.run(async () => { await this.api.req('POST', `/users/${u.id}/mfa/reset`); this.api.notify('Verificação em duas etapas zerada.'); });
   }
   async copy(text: string) { try { await navigator.clipboard.writeText(text); this.api.notify('Senha copiada.'); } catch { this.api.notify('Não foi possível copiar. Selecione e copie à mão.'); } }
 }

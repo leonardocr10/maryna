@@ -4,9 +4,9 @@
 - [x] Criar fixtures DOCX com dados 100% sintéticos: tabelas, sete marcadores, anamnese e cabeçalho.
 - [x] Testes automatizados Python worker: exatamente oito pontos, não alterar tabelas nem escores, layout mantido.
 - [x] Sanitizar/extrair somente seções necessárias do DOCX para envio à IA: evite envio irrestrito de todas as tabelas.
-- [ ] Pseudonimização feita (lista revisável por avaliação); faltam controle de acesso por papel, retenção e avaliação de impacto de privacidade.
+- [ ] Pseudonimização, papéis, consentimento por avaliação e prazo de guarda feitos; falta avaliação de impacto de privacidade (RIPD).
 - [ ] Endurecer upload: zip bomb e validação DOCX feitos; faltam malware scan e log redaction.
-- [ ] Gestão de contas e papéis feita (criar, papel, desativar, senha temporária com troca obrigatória, revogação de sessão, pedido de nova senha ao administrador); faltam MFA e recuperação por e-mail com serviço de envio.
+- [ ] Gestão de contas, papéis e MFA (TOTP) feitos; falta recuperação por e-mail com serviço de envio.
 - [x] Completar revisão da profissional: aprovação rastreável por usuário, timestamp e bloqueio da versão editada.
 
 ## P1 — funcional
@@ -21,8 +21,8 @@
 - [ ] Editor rico com estilos e impressão.
 
 ## P2 — operação
-- [ ] Backup e restauração testados, criptografia at-rest no MySQL, rotação de segredos e ciclo de retenção.
-- [ ] Histórico de auditoria imutável, monitoramento e alertas.
+- [ ] Backup criptografado diário, cópia com senha, restauração testada e prazo de guarda feitos; faltam criptografia do arquivo do banco e rotação de segredos.
+- [ ] Tela de auditoria feita; faltam registro imutável (encadeado), monitoramento e alertas.
 - [ ] Deploy HTTPS com proxy, domínios e CI/CD, teste e2e e manual clínico.
 - [ ] Biblioteca de textos fixos: textos-padrão da clínica feitos; faltam base conceitual e referências validadas.
 - [ ] Administração dos modelos infantis/adultos e atualização controlada.

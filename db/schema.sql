@@ -10,6 +10,10 @@ CREATE TABLE IF NOT EXISTS users(
   token_version INTEGER NOT NULL DEFAULT 0,
   must_change_password INTEGER NOT NULL DEFAULT 0,
   last_login_at TEXT NULL,
+  totp_secret TEXT NULL,
+  totp_pending TEXT NULL,
+  totp_enabled_at TEXT NULL,
+  totp_last_step INTEGER NULL,
   created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 CREATE TABLE IF NOT EXISTS patients(
@@ -36,6 +40,14 @@ CREATE TABLE IF NOT EXISTS evaluations(
   model_id TEXT NULL,
   submitted_at TEXT NULL,
   submitted_by TEXT NULL,
+  consent_care_at TEXT NULL,
+  consent_ai_at TEXT NULL,
+  consent_by TEXT NULL,
+  consent_note TEXT NULL,
+  delivered_at TEXT NULL,
+  delivered_to TEXT NULL,
+  delivery_mode TEXT NULL,
+  delivered_by TEXT NULL,
   created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 CREATE TABLE IF NOT EXISTS documents(
@@ -59,6 +71,7 @@ CREATE TABLE IF NOT EXISTS sections(
   version INTEGER DEFAULT 1,
   approved_by TEXT NULL,
   approved_at TEXT NULL,
+  ai_text TEXT NULL,
   updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
   UNIQUE(evaluation_id,section_key)
 );
@@ -119,6 +132,38 @@ CREATE TABLE IF NOT EXISTS devolutiva_history(
   actor_id TEXT,
   created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
+-- Assessment plan (instruments to apply) and sessions of each evaluation.
+CREATE TABLE IF NOT EXISTS evaluation_sessions(
+  id TEXT PRIMARY KEY,
+  evaluation_id TEXT NOT NULL REFERENCES evaluations(id),
+  date TEXT NOT NULL,
+  time TEXT NULL,
+  kind TEXT NOT NULL DEFAULT 'aplicacao' CHECK(kind IN ('anamnese','aplicacao','devolutiva','outra')),
+  note TEXT NULL,
+  done INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE INDEX IF NOT EXISTS ix_sessions_date ON evaluation_sessions(date);
+CREATE TABLE IF NOT EXISTS evaluation_plan(
+  id TEXT PRIMARY KEY,
+  evaluation_id TEXT NOT NULL REFERENCES evaluations(id),
+  instrument TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'planned' CHECK(status IN ('planned','applied','not_applied')),
+  session_id TEXT NULL,
+  note TEXT NULL,
+  applied_at TEXT NULL,
+  applied_by TEXT NULL,
+  created_by TEXT,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+-- The clinic's own version of an instrument guide sent to the AI (default ones live in api/src/prompts.mjs).
+CREATE TABLE IF NOT EXISTS instrument_guides(
+  id TEXT PRIMARY KEY,
+  guide TEXT NOT NULL,
+  updated_by TEXT,
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
 CREATE TABLE IF NOT EXISTS prompt_templates(
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -154,6 +199,8 @@ CREATE TABLE IF NOT EXISTS audit_logs(
   action TEXT NOT NULL,
   created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
+CREATE INDEX IF NOT EXISTS ix_audit_eval ON audit_logs(evaluation_id);
+CREATE INDEX IF NOT EXISTS ix_audit_actor ON audit_logs(actor_id,created_at);
 -- Report models: blank base documents (no patient data) kept as versioned, encrypted files.
 CREATE TABLE IF NOT EXISTS report_models(
   id TEXT PRIMARY KEY,

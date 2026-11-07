@@ -52,3 +52,11 @@ test('every section follows the same writing standard, with reference length ins
   assert.match(promptFor('anamnesis'), /"## Título do tópico"/);
   assert.match(promptFor('recomendacoes'), /"Psicoterapia: \.\.\."/);
 });
+
+test('a clinic guide replaces the default guide of that instrument only', async () => {
+  const {instrumentGuides} = await import('../src/prompts.mjs');
+  const text = JSON.stringify([{type: 'table', rows: [['Stroop', 'RAVLT']]}]);
+  const out = instrumentGuides(text, {stroop: 'GUIA DA CLÍNICA SINTÉTICO'});
+  assert.match(out.text, /GUIA DA CLÍNICA SINTÉTICO/);
+  assert.match(out.text, /RAVLT/);
+});

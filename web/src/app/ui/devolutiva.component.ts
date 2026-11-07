@@ -54,6 +54,7 @@ const AUDIENCES = [{label: 'Família / responsáveis', value: 'familia'}, {label
       </ng-container>
       <ng-container *ngIf="d.status==='approved'">
         <button class="btn btn-primary btn-sm" [disabled]="busy" (click)="download()"><nl-icon name="download"/> Baixar Word</button>
+        <button class="btn btn-secondary btn-sm" [disabled]="busy" (click)="download('pdf')"><nl-icon name="pdf"/> Baixar PDF</button>
         <button class="btn btn-secondary btn-sm" [disabled]="busy" (click)="reopen()"><nl-icon name="edit"/> Reabrir para editar</button>
       </ng-container>
       <button class="btn btn-secondary btn-sm" (click)="copy()"><nl-icon name="copy"/> Copiar</button>
@@ -131,13 +132,14 @@ export class DevolutivaComponent implements OnChanges {
     await this.run(() => this.api.req('PUT', `/evaluations/${this.evaluationId}/devolutiva`, {content: this.d.content, approve: true}), 'Devolutiva aprovada.');
   }
   reopen() { return this.run(() => this.api.req('POST', `/evaluations/${this.evaluationId}/devolutiva/reopen`), 'Devolutiva reaberta para edição.'); }
-  async download() {
+  async download(format: 'docx' | 'pdf' = 'docx') {
     this.busy = true;
+    if (format === 'pdf') this.api.notify('Gerando o PDF…');
     try {
-      const data = await this.api.blob(`/evaluations/${this.evaluationId}/devolutiva/export`);
+      const data = await this.api.blob(`/evaluations/${this.evaluationId}/devolutiva/${format === 'pdf' ? 'export.pdf' : 'export'}`);
       const url = URL.createObjectURL(data), a = document.createElement('a');
-      a.href = url; a.download = 'devolutiva-' + (this.patientName || 'avaliacao').replace(/[^\p{L}\p{N}]+/gu, '-') + '.docx'; a.click(); URL.revokeObjectURL(url);
-      this.api.notify('Word da devolutiva baixado.');
+      a.href = url; a.download = 'devolutiva-' + (this.patientName || 'avaliacao').replace(/[^\p{L}\p{N}]+/gu, '-') + '.' + format; a.click(); URL.revokeObjectURL(url);
+      this.api.notify(format === 'pdf' ? 'PDF da devolutiva baixado.' : 'Word da devolutiva baixado.');
     } catch {} finally { this.busy = false; }
   }
   async copy() { try { await navigator.clipboard.writeText(this.d?.content || ''); this.api.notify('Texto copiado.'); } catch { this.api.notify('Não foi possível copiar.'); } }

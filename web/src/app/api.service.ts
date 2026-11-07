@@ -3,7 +3,7 @@ import {HttpClient, HttpHeaders} from '@angular/common/http';
 import {firstValueFrom} from 'rxjs';
 
 export type Role = 'admin' | 'psychologist' | 'assistant';
-export interface Me {id: string; name: string; email: string; role: Role; active: boolean; must_change_password: boolean; last_login_at?: string | null}
+export interface Me {id: string; name: string; email: string; role: Role; active: boolean; must_change_password: boolean; mfa_enabled?: boolean; last_login_at?: string | null}
 export const ROLE_NAMES: Record<Role, string> = {admin: 'Administrador', psychologist: 'Psicóloga(o)', assistant: 'Estagiária(o) / assistente'};
 
 /** HTTP access to /api (proxied to the Node backend) plus the shared toast. */
@@ -43,6 +43,12 @@ export class Api {
     }
   }
 
+  /** POST with a JSON body, file back (e.g. the password backup). */
+  async blobPost(url: string, body: any): Promise<Blob> {
+    try { return await firstValueFrom(this.http.post('/api' + url, body, {...this.opts(), responseType: 'blob'})); }
+    catch (e: any) { let msg = 'Não foi possível gerar o arquivo.'; try { msg = JSON.parse(await (e.error as Blob).text()).error || msg; } catch {} this.notify(msg); throw e; }
+  }
+
   /** GET a file (e.g. a model DOCX) with the session token. */
   async getBlob(url: string): Promise<Blob> {
     try { return await firstValueFrom(this.http.get('/api' + url, {...this.opts(), responseType: 'blob'})); }
@@ -53,9 +59,11 @@ export class Api {
     }
   }
 
-  async login(email: string, password: string) {
-    const x = await this.req<any>('POST', '/login', {email, password});
-    this.signedIn(x);
+  /** Returns 'mfa' when the account has two-step verification and no code was sent yet. */
+  async login(email: string, password: string, code?: string): Promise<'ok' | 'mfa'> {
+    const x = await this.req<any>('POST', '/login', {email, password, ...(code ? {code} : {})});
+    if (x.mfa_required) return 'mfa';
+    this.signedIn(x); return 'ok';
   }
   /** Stores a token the server handed back (login or password change) with the account it belongs to. */
   signedIn(x: {token: string} & Me) {

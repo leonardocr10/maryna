@@ -56,6 +56,17 @@ const monthKey = (d: any) => { const x = new Date(d); return isNaN(+x) ? '' : `$
   </section>
 </div>
 
+<section *ngIf="quality" class="card qual">
+  <div class="card-head"><h2>Quanto o texto da IA é alterado antes de aprovar</h2><small>por seção, últimos 12 meses</small></div>
+  <div class="card-body">
+    <p *ngIf="!quality.length" class="caption">Ainda não há seções geradas pela IA e aprovadas.</p>
+    <div *ngFor="let q of quality" class="qrow" [title]="q.texts + ' texto(s); ' + q.unchanged + ' aprovado(s) sem mudança; maior alteração ' + q.max_changed + '%'">
+      <span class="qname">{{q.name}}</span><span class="sbar"><span [style.width.%]="q.avg_changed"></span></span><b>{{q.avg_changed}}%</b><small>{{q.texts}} texto(s)</small>
+    </div>
+    <p class="caption">0% = aprovado como a IA escreveu; 100% = reescrito. Seções que a psicóloga sempre reescreve muito pedem ajuste nas instruções (Modelos de laudo) ou no guia do instrumento (Biblioteca de testes).</p>
+  </div>
+</section>
+
 <section class="card">
   <div class="card-head"><h2>Tabela por mês</h2><button class="link" (click)="tableOpen=!tableOpen">{{tableOpen ? 'Ocultar' : 'Mostrar'}}</button></div>
   <div *ngIf="tableOpen" class="tablewrap">
@@ -94,6 +105,10 @@ nl-icon{--ico-size:16px}
 .sbar span{display:block;height:100%;background:var(--primary);border-radius:4px}
 .num{text-align:right}
 .note{margin:12px 16px}
+.qual{margin-bottom:16px}
+.qrow{display:grid;grid-template-columns:200px 1fr 48px 80px;gap:10px;align-items:center;font-size:13px;padding:5px 0}
+.qrow b{text-align:right}.qrow small{color:var(--caption)}
+@media(max-width:700px){.qrow{grid-template-columns:120px 1fr 44px}.qrow small{display:none}}
 .tablewrap{overflow:auto}
 @media(max-width:1000px){.charts{grid-template-columns:minmax(0,1fr)}}
 `],
@@ -110,6 +125,7 @@ export class ReportsComponent implements OnInit {
   private byDay: any[] = [];
   hover: {c: string; m: string} | null = null;
   tableOpen = false;
+  quality: any[] | null = null;
   series: Series[] = [
     {title: 'Avaliações criadas', note: 'por mês', value: m => m.created, format: v => int(v)},
     {title: 'Laudos aprovados', note: 'por mês', value: m => m.approved, format: v => int(v)},
@@ -119,6 +135,8 @@ export class ReportsComponent implements OnInit {
   async ngOnInit() {
     try { this.time = await this.api.req('GET', '/stats/time'); } catch {}
     try { this.byDay = (await this.api.req<any>('GET', '/ai/usage/details?days=365')).byDay || []; } catch {}
+    const r = this.api.me()?.role;
+    if (r === 'admin' || r === 'psychologist') try { this.quality = (await this.api.req<any>('GET', '/stats/ai-quality?days=365')).sections; } catch {}
     this.build();
   }
   setPeriod(v: string) { this.period = v; this.build(); }

@@ -50,6 +50,8 @@
         </div>
       </section>
 
+      <nl-plan *ngIf="step===0" [evaluationId]="evaluationId" [canWrite]="canWrite()" [locked]="locked()" (changed)="docsReady() && inspect()"></nl-plan>
+
       <!-- 2. Arquivos -->
       <section *ngIf="step===1" class="card stepcard">
         <div class="card-head"><h2>Arquivos</h2><small>{{docCount()}} de 2 enviados</small></div>
@@ -238,6 +240,10 @@
             <button class="btn btn-secondary btn-sm" (click)="closeEdit()">{{autoSaved ? 'Fechar' : 'Cancelar'}}</button>
             <button class="btn btn-primary btn-sm" (click)="saveEdit(s.id)"><nl-icon name="check"/> Salvar edição</button>
           </div>
+          <div *ngIf="prevOpen===s.id && previous?.sections?.[s.id]" class="prev-box">
+            <div class="prev-head"><b><nl-icon name="calendar"/> Avaliação anterior · {{brDate(previous.start_date || previous.created_at)}}</b><span class="caption">texto aprovado, só para comparar a evolução (não vai para a IA)</span><button class="link" (click)="prevOpen=''">Fechar</button></div>
+            <p *ngFor="let p of paragraphs(previous.sections[s.id])" [class.ptitle]="p.title">{{p.text}}</p>
+          </div>
           <nl-section-versions *ngIf="versionsOpen===s.id" [evaluationId]="evaluationId" [sectionKey]="s.id" [canRestore]="!readOnly()" (closed)="versionsOpen=''" (restored)="versionsOpen='';load();changed.emit()"></nl-section-versions>
 
           <!-- Instruction for this section -->
@@ -278,6 +284,7 @@
             <button *ngIf="refCount(s.id)" class="link tlink" (click)="toggleRefs(s.id)">{{refLabel(s.id)}}</button>
             <div class="edacts">
               <button *ngIf="s.id===MANUAL_KEY && conclusionSources().length" class="btn btn-secondary btn-sm" (click)="copyAll()" title="Copia os textos de todas as seções usadas na conclusão"><nl-icon [name]="copied==='__all' ? 'check' : 'copy'"/> {{copied==='__all' ? 'Copiado' : 'Copiar tudo'}}</button>
+              <button *ngIf="previous?.sections?.[s.id]" class="btn btn-secondary btn-sm" [class.on]="prevOpen===s.id" (click)="prevOpen = prevOpen===s.id ? '' : s.id" [attr.aria-expanded]="prevOpen===s.id"><nl-icon name="calendar"/> Avaliação anterior</button>
               <button *ngIf="(section(s.id)?.version || 1) > 1" class="btn btn-secondary btn-sm" [class.on]="versionsOpen===s.id" (click)="versionsOpen = versionsOpen===s.id ? '' : s.id" [attr.aria-expanded]="versionsOpen===s.id"><nl-icon name="restore"/> Versões ({{(section(s.id)?.version || 1) - 1}})</button>
               <button *ngIf="text(s.id)" class="btn btn-secondary btn-sm" (click)="copyText(s.id)"><nl-icon [name]="copied===s.id ? 'check' : 'copy'"/> {{copied===s.id ? 'Copiado' : 'Copiar'}}</button>
               <ng-container *ngIf="!readOnly()">
@@ -336,6 +343,7 @@
         <div #previewBox class="doc" [style.zoom]="zoom"></div>
       </div>
     </section>
+    <nl-delivery *ngIf="locked() && canWrite()" [evaluationId]="evaluationId" [current]="current" (changed)="load();changed.emit()"></nl-delivery>
     <nl-devolutiva *ngIf="locked() && canWrite()" [evaluationId]="evaluationId" [aiReady]="aiReady" [patientName]="current?.patient_name || ''"></nl-devolutiva>
     <button *ngIf="canWrite()" class="link-danger self-start" (click)="remove()"><nl-icon name="trash"/> Excluir avaliação</button>
   </div>

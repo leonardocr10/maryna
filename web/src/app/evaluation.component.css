@@ -218,3 +218,10 @@ textarea.draft.editing { resize: vertical; min-height: 180px; field-sizing: cont
 .mc-list li.info { color: var(--text-3); }
 .tag.model { color: var(--review); }
 @media (max-width: 760px) { .model-row { grid-template-columns: 1fr; } }
+
+/* previous evaluation (re-evaluation) */
+.prev-box { border: 1px dashed var(--border-card); border-radius: var(--radius-sm); padding: 12px 14px; margin: 12px 0; display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; line-height: 1.6; color: var(--text-2); }
+.prev-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.prev-head b { display: flex; gap: 6px; align-items: center; color: var(--text); }
+.prev-head .link { margin-left: auto; }
+.prev-box .ptitle { font-weight: 600; color: var(--text); }

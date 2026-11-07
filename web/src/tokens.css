@@ -140,6 +140,10 @@ input[type=date].input { font-family: var(--font); }
 .theme-switch button[aria-pressed="true"] { background: var(--card); color: var(--primary-text); box-shadow: var(--shadow-card); font-weight: 600; }
 .theme-switch button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 .theme-switch .ico { width: 15px; height: 15px; }
+.zoom-switch { margin-left: 8px; }
+.zoom-switch button { padding: 0 10px; font-weight: 600; }
+.zoom-switch button:disabled { opacity: .4; cursor: default; }
+.zoom-switch .zval { min-width: 52px; justify-content: center; font-size: 12px; color: var(--text-3); }
 
 /* Modal (confirmation) */
 .modal-bg { position: fixed; inset: 0; z-index: 60; background: rgba(8, 24, 22, .45); display: grid; place-items: center; padding: 24px; animation: nlFade .15s ease; }

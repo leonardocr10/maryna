@@ -30,6 +30,11 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
     <button type="button" [attr.aria-pressed]="theme.theme()==='light'" (click)="theme.set('light')"><nl-icon name="sun"/> Claro</button>
     <button type="button" [attr.aria-pressed]="theme.theme()==='dark'" (click)="theme.set('dark')"><nl-icon name="moon"/> Escuro</button>
   </div>
+  <div class="theme-switch zoom-switch" role="group" aria-label="Tamanho da tela">
+    <button type="button" [disabled]="!theme.canZoom(-1)" (click)="theme.stepZoom(-1)" title="Diminuir a tela" aria-label="Diminuir a tela">A−</button>
+    <button type="button" class="zval mono" (click)="theme.stepZoom(0)" title="Voltar ao tamanho normal (100%)" aria-label="Tamanho atual; clique para voltar a 100%">{{theme.zoom()}}%</button>
+    <button type="button" [disabled]="!theme.canZoom(1)" (click)="theme.stepZoom(1)" title="Aumentar a tela" aria-label="Aumentar a tela">A+</button>
+  </div>
 </ng-template>
 
 <!-- Login -->
@@ -153,7 +158,7 @@ nl-icon{--ico-size:16px}
 .login{position:relative;display:grid;grid-template-columns:1fr minmax(420px,42%);min-height:100vh;background:var(--sidebar-deep);overflow:hidden}
 .login-waves{position:absolute;inset:0;width:100%;height:100%}
 .login-waves .w1{fill:var(--sidebar-bg)}.login-waves .w2{fill:var(--sidebar-active);opacity:.35}
-.login-theme{position:absolute;top:20px;right:24px;z-index:2}
+.login-theme{position:absolute;top:20px;right:24px;z-index:2;display:flex;align-items:center}
 .pitch{position:relative;z-index:1;color:var(--sidebar-text);padding:clamp(72px,13vh,180px) 64px 48px clamp(40px,7vw,160px);max-width:760px}
 .pitch .bar{width:96px;height:6px;border-radius:var(--radius-pill);background:var(--brand-mint);margin-bottom:36px}
 .pitch h1{font-size:clamp(40px,4.4vw,64px);line-height:1;font-weight:700;letter-spacing:-.01em}
@@ -251,6 +256,7 @@ nl-icon{--ico-size:16px}
   .top{padding:0 12px}
   .tlabel,.tavg{display:none}
   .theme-switch button{padding:0 9px}
+  .zoom-switch .zval{display:none}
 }
 `],
 })

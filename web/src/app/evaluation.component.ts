@@ -77,11 +77,6 @@ export class EvaluationComponent implements OnDestroy {
   step = 0;
   uploading = '';
   aiReady = false; usdBrl = 5.5;
-  /** The server refuses AI generation without the AI-use consent on the evaluation (REQUIRE_AI_CONSENT). */
-  consentRequired = false;
-  needsConsent() { return this.consentRequired && !this.current?.consent_ai_at; }
-  /** Says why nothing is generated and opens Identificação, where the consent is registered. */
-  private blockedByConsent() { if (!this.needsConsent()) return false; this.api.notify('Registre o consentimento para uso de IA (Identificação > Consentimento) e depois gere os textos.'); this.step = 0; return true; }
   gen: Record<string, Gen> = {}; generating = false;
   open = ''; editing = ''; editText = ''; sectionInstr = '';
   mode: 'secoes' | 'documento' = 'secoes'; previewLoading = false;
@@ -103,13 +98,12 @@ export class EvaluationComponent implements OnDestroy {
         this.loadModels();
         const s = await this.api.req('GET', '/ai/settings').catch(() => null);
         this.aiReady = !!(s && s.enabled && s.configured && s.privacy_gate);
-        this.consentRequired = s?.consent_required === true;
         this.step = !this.docsReady() ? 1 : !this.autoDrafted() ? 2 : 3;
       }
       if (this.docsReady() && !this.inspection) await this.inspect();
       if (this.docsReady() && !this.instructions.length || first) await this.loadInstructions();
       this.loaded = true;
-      if (first && this.autoGenerate && this.docsReady() && !this.autoDrafted()) { this.step = 2; this.generateAll(true); }
+      if (first && this.autoGenerate && this.aiOn() && this.docsReady() && !this.autoDrafted()) { this.step = 2; this.generateAll(true); }
     } catch {}
   }
   async inspect() {
@@ -211,10 +205,18 @@ export class EvaluationComponent implements OnDestroy {
     return [ageText(c.birth_date, c.end_date), c.sex, c.schooling].filter(Boolean).join(' · ');
   }
   warnings(k: string): string[] { try { return JSON.parse(this.section(k)?.source_summary || '[]'); } catch { return []; } }
-  stepDone(i: number) { return [this.idModel.name.trim().length >= 2, this.docsReady(), this.autoKeys().length > 0 && this.autoDrafted() === this.autoKeys().length, this.allApproved()][i]; }
+  /** Manual evaluations never call the AI: the professional writes every section. */
+  aiOn() { return this.current?.ai_mode !== 'manual'; }
+  async setAiMode(mode: 'ai' | 'manual') {
+    if ((this.current?.ai_mode || 'ai') === mode || this.readOnly()) return;
+    try { await this.api.req('PUT', `/evaluations/${this.evaluationId}/mode`, {mode}); this.current = {...this.current, ai_mode: mode}; this.changed.emit(); this.api.notify(mode === 'manual' ? 'Avaliação manual: a IA fica desligada.' : 'IA ligada nesta avaliação.'); } catch {}
+  }
+  stepDone(i: number) {
+    if (i === 2 && !this.aiOn()) return this.docsReady(); return [this.idModel.name.trim().length >= 2, this.docsReady(), this.autoKeys().length > 0 && this.autoDrafted() === this.autoKeys().length, this.allApproved()][i]; }
   stepSub(i: number) {
     if (i === 0) return this.idModel.name.trim() ? 'Dados preenchidos' : 'Pendente';
     if (i === 1) return `${this.docCount()} de 2 enviados`;
+    if (i === 2 && !this.aiOn()) return 'Sem IA';
     if (i === 2) return this.generating ? `Gerando ${this.genDone()}/${this.genKeys().length}` : this.autoDrafted() ? (this.autoDrafted() === 1 ? '1 seção gerada' : `${this.autoDrafted()} seções geradas`) : 'Pendente';
     return this.allApproved() ? 'Aprovada' : `${this.approved()}/${this.total()} aprovadas`;
   }
@@ -264,9 +266,10 @@ export class EvaluationComponent implements OnDestroy {
   }
   /** The second file completes the pair: nothing drafted yet, so offer the AI drafting right away (paid call, so it asks first). */
   private async offerGeneration(wasReady: boolean) {
+    if (!this.aiOn()) return;
     if (wasReady || !this.docsReady() || this.readOnly() || this.generating || this.autoDrafted()) return;
     this.step = 2;
-    if (!this.aiReady || this.blockedByConsent()) return;
+    if (!this.aiReady) return;
     const n = this.autoKeys().length;
     if (!n || !await this.confirm.ask({tone: 'review', title: 'Gerar os textos com IA agora?',
       body: `Os dois arquivos foram enviados. A IA redige ${n} ${n === 1 ? 'seção' : 'seções'} como rascunho para sua revisão.`,
@@ -300,8 +303,8 @@ export class EvaluationComponent implements OnDestroy {
   rowLabel(k: string) { if (k === DEMAND_KEY && !this.gen[k]) return this.state(k) === 'pend' ? 'Sem texto no arquivo' : this.demandIsFromFile() ? 'Do arquivo enviado' : SECTION_STATE[this.state(k)].label; if (k === MANUAL_KEY && !this.gen[k] && this.state(k) === 'pend') return 'Você gera na etapa 4'; const g = this.gen[k]; if (g === 'running') return 'Gerando…'; if (g === 'pending') return 'Na fila'; if (g === 'error') return 'Erro'; if (g === 'skipped') return 'Não gerada'; return SECTION_STATE[this.state(k)].label; }
 
   async generateAll(skipConfirm = false, only?: string[]) {
+    if (!this.aiOn()) { this.api.notify('Avaliação manual: a IA está desligada. Mude para Com IA em Identificação.'); return; }
     if (!this.aiReady) { this.api.notify('Geração pela API desligada. Ative em Configurações.'); return; }
-    if (this.blockedByConsent()) return;
     if (!skipConfirm && this.autoDrafted() && !await this.confirm.ask({tone: 'review', title: 'Gerar tudo de novo?',
       body: 'Os textos atuais de todas as seções geradas pela IA serão substituídos por novas versões. Edições feitas nelas serão perdidas.',
       facts: ['As versões anteriores ficam no histórico', 'Todas as seções voltam para revisão', 'O custo entra em Custo da IA desta avaliação'], ok: 'Regenerar tudo'})) return;
@@ -419,9 +422,9 @@ export class EvaluationComponent implements OnDestroy {
   }
   openInstr(k: string) { this.sectionInstr = this.sectionInstr === k ? '' : k; this.editing = ''; }
   async regenerate(k: string, withInstruction = false, skipConfirm = false) {
+    if (!this.aiOn()) { this.api.notify('Avaliação manual: a IA está desligada. Mude para Com IA em Identificação.'); return; }
     if (withInstruction) await this.dictation.stop();
     if (!this.aiReady) { this.api.notify('Geração pela API desligada. Ative em Configurações.'); return; }
-    if (this.blockedByConsent()) return;
     if (!skipConfirm && this.state(k) !== 'pend') {
       const name = this.available().find(x => x.id === k)?.name || 'esta seção';
       const instr = (this.instrDraft[k] || '').trim();
@@ -440,6 +443,7 @@ export class EvaluationComponent implements OnDestroy {
     finally { this.generating = false; this.generatingChange.emit(false); this.changed.emit(); }
   }
   async generateConclusion() {
+    if (!this.aiOn()) return;
     await this.dictation.stop();
     const text = (this.instrDraft[MANUAL_KEY] || '').trim();
     if (text.length < 10) { this.api.notify('Escreva suas orientações para a conclusão (o que você concluiu e quer destacar).'); return; }

@@ -35,10 +35,12 @@ import {FilterSelectComponent} from './ui/filter-select.component';
       </div>
     </section>
 
-    <section *ngIf="bothFiles() && canGenerate() && consentRequired" class="card consent">
-      <label class="chk"><input type="checkbox" [checked]="consentAi" (change)="consentAi=$any($event.target).checked">
-        <span><b>Consentimento para uso de IA registrado</b><small>O responsável ou a pessoa avaliada assinou o termo. Os textos vão à OpenAI com nomes trocados por marcadores.</small></span></label>
-      <p *ngIf="!consentAi" class="caption warn-txt"><nl-icon name="alert"/> Sem o consentimento, a avaliação é criada sem gerar textos com IA.</p>
+    <section class="card mode">
+      <div class="sec-title"><span class="num">3</span><h2>Como a avaliação será escrita</h2></div>
+      <div class="modes" role="radiogroup" aria-label="Modo da avaliação">
+        <button type="button" role="radio" class="opt" [class.on]="aiMode==='ai'" [attr.aria-checked]="aiMode==='ai'" (click)="aiMode='ai'"><nl-icon name="spark"/><span><b>Com IA</b><small>A IA redige rascunhos das seções a partir dos arquivos; você revisa e aprova.</small></span></button>
+        <button type="button" role="radio" class="opt" [class.on]="aiMode==='manual'" [attr.aria-checked]="aiMode==='manual'" (click)="aiMode='manual'"><nl-icon name="edit"/><span><b>Manual</b><small>Nada é enviado à IA. O sistema só lê os arquivos e você escreve cada seção.</small></span></button>
+      </div>
     </section>
 
     <div class="actions">
@@ -98,12 +100,14 @@ nl-icon{--ico-size:16px}
 .model{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
 .model .mlabel{font-size:13px;font-weight:600;color:var(--text)}
 .model small{font-size:12.5px;color:var(--text-3)}
-.form>.consent{padding:16px 24px}
-.consent .chk{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
-.consent .chk input{margin-top:3px}
-.consent .chk span{display:flex;flex-direction:column;gap:2px;font-size:13.5px}
-.consent .chk small{font-size:12.5px;color:var(--text-3)}
-.consent .caption{margin-top:10px;display:flex;gap:6px;align-items:center;font-size:12.5px}
+.form>.mode{padding:22px 24px}
+.modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.opt{display:flex;gap:12px;align-items:flex-start;text-align:left;padding:14px 16px;border-radius:var(--radius-lg);border:1.5px solid var(--border-card);background:var(--card);color:var(--text);cursor:pointer;font:inherit}
+.opt nl-icon{color:var(--text-3);--ico-size:18px;margin-top:2px}
+.opt span{display:flex;flex-direction:column;gap:3px}
+.opt b{font-size:14px}.opt small{font-size:12.5px;color:var(--text-3);line-height:1.45}
+.opt.on{border-color:var(--primary);background:var(--primary-soft)}.opt.on nl-icon{color:var(--primary)}
+.opt:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
 `],
 })
 export class NewEvaluationComponent {
@@ -119,14 +123,12 @@ export class NewEvaluationComponent {
   busy = false;
   models: {value: string; label: string}[] = [{value: '', label: 'Sem modelo'}];
   modelId = '';
-  /** The server blocks AI generation until the evaluation has the AI-use consent (REQUIRE_AI_CONSENT). */
-  consentRequired = false;
-  consentAi = false;
+  /** 'ai': drafts by the AI; 'manual': the AI is never called for this evaluation. */
+  aiMode: 'ai' | 'manual' = 'ai';
   async ngOnInit() {
     try { const list: any[] = await this.api.req('GET', '/models'); this.models = [{value: '', label: 'Sem modelo'}, ...list.filter(m => m.active).map(m => ({value: m.id, label: m.name}))]; } catch {}
-    try { const s = await this.api.req('GET', '/ai/settings'); this.consentRequired = s?.consent_required === true; } catch {}
   }
-  willGenerate() { return this.bothFiles() && this.canGenerate() && (!this.consentRequired || this.consentAi); }
+  willGenerate() { return this.aiMode === 'ai' && this.bothFiles() && this.canGenerate(); }
 
   valid() { return this.id.name.trim().length >= 2; }
   bothFiles() { return !!(this.base && this.anamnesis); }
@@ -141,9 +143,7 @@ export class NewEvaluationComponent {
     try {
       const v = this.id;
       const p = await this.api.req('POST', '/patients', {name: v.name.trim(), birth_date: v.birth_date || null});
-      const e = await this.api.req('POST', '/evaluations', {patient_id: p.id, ...v, model_id: this.modelId || null});
-      // Consent first: without it every generation request is refused (409).
-      if (generate && this.consentRequired) { try { await this.api.req('PUT', `/evaluations/${e.id}/consent`, {care: false, ai: true}); } catch { generate = false; } }
+      const e = await this.api.req('POST', '/evaluations', {patient_id: p.id, ...v, model_id: this.modelId || null, ai_mode: this.aiMode});
       for (const kind of ['base', 'anamnesis'] as const) {
         const f = this[kind];
         if (f) { try { await this.api.upload(e.id, kind, f); } catch { generate = false; } }

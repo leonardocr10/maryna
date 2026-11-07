@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS evaluations(
   submitted_by TEXT NULL,
   consent_care_at TEXT NULL,
   consent_ai_at TEXT NULL,
+  ai_mode TEXT NOT NULL DEFAULT 'ai',
   consent_by TEXT NULL,
   consent_note TEXT NULL,
   delivered_at TEXT NULL,

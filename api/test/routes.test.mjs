@@ -61,8 +61,6 @@ async function withFiles(token = tokens.psy) {
   const id = await newEvaluation(token);
   assert.equal((await upload(token, id, 'base', fs.readFileSync(path.join(tmp, 'base.docx')))).status, 201);
   assert.equal((await upload(token, id, 'anamnesis', fs.readFileSync(path.join(tmp, 'anamnese.docx')))).status, 201);
-  // consent for AI use, required before any generation
-  assert.equal((await api('PUT', `/api/evaluations/${id}/consent`, {token: tokens.psy, body: {care: true, ai: true}})).status, 200);
   return id;
 }
 
@@ -99,7 +97,7 @@ before(async () => {
     env: {...process.env, ADMIN_EMAIL: '', ADMIN_PASSWORD: '', TTS_PROVIDER: '', DICTATION_ENABLED: 'false', API_RATE_LIMIT: '100000', PORT: String(port), HOST: '127.0.0.1',
       DB_FILE: path.join(tmp, 'data.db'), STORAGE_DIR: path.join(tmp, 'storage'), JWT_SECRET: randomBytes(32).toString('hex'),
       FILE_ENCRYPTION_KEY: KEY, PYTHON_BIN: PYTHON, OPENAI_API_KEY: 'sk-test-sintetica', OPENAI_BASE_URL: `http://127.0.0.1:${fakeAI.address().port}/v1`,
-      AI_ENABLED: 'true', ALLOW_EXTERNAL_AI: 'true', REQUIRE_AI_CONSENT: 'true', TTS_WARMUP: 'false', BACKUP_DIR: path.join(tmp, 'backups'), BACKUP_AUTO: 'false', GENERATED_TEXT_RED: 'false'},
+      AI_ENABLED: 'true', ALLOW_EXTERNAL_AI: 'true', TTS_WARMUP: 'false', BACKUP_DIR: path.join(tmp, 'backups'), BACKUP_AUTO: 'false', GENERATED_TEXT_RED: 'false'},
   });
   let stderr = '';
   server.stderr.on('data', d => stderr += d);
@@ -575,19 +573,29 @@ test('devolutiva: only from the approved report, pseudonymised, approved before 
 });
 
 // ---- Consent, plan, sessions, backup, retention ----
-test('AI generation needs the consent for AI use', async () => {
+test('a manual evaluation never calls the AI; switching back to AI allows it', async () => {
   const id = await withFiles();
-  assert.equal((await api('PUT', `/api/evaluations/${id}/consent`, {token: tokens.assistant, body: {care: true, ai: true}})).status, 403);
-  await api('PUT', `/api/evaluations/${id}/consent`, {token: tokens.psy, body: {care: true, ai: false}});
+  assert.equal((await api('PUT', `/api/evaluations/${id}/mode`, {token: tokens.assistant, body: {mode: 'manual'}})).status, 403);
+  assert.equal((await api('PUT', `/api/evaluations/${id}/mode`, {token: tokens.psy, body: {mode: 'outro'}})).status, 400);
+  assert.equal((await api('PUT', `/api/evaluations/${id}/mode`, {token: tokens.psy, body: {mode: 'manual'}})).status, 200);
+  assert.equal((await api('GET', `/api/evaluations/${id}`, {token: tokens.psy})).data.evaluation.ai_mode, 'manual');
   const calls = aiRequests.length;
   const r = await api('POST', `/api/evaluations/${id}/generate/anamnesis`, {token: tokens.psy, body: {}});
   assert.equal(r.status, 409);
-  assert.match(r.data.error, /consentimento/);
-  assert.equal((await api('POST', `/api/evaluations/${id}/prompt/anamnesis`, {token: tokens.psy, body: {}})).status, 409, 'manual ChatGPT mode too');
+  assert.match(r.data.error, /manual/);
+  assert.equal((await api('POST', `/api/evaluations/${id}/prompt/anamnesis`, {token: tokens.psy, body: {}})).status, 409, 'ChatGPT request too');
   assert.equal(aiRequests.length, calls);
-  const plan = await api('PUT', `/api/evaluations/${id}/consent`, {token: tokens.psy, body: {care: true, ai: true}});
-  assert.ok(plan.data.consent.consent_ai_at);
+  // the professional still writes the section by hand
+  assert.ok([200, 201].includes((await api('PUT', `/api/evaluations/${id}/sections/anamnesis`, {token: tokens.psy, body: {content: 'Texto escrito à mão, fictício.'}})).status));
+  await api('PUT', `/api/evaluations/${id}/mode`, {token: tokens.psy, body: {mode: 'ai'}});
   assert.equal((await api('POST', `/api/evaluations/${id}/generate/anamnesis`, {token: tokens.psy, body: {}})).status, 200);
+});
+
+test('an evaluation can be created as manual', async () => {
+  const p = await api('POST', '/api/patients', {token: tokens.psy, body: {name: 'Paciente Fictício Manual'}});
+  const e = await api('POST', '/api/evaluations', {token: tokens.psy, body: {patient_id: p.data.id, ai_mode: 'manual'}});
+  assert.equal(e.status, 201);
+  assert.equal((await api('GET', `/api/evaluations/${e.data.id}`, {token: tokens.psy})).data.evaluation.ai_mode, 'manual');
 });
 
 test('assessment plan and sessions', async () => {

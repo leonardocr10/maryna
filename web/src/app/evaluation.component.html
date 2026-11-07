@@ -19,7 +19,7 @@
   <nav class="stepper" aria-label="Etapas da avaliação">
     <button *ngFor="let s of steps; let i=index" type="button" class="st" [attr.aria-current]="step===i ? 'step' : null" [class.current]="step===i" [class.done]="stepDone(i)" [class.pending]="!stepDone(i) && step!==i" (click)="goStep(i)">
       <span class="circle"><nl-icon *ngIf="stepDone(i) && step!==i" name="check"/><ng-container *ngIf="!(stepDone(i) && step!==i)">{{i+1}}</ng-container></span>
-      <span class="st-txt"><strong>{{s}}</strong><span>{{stepSub(i)}}</span></span>
+      <span class="st-txt"><strong>{{i===2 && !aiOn() ? 'Escrita manual' : s}}</strong><span>{{stepSub(i)}}</span></span>
     </button>
   </nav>
 
@@ -46,11 +46,19 @@
         <div class="card-head"><h2>Identificação</h2><small>{{idSaving ? 'Salvando…' : locked() ? 'Travada (avaliação aprovada)' : !canWrite() ? 'Somente leitura para o seu papel' : 'Salva automaticamente · campos em branco usam o arquivo base'}}</small></div>
         <div class="card-body">
           <nl-identity-form [model]="idModel" (modelChange)="onIdentity($event)" [disabled]="readOnly()"></nl-identity-form>
+          <div class="mode-row">
+            <span class="mlabel">Como esta avaliação é escrita</span>
+            <div class="theme-switch" role="group" aria-label="Modo da avaliação">
+              <button type="button" [attr.aria-pressed]="aiOn()" [disabled]="readOnly()" (click)="setAiMode('ai')"><nl-icon name="spark"/> Com IA</button>
+              <button type="button" [attr.aria-pressed]="!aiOn()" [disabled]="readOnly()" (click)="setAiMode('manual')"><nl-icon name="edit"/> Manual</button>
+            </div>
+            <small>{{aiOn() ? 'A IA redige rascunhos das seções para você revisar.' : 'A IA fica desligada: nada é enviado à OpenAI. O sistema só lê os arquivos e você escreve cada seção.'}}</small>
+          </div>
           <div class="row-actions"><button class="btn btn-primary" (click)="goStep(1)">Continuar para arquivos <nl-icon name="chevr"/></button></div>
         </div>
       </section>
 
-      <nl-plan *ngIf="step===0" [evaluationId]="evaluationId" [canWrite]="canWrite()" [locked]="locked()" (changed)="load(); docsReady() && inspect()"></nl-plan>
+      <nl-plan *ngIf="step===0" [evaluationId]="evaluationId" [canWrite]="canWrite()" [locked]="locked()"></nl-plan>
 
       <!-- 2. Arquivos -->
       <section *ngIf="step===1" class="card stepcard">
@@ -76,7 +84,14 @@
 
       <!-- 3. Gerar com IA -->
       <ng-container *ngIf="step===2">
-        <section class="card stepcard">
+        <section *ngIf="!aiOn()" class="card stepcard">
+          <div class="card-head"><h2>Escrita manual</h2></div>
+          <div class="card-body">
+            <p class="muted">Nesta avaliação a IA está desligada e nada é enviado à OpenAI. O sistema só lê os arquivos enviados; você escreve cada seção em Conferir e baixar, com as tabelas de referência ao lado.</p>
+            <div class="row-actions"><button class="btn btn-primary" [disabled]="!docsReady()" (click)="goStep(3)">Ir para as seções <nl-icon name="chevr"/></button></div>
+          </div>
+        </section>
+        <section *ngIf="aiOn()" class="card stepcard">
           <div class="card-head"><h2>Gerar texto com IA</h2>
             <button *ngIf="docsReady() && !readOnly() && !generating && (genKeys().length || autoDrafted())" class="btn btn-secondary btn-sm" [disabled]="!aiReady || !pendingAuto().length" (click)="generatePending()"><nl-icon name="spark"/> Gerar seções pendentes{{pendingAuto().length ? ' (' + pendingAuto().length + ')' : ''}}</button></div>
           <div class="card-body">
@@ -185,7 +200,7 @@
     </div>
 
     <ng-container *ngIf="mode==='secoes'">
-      <section *ngIf="!drafted() && !reviewRows().length" class="card card-pad"><p class="muted">Ainda não há textos. <button class="link" (click)="goStep(2)">Gerar com IA</button></p></section>
+      <section *ngIf="!drafted() && !reviewRows().length" class="card card-pad"><p class="muted">Ainda não há textos. <button *ngIf="aiOn()" class="link" (click)="goStep(2)">Gerar com IA</button><ng-container *ngIf="!aiOn()">Use Escrever em cada seção.</ng-container></p></section>
       <div *ngIf="reviewRows().length" class="work">
         <nav class="card seclist" aria-label="Seções da avaliação">
           <h2><nl-icon name="doc"/> Seções da avaliação <span>({{reviewRows().length}})</span></h2>
@@ -212,7 +227,7 @@
           <div *ngFor="let w of warnings(s.id)" class="alert warn small"><nl-icon name="info"/><div><p>{{w}}</p></div></div>
 
           <!-- Conclusão: the psychologist's guidance comes first -->
-          <div *ngIf="s.id===MANUAL_KEY && !readOnly() && editing!==s.id" class="ed-instr">
+          <div *ngIf="s.id===MANUAL_KEY && !readOnly() && editing!==s.id && aiOn()" class="ed-instr">
             <label [for]="'guide-'+s.id">Suas orientações para a conclusão</label>
             <small class="hint">A IA junta os textos das seções de resultados (sem a descrição da demanda e sem a anamnese) seguindo esta orientação. Complete ou mude como quiser, por exemplo dizendo quais características citar no final.</small>
             <nl-dictate [evaluationId]="evaluationId"><textarea [id]="'guide-'+s.id" class="input" rows="5" [(ngModel)]="instrDraft[s.id]" placeholder="Ex.: Integrar os achados de atenção e funções executivas com as queixas escolares; destacar memória preservada; mencionar que os dados são compatíveis com a hipótese que será descrita na Hipótese Diagnóstica."></textarea></nl-dictate>
@@ -234,8 +249,8 @@
           <p *ngIf="s.id===DEMAND_KEY && demandIsFromFile() && editing!==s.id" class="footnote from-file">Texto do arquivo enviado, sem alteração e sem IA.</p>
           <div *ngIf="editing===s.id" class="ed-editbar">
             <span>{{autoSaving ? 'Salvando…' : autoSaved ? 'Salvo automaticamente às ' + autoSaved + '.' : 'Editando o texto. Salva sozinho a cada pausa.'}}</span>
-            <button class="link" (click)="openGpt(s.id)" title="Copia o pedido e abre o ChatGPT">Abrir no ChatGPT</button>
-            <button class="link" (click)="pasteAnswer()">Colar resposta</button>
+            <button *ngIf="aiOn()" class="link" (click)="openGpt(s.id)" title="Copia o pedido e abre o ChatGPT">Abrir no ChatGPT</button>
+            <button *ngIf="aiOn()" class="link" (click)="pasteAnswer()">Colar resposta</button>
             <nl-filter-select *ngIf="snippetsFor(s.id).length" size="sm" [searchable]="true" ariaLabel="Inserir texto-padrão" placeholder="Inserir texto-padrão"
               [options]="snippetsFor(s.id)" value="" (valueChange)="insertSnippet($event)"></nl-filter-select>
             <button class="btn btn-secondary btn-sm" (click)="closeEdit()">{{autoSaved ? 'Fechar' : 'Cancelar'}}</button>
@@ -289,12 +304,12 @@
               <button *ngIf="(section(s.id)?.version || 1) > 1" class="btn btn-secondary btn-sm" [class.on]="versionsOpen===s.id" (click)="versionsOpen = versionsOpen===s.id ? '' : s.id" [attr.aria-expanded]="versionsOpen===s.id"><nl-icon name="restore"/> Versões ({{(section(s.id)?.version || 1) - 1}})</button>
               <button *ngIf="text(s.id)" class="btn btn-secondary btn-sm" (click)="copyText(s.id)"><nl-icon [name]="copied===s.id ? 'check' : 'copy'"/> {{copied===s.id ? 'Copiado' : 'Copiar'}}</button>
               <ng-container *ngIf="!readOnly()">
-                <button *ngIf="s.id!==MANUAL_KEY" class="btn btn-secondary btn-sm" [class.on]="gptOpen===s.id" [disabled]="gptLoading===s.id" (click)="openGpt(s.id)" title="Copia o pedido com as tabelas e a instrução desta seção e abre o ChatGPT"><nl-icon name="external"/> {{gptLoading===s.id ? 'Preparando…' : 'ChatGPT'}}</button>
-                <button *ngIf="s.id!==MANUAL_KEY" class="btn btn-secondary btn-sm" [class.on]="sectionInstr===s.id" (click)="openInstr(s.id)" [attr.aria-expanded]="sectionInstr===s.id"><nl-icon name="chat"/> Instrução</button>
+                <button *ngIf="s.id!==MANUAL_KEY && aiOn()" class="btn btn-secondary btn-sm" [class.on]="gptOpen===s.id" [disabled]="gptLoading===s.id" (click)="openGpt(s.id)" title="Copia o pedido com as tabelas e a instrução desta seção e abre o ChatGPT"><nl-icon name="external"/> {{gptLoading===s.id ? 'Preparando…' : 'ChatGPT'}}</button>
+                <button *ngIf="s.id!==MANUAL_KEY && aiOn()" class="btn btn-secondary btn-sm" [class.on]="sectionInstr===s.id" (click)="openInstr(s.id)" [attr.aria-expanded]="sectionInstr===s.id"><nl-icon name="chat"/> Instrução</button>
                 <button class="btn btn-secondary btn-sm" [class.on]="editing===s.id" [disabled]="editing===s.id" (click)="startEdit(s.id)"><nl-icon name="edit"/> {{text(s.id) ? 'Editar' : 'Escrever'}}</button>
                 <button *ngIf="s.id===DEMAND_KEY && demandInFile() && !demandIsFromFile()" class="btn btn-secondary btn-sm" (click)="useFileDemand()"><nl-icon name="doc"/> Usar o texto do arquivo</button>
-                <button *ngIf="s.id===DEMAND_KEY" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="generateDemand()"><nl-icon name="spark"/> {{gen[s.id]==='running'?'Gerando…':'Gerar com IA'}}</button>
-                <button *ngIf="s.id!==MANUAL_KEY && s.id!==DEMAND_KEY" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="regenerate(s.id)"><nl-icon [name]="text(s.id) ? 'restore' : 'spark'"/> {{gen[s.id]==='running'?'Gerando…':text(s.id)?'Regenerar':'Gerar com IA'}}</button>
+                <button *ngIf="s.id===DEMAND_KEY && aiOn()" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="generateDemand()"><nl-icon name="spark"/> {{gen[s.id]==='running'?'Gerando…':'Gerar com IA'}}</button>
+                <button *ngIf="s.id!==MANUAL_KEY && s.id!==DEMAND_KEY && aiOn()" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="regenerate(s.id)"><nl-icon [name]="text(s.id) ? 'restore' : 'spark'"/> {{gen[s.id]==='running'?'Gerando…':text(s.id)?'Regenerar':'Gerar com IA'}}</button>
               </ng-container>
             </div>
           </div>
@@ -345,7 +360,7 @@
       </div>
     </section>
     <nl-delivery *ngIf="locked() && canWrite()" [evaluationId]="evaluationId" [current]="current" (changed)="load();changed.emit()"></nl-delivery>
-    <nl-devolutiva *ngIf="locked() && canWrite()" [evaluationId]="evaluationId" [aiReady]="aiReady" [patientName]="current?.patient_name || ''"></nl-devolutiva>
+    <nl-devolutiva *ngIf="locked() && canWrite()" [evaluationId]="evaluationId" [aiReady]="aiReady && aiOn()" [patientName]="current?.patient_name || ''"></nl-devolutiva>
     <button *ngIf="canWrite()" class="link-danger self-start" (click)="remove()"><nl-icon name="trash"/> Excluir avaliação</button>
   </div>
 

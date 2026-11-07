@@ -16,7 +16,7 @@
   </div>
 
   <!-- Stepper -->
-  <nav class="stepper" [class.three]="!aiOn()" aria-label="Etapas da avaliação">
+  <nav class="stepper" [style.grid-template-columns]="'repeat(' + stepIdx().length + ', 1fr)'" aria-label="Etapas da avaliação">
     <button *ngFor="let i of stepIdx(); let n=index" type="button" class="st" [attr.aria-current]="step===i ? 'step' : null" [class.current]="step===i" [class.done]="stepDone(i)" [class.pending]="!stepDone(i) && step!==i" (click)="goStep(i)">
       <span class="circle"><nl-icon *ngIf="stepDone(i) && step!==i" name="check"/><ng-container *ngIf="!(stepDone(i) && step!==i)">{{n+1}}</ng-container></span>
       <span class="st-txt"><strong>{{steps[i]}}</strong><span>{{stepSub(i)}}</span></span>
@@ -31,7 +31,7 @@
       <p *ngIf="!locked()">Essas seções não serão geradas e não entrarão no Word. Para incluir, envie o arquivo base de novo com elas.</p>
       <p *ngIf="locked()">Essas seções não entraram no Word. A avaliação está aprovada; para incluí-las, crie uma nova avaliação com o arquivo corrigido.</p>
     </div>
-    <button *ngIf="!locked() && step!==1" class="btn btn-secondary btn-sm" (click)="goStep(1)">Enviar arquivo corrigido</button>
+    <button *ngIf="!locked() && step!==0" class="btn btn-secondary btn-sm" (click)="goStep(0)">Enviar arquivo corrigido</button>
   </section>
 
   <nl-review-panel [evaluationId]="evaluationId" [locked]="locked()" [canWrite]="canWrite()" [docsReady]="docsReady()" [pendings]="pendings()"
@@ -62,14 +62,12 @@
             </div>
             <small>{{aiOn() ? 'A IA redige rascunhos das seções para você revisar.' : 'A IA fica desligada: nada é enviado à OpenAI. O sistema só lê os arquivos e você escreve cada seção.'}}</small>
           </div>
-          <div class="row-actions"><button class="btn btn-primary" (click)="goStep(1)">Continuar para arquivos <nl-icon name="chevr"/></button></div>
         </div>
       </section>
 
-      <nl-plan *ngIf="step===0" [evaluationId]="evaluationId" [canWrite]="canWrite()" [locked]="locked()"></nl-plan>
 
       <!-- 2. Arquivos -->
-      <section *ngIf="step===1" class="card stepcard">
+      <section *ngIf="step===0" class="card stepcard">
         <div class="card-head"><h2>Arquivos</h2><small>{{docCount()}} de 2 enviados</small></div>
         <div class="card-body">
           <div class="model-row">
@@ -89,6 +87,8 @@
           <div class="row-actions"><button class="btn btn-primary" [disabled]="!docsReady()" (click)="goStep(2)">{{aiOn() ? 'Continuar para geração' : 'Continuar para as seções'}} <nl-icon name="chevr"/></button></div>
         </div>
       </section>
+
+      <nl-plan *ngIf="step===0" [evaluationId]="evaluationId" [canWrite]="canWrite()" [locked]="locked()"></nl-plan>
 
       <!-- 3. Gerar com IA -->
       <ng-container *ngIf="step===2">

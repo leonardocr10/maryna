@@ -64,7 +64,7 @@ export class EvaluationComponent implements OnDestroy {
   @Input() set id(v: string) { if (v && v !== this.evaluationId) { this.evaluationId = v; this.load(true); } }
 
   MANUAL_KEY = MANUAL_KEY; DEMAND_KEY = DEMAND_KEY; SECTIONS = SECTIONS; SECTION_STATE = SECTION_STATE; STATUS = STATUS; brDate = brDate; brl = brl; int = int; words = words;
-  steps = ['Identificação', 'Arquivos', 'Gerar com IA', 'Conferir e baixar'];
+  steps = ['Identificação e arquivos', 'Arquivos', 'Gerar com IA', 'Conferir e baixar'];
 
   evaluationId = '';
   loaded = false;
@@ -99,7 +99,7 @@ export class EvaluationComponent implements OnDestroy {
         this.loadModels();
         const s = await this.api.req('GET', '/ai/settings').catch(() => null);
         this.aiReady = !!(s && s.enabled && s.configured && s.privacy_gate);
-        this.step = !this.docsReady() ? 1 : this.aiOn() && !this.autoDrafted() ? 2 : 3;
+        this.step = !this.docsReady() ? 0 : this.aiOn() && !this.autoDrafted() ? 2 : 3;
       }
       if (this.docsReady() && !this.inspection) await this.inspect();
       if (this.docsReady() && !this.instructions.length || first) await this.loadInstructions();
@@ -255,9 +255,9 @@ export class EvaluationComponent implements OnDestroy {
     try { await this.api.req('PUT', `/evaluations/${this.evaluationId}/mode`, {mode}); this.current = {...this.current, ai_mode: mode}; this.changed.emit(); if (mode === 'manual' && this.step === 2) this.goStep(3); if (mode === 'manual' && this.docsReady()) await this.inspect(); this.api.notify(mode === 'manual' ? 'Avaliação manual: a IA fica desligada.' : 'IA ligada nesta avaliação.'); } catch {}
   }
   stepDone(i: number) {
-    if (i === 2 && !this.aiOn()) return this.docsReady(); return [this.idModel.name.trim().length >= 2, this.docsReady(), this.autoKeys().length > 0 && this.autoDrafted() === this.autoKeys().length, this.allApproved()][i]; }
+    if (i === 2 && !this.aiOn()) return this.docsReady(); return [this.idModel.name.trim().length >= 2 && this.docsReady(), this.docsReady(), this.autoKeys().length > 0 && this.autoDrafted() === this.autoKeys().length, this.allApproved()][i]; }
   stepSub(i: number) {
-    if (i === 0) return this.idModel.name.trim() ? 'Dados preenchidos' : 'Pendente';
+    if (i === 0) return !this.idModel.name.trim() ? 'Falta o nome' : `${this.docCount()} de 2 arquivos`;
     if (i === 1) return `${this.docCount()} de 2 enviados`;
     if (i === 2 && !this.aiOn()) return 'Sem IA';
     if (i === 2) return this.generating ? `Gerando ${this.genDone()}/${this.genKeys().length}` : this.autoDrafted() ? (this.autoDrafted() === 1 ? '1 seção gerada' : `${this.autoDrafted()} seções geradas`) : 'Pendente';
@@ -625,7 +625,8 @@ export class EvaluationComponent implements OnDestroy {
     try { await this.api.req('DELETE', '/evaluations/' + this.evaluationId); this.api.notify('Avaliação excluída.'); this.deleted.emit(); } catch {}
   }
   /** Steps shown: a manual evaluation has no AI step, so "Conferir e baixar" becomes the third one. */
-  stepIdx() { return this.aiOn() ? [0, 1, 2, 3] : [0, 1, 3]; }
-  goStep(i: number) { if (i === 2 && !this.aiOn()) i = 3; if (i !== 3) this.closeRefs(); this.step = i; if (i === 3 && this.mode === 'documento') setTimeout(() => this.renderPreview()); }
+  /** Identificação and files share the first step; a manual evaluation has no AI step. */
+  stepIdx() { return this.aiOn() ? [0, 2, 3] : [0, 3]; }
+  goStep(i: number) { if (i === 1) i = 0; if (i === 2 && !this.aiOn()) i = 3; if (i !== 3) this.closeRefs(); this.step = i; if (i === 3 && this.mode === 'documento') setTimeout(() => this.renderPreview()); }
   setMode(m: 'secoes' | 'documento') { if (m === 'documento' && !this.canWrite()) return; if (m !== 'secoes') this.closeRefs(); this.mode = m; if (m === 'documento') setTimeout(() => this.renderPreview()); }
 }

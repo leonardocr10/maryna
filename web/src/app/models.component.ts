@@ -26,7 +26,7 @@ const blankForm = () => ({name: '', description: '', audience: 'geral' as Audien
 <div class="pagehead">
   <span class="hicon"><nl-icon name="doc"/></span>
   <div><h1>Modelos de laudo</h1><p>Arquivos base em branco que a estagiária preenche. O sistema confere se cada modelo tem os campos que a IA precisa.</p></div>
-  <button class="btn btn-primary" (click)="openNew()"><nl-icon name="plus"/> Novo modelo</button>
+  <button *ngIf="canWrite()" class="btn btn-primary" (click)="openNew()"><nl-icon name="plus"/> Novo modelo</button>
 </div>
 
 <nav class="card mtabs" role="tablist" aria-label="Áreas dos modelos">
@@ -66,14 +66,14 @@ const blankForm = () => ({name: '', description: '', audience: 'geral' as Audien
       <span class="mhi"><nl-icon name="doc"/></span>
       <div class="mht"><h2>{{detail.name}} <span class="badge" [class.ok]="detail.active" [class.idle]="!detail.active">{{detail.active ? 'Ativo' : 'Inativo'}}</span></h2><p>{{detail.description || 'Sem descrição'}}</p></div>
       <div class="macts">
-        <button class="btn btn-secondary btn-sm" (click)="duplicate()"><nl-icon name="copy"/> Duplicar</button>
+        <button *ngIf="canWrite()" class="btn btn-secondary btn-sm" (click)="duplicate()"><nl-icon name="copy"/> Duplicar</button>
         <button class="btn btn-secondary btn-sm" (click)="download(detail.version?.version)"><nl-icon name="download"/> Baixar</button>
       </div>
     </div>
     <div class="itabs" role="tablist" aria-label="Detalhes do modelo">
       <button type="button" role="tab" [attr.aria-selected]="inner==='preview'" [class.on]="inner==='preview'" (click)="setInner('preview')"><nl-icon name="eye"/> Pré-visualização</button>
       <button type="button" role="tab" [attr.aria-selected]="inner==='instr'" [class.on]="inner==='instr'" (click)="setInner('instr')"><nl-icon name="spark"/> Instruções da IA<span *ngIf="customInstr()" class="cnt">{{customInstr()}}</span></button>
-      <button type="button" role="tab" [attr.aria-selected]="inner==='config'" [class.on]="inner==='config'" (click)="setInner('config')"><nl-icon name="gear"/> Configurações</button>
+      <button *ngIf="canWrite()" type="button" role="tab" [attr.aria-selected]="inner==='config'" [class.on]="inner==='config'" (click)="setInner('config')"><nl-icon name="gear"/> Configurações</button>
     </div>
 
     <div [hidden]="inner!=='preview'" class="pv">
@@ -94,8 +94,8 @@ const blankForm = () => ({name: '', description: '', audience: 'geral' as Audien
           <div class="irow-foot">
             <span class="caption">{{s.limit ? 'Extensão de referência: ' + s.limit + ' palavras' : ''}}</span>
             <span class="spacer"></span>
-            <button *ngIf="s.model" class="link" (click)="resetInstr(s)">Voltar ao padrão do sistema</button>
-            <button class="btn btn-primary btn-sm" [disabled]="instrSaving===s.key || (instrDraft[s.key]||'').trim()===(s.model||s.default)" (click)="saveInstr(s)"><nl-icon name="check"/> Salvar no modelo</button>
+            <button *ngIf="s.model && canWrite()" class="link" (click)="resetInstr(s)">Voltar ao padrão do sistema</button>
+            <button *ngIf="canWrite()" class="btn btn-primary btn-sm" [disabled]="instrSaving===s.key || (instrDraft[s.key]||'').trim()===(s.model||s.default)" (click)="saveInstr(s)"><nl-icon name="check"/> Salvar no modelo</button>
           </div>
         </div>
       </div>
@@ -124,7 +124,7 @@ const blankForm = () => ({name: '', description: '', audience: 'geral' as Audien
       <span class="caption"><nl-icon name="clock"/> Versão {{detail.version?.version || '—'}} · {{brDate(detail.version?.created_at)}} · {{detail.version?.filename}}{{usesOf() ? ' · usado em ' + usesOf() + (usesOf()===1 ? ' avaliação' : ' avaliações') : ''}}</span>
       <span class="spacer"></span>
       <button class="btn btn-secondary btn-sm" (click)="tab='historico'"><nl-icon name="restore"/> Histórico de versões</button>
-      <button class="btn btn-primary btn-sm" (click)="setInner('config')"><nl-icon name="upload"/> Enviar nova versão</button>
+      <button *ngIf="canWrite()" class="btn btn-primary btn-sm" (click)="setInner('config')"><nl-icon name="upload"/> Enviar nova versão</button>
     </div>
   </section>
 
@@ -143,7 +143,7 @@ const blankForm = () => ({name: '', description: '', audience: 'geral' as Audien
     <div class="fld"><span>Faixa etária do paciente</span><nl-filter-select [options]="audienceOptions" [value]="vAudience" [searchable]="false" ariaLabel="Faixa etária" (valueChange)="vAudience=$any($event); vFile && validate(vFile)"></nl-filter-select></div>
     <nl-drop-zone title="Arquivo para validar (.docx)" [filename]="vFile?.name || ''" [busy]="validating" (file)="validate($event)"></nl-drop-zone>
     <p class="note"><nl-icon name="lock"/> O arquivo é lido e descartado na hora. Nada fica salvo, e nenhum dado do paciente aparece no resultado.</p>
-    <button *ngIf="vReport?.blank" class="btn btn-secondary" (click)="saveValidated()"><nl-icon name="plus"/> Salvar como modelo</button>
+    <button *ngIf="vReport?.blank && canWrite()" class="btn btn-secondary" (click)="saveValidated()"><nl-icon name="plus"/> Salvar como modelo</button>
   </section>
   <section class="card vcard">
     <h2>Resultado</h2>
@@ -169,7 +169,7 @@ const blankForm = () => ({name: '', description: '', audience: 'geral' as Audien
           <td><span [class]="'badge ' + vst(v.status).css">{{v.ready}}/{{v.total}} · {{vst(v.status).label}}</span></td>
           <td class="wrap">{{v.note || '—'}}</td>
           <td class="acts"><button class="btn btn-secondary btn-sm" (click)="download(v.version)"><nl-icon name="download"/> Baixar</button>
-            <button *ngIf="!first" class="btn btn-secondary btn-sm" (click)="restore(v.version)"><nl-icon name="restore"/> Restaurar</button></td>
+            <button *ngIf="!first && canWrite()" class="btn btn-secondary btn-sm" (click)="restore(v.version)"><nl-icon name="restore"/> Restaurar</button></td>
         </tr>
       </tbody>
     </table>
@@ -296,6 +296,8 @@ const blankForm = () => ({name: '', description: '', audience: 'geral' as Audien
 })
 export class ModelsComponent implements OnInit {
   private api = inject(Api);
+  /** Creating and changing models is for the psychologist (and admin); the assistant reads, downloads and validates. */
+  canWrite() { const r = this.api.me()?.role; return r === 'admin' || r === 'psychologist'; }
   private confirm = inject(ConfirmService);
   @ViewChild('previewBox') previewBox?: ElementRef<HTMLDivElement>;
   brDate = brDate; MODEL_STATUS = MODEL_STATUS; audienceOptions = AUDIENCE_OPTIONS;

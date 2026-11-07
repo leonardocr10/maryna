@@ -89,7 +89,7 @@ import {UsersComponent} from './users.component';
         <ng-template #noBalance><p class="money">—</p><p class="caption">Informe o saldo que aparece na página da OpenAI.</p></ng-template>
         <div class="balance-actions">
           <a class="btn btn-primary btn-sm" href="https://platform.openai.com/settings/organization/billing/overview" target="_blank" rel="noopener noreferrer">Adicionar créditos ↗</a>
-          <button class="link" (click)="creditOpen=!creditOpen">{{creditOpen ? 'Cancelar' : 'Atualizar saldo'}}</button>
+          <button *ngIf="api.isAdmin()" class="link" (click)="creditOpen=!creditOpen">{{creditOpen ? 'Cancelar' : 'Atualizar saldo'}}</button>
         </div>
         <div *ngIf="creditOpen" class="credit-form">
           <label class="caption">Saldo atual em US$ (copie de "Credit balance" na página de cobrança)</label>
@@ -105,11 +105,12 @@ import {UsersComponent} from './users.component';
           <span class="pill" [class.ok]="configured">● Chave configurada</span>
           <span class="pill" [class.ok]="privacyGate">● Envio autorizado no servidor</span>
         </div>
-        <div class="field model"><label>Modelo</label><nl-filter-select [options]="models()" [value]="model" (valueChange)="model=$event" placeholder="Escolha o modelo"></nl-filter-select></div>
-        <label class="switch-row"><button type="button" class="switch" [class.on]="enabled" (click)="enabled=!enabled" role="switch" [attr.aria-checked]="enabled"><span></span></button>Habilitar geração pela API</label>
+        <div class="field model"><label>Modelo</label><nl-filter-select [options]="models()" [value]="model" [disabled]="!api.isAdmin()" (valueChange)="model=$event" placeholder="Escolha o modelo"></nl-filter-select></div>
+        <label class="switch-row"><button type="button" class="switch" [class.on]="enabled" [disabled]="!api.isAdmin()" (click)="enabled=!enabled" role="switch" [attr.aria-checked]="enabled"><span></span></button>Habilitar geração pela API</label>
         <p class="caption">Câmbio usado: {{brl(usage?.usd_brl||5.5)}}/US$ (USD_BRL no api/.env).</p>
-        <div class="row"><button class="btn btn-primary" [disabled]="saving" (click)="saveAi()">Salvar</button>
-          <button class="btn btn-secondary" [disabled]="testing" (click)="testConnection()">{{testing?'Testando…':'Testar conexão'}}</button></div>
+        <p *ngIf="!api.isAdmin()" class="caption">Só o administrador muda o modelo e liga ou desliga a geração.</p>
+        <div class="row"><button *ngIf="api.isAdmin()" class="btn btn-primary" [disabled]="saving" (click)="saveAi()">Salvar</button>
+          <button *ngIf="api.me()?.role !== 'assistant'" class="btn btn-secondary" [disabled]="testing" (click)="testConnection()">{{testing?'Testando…':'Testar conexão'}}</button></div>
         <div *ngIf="test" class="test" [class.ok]="test.ok">
           <p class="test-title">{{test.ok ? '✓ Conexão funcionando com ' + test.model : '✕ Há um problema na conexão'}}</p>
           <ul><li *ngFor="let c of test.checks" [class.bad]="!c.ok"><span>{{c.ok?'✓':'✕'}}</span><div><strong>{{c.name}}</strong><small>{{c.detail}}</small></div></li></ul>

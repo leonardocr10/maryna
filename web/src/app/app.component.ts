@@ -78,7 +78,7 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
   </section>
 </div>
 
-<div *ngIf="api.loggedIn() && !mustChange()" class="app" [class.nav-collapsed]="navCollapsed()">
+<div *ngIf="api.loggedIn() && api.me() && !mustChange()" class="app" [class.nav-collapsed]="navCollapsed()">
   <aside class="nav" aria-label="Navegação principal">
     <button type="button" class="nav-brand" (click)="goHome()" title="NeuroLaudos IA">
       <img class="brand-full" src="assets/brand/neurolaudos-logo-light.webp" alt="NeuroLaudos IA — Elaboração assistida de laudos">
@@ -111,7 +111,8 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
 
     <main class="main">
       <div class="content">
-        <nl-dashboard *ngIf="screen()==='home'" [evaluations]="evaluations()" [query]="search" (queryChange)="search=$event" (open)="open($event)" (create)="go('new')"></nl-dashboard>
+        <!-- an evaluation screen with no evaluation open (e.g. it was deleted elsewhere) falls back to the list instead of a blank page -->
+        <nl-dashboard *ngIf="screen()==='home' || (screen()==='evaluation' && !selectedId())" [evaluations]="evaluations()" [query]="search" (queryChange)="search=$event" (open)="open($event)" (create)="go('new')"></nl-dashboard>
         <nl-patients *ngIf="screen()==='patients'" [evaluations]="evaluations()" (open)="open($event)" (create)="go('new')"></nl-patients>
         <nl-new-evaluation *ngIf="screen()==='new'" (closed)="goHome()" (created)="onCreated($event)"></nl-new-evaluation>
         <nl-settings *ngIf="screen()==='settings'"></nl-settings>
@@ -289,7 +290,7 @@ export class AppComponent {
       this.api.notify('Senha criada. Bem-vinda(o)!'); await this.load();
     } catch {} finally { this.loggingIn = false; }
   }
-  logout() { if (this.blocked()) return; this.timer.stop(); this.api.logout(); this.selectedId.set(''); this.screen.set('evaluation'); try { sessionStorage.removeItem('nl_view'); } catch {} }
+  logout() { if (this.blocked()) return; this.timer.stop(); this.api.logout(); this.selectedId.set(''); this.screen.set('home'); try { sessionStorage.removeItem('nl_view'); } catch {} }
   async load() {
     try {
       const list = await this.api.req<any[]>('GET', '/evaluations');

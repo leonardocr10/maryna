@@ -39,7 +39,7 @@ import {FilterSelectComponent} from './ui/filter-select.component';
       <button class="btn btn-secondary" (click)="closed.emit()" [disabled]="busy">Cancelar</button>
       <span class="spacer"></span>
       <button class="btn btn-secondary" [disabled]="!valid()||busy" (click)="create(false)">Salvar como rascunho</button>
-      <button class="btn btn-primary" [disabled]="!valid()||busy" (click)="create(bothFiles())">{{busy?'Criando…':bothFiles()?'Criar e gerar com IA':'Criar avaliação'}} <nl-icon name="chevr"/></button>
+      <button class="btn btn-primary" [disabled]="!valid()||busy" (click)="create(bothFiles() && canGenerate())">{{busy?'Criando…':bothFiles() && canGenerate()?'Criar e gerar com IA':'Criar avaliação'}} <nl-icon name="chevr"/></button>
     </div>
   </div>
 
@@ -96,6 +96,8 @@ nl-icon{--ico-size:16px}
 })
 export class NewEvaluationComponent {
   private api = inject(Api);
+  /** Only the psychologist (and admin) can start AI generation. */
+  canGenerate() { const r = this.api.me()?.role; return r === 'admin' || r === 'psychologist'; }
   // Not named 'cancel': the native file-dialog 'cancel' event bubbles and would trigger it.
   @Output() closed = new EventEmitter<void>();
   @Output() created = new EventEmitter<{id: string; generate: boolean}>();

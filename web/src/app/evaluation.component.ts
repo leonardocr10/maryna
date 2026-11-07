@@ -99,7 +99,7 @@ export class EvaluationComponent implements OnDestroy {
   }
   async inspect() {
     try { this.inspection = await this.api.req('POST', `/evaluations/${this.evaluationId}/inspect`); } catch { this.inspection = null; }
-    try { this.privacy = await this.api.req('GET', `/evaluations/${this.evaluationId}/privacy`); } catch {}
+    if (this.canWrite()) try { this.privacy = await this.api.req('GET', `/evaluations/${this.evaluationId}/privacy`); } catch {}
     try { this.references = await this.api.req('GET', `/evaluations/${this.evaluationId}/references`); } catch { this.references = {}; }
   }
   refs(k: string) { return k === MANUAL_KEY ? [] : this.references[k] || []; }
@@ -118,6 +118,10 @@ export class EvaluationComponent implements OnDestroy {
 
   // ---------- derived ----------
   locked() { return this.current?.status === 'approved'; }
+  /** Generate, edit, approve, preview and download are for the psychologist (and admin); the assistant uploads and reads. */
+  canWrite() { const r = this.api.me()?.role; return r === 'admin' || r === 'psychologist'; }
+  /** Nothing can change: approved evaluation, or a role without write access. */
+  readOnly() { return this.locked() || !this.canWrite(); }
   docName(kind: string) { return this.documents.filter(d => d.kind === kind).at(-1)?.filename || ''; }
   docCount() { return (this.docName('base') ? 1 : 0) + (this.docName('anamnesis') ? 1 : 0); }
   docsReady() { return this.docCount() === 2; }
@@ -182,7 +186,7 @@ export class EvaluationComponent implements OnDestroy {
   // ---------- step 1: identification (auto-save) ----------
   onIdentity(v: Identity) {
     this.idModel = v; clearTimeout(this.idTimer);
-    if (v.name.trim().length < 2 || this.locked()) return;
+    if (v.name.trim().length < 2 || this.readOnly()) return;
     this.idTimer = setTimeout(() => this.saveIdentity(), 700);
   }
   async saveIdentity() {
@@ -263,7 +267,7 @@ export class EvaluationComponent implements OnDestroy {
   customCount() { return this.instructions.filter(x => x.custom).length; }
   /** Returns false when the instruction could not be saved, so nothing is generated with an old one. */
   async saveInstruction(k: string, text = this.instrDraft[k]) {
-    const ins = this.instruction(k); if (!ins || this.locked()) return true;
+    const ins = this.instruction(k); if (!ins || this.readOnly()) return true;
     const value = (text || '').trim();
     if ((ins.custom || this.inherited(ins)) === value) return true;
     try {
@@ -392,7 +396,7 @@ export class EvaluationComponent implements OnDestroy {
   setZoom(d: number) { this.zoom = Math.min(1.5, Math.max(0.5, Math.round((this.zoom + d) * 10) / 10)); }
   /** Approving this one leaves nothing else to review. */
   isLastPending(k: string) { return !this.available().some(s => s.id !== k && this.state(s.id) !== 'ap'); }
-  showDocument() { this.closeRefs(); this.step = 3; this.mode = 'documento'; setTimeout(() => this.renderPreview()); }
+  showDocument() { if (!this.canWrite()) return; this.closeRefs(); this.step = 3; this.mode = 'documento'; setTimeout(() => this.renderPreview()); }
   async renderPreview() {
     const box = this.previewBox?.nativeElement; if (!box) return;
     if (!this.docName('base')) { box.innerHTML = ''; return; }
@@ -454,10 +458,10 @@ export class EvaluationComponent implements OnDestroy {
   async pasteAnswer() { try { this.editText = (await navigator.clipboard.readText()).trim(); } catch { this.api.notify('Use Ctrl+V dentro do campo.'); } }
 
   async remove() {
-    if (this.generating) return;
+    if (this.generating || !this.canWrite()) return;
     if (!await this.confirm.ask({tone: 'danger', title: 'Excluir esta avaliação?', body: `A avaliação de ${this.current?.patient_name || 'este paciente'} será apagada definitivamente.`, facts: ['Os documentos enviados serão apagados', 'Os textos e o histórico serão apagados', 'Não é possível desfazer'], ok: 'Excluir avaliação'})) return;
     try { await this.api.req('DELETE', '/evaluations/' + this.evaluationId); this.api.notify('Avaliação excluída.'); this.deleted.emit(); } catch {}
   }
   goStep(i: number) { if (i !== 3) this.closeRefs(); this.step = i; if (i === 3 && this.mode === 'documento') setTimeout(() => this.renderPreview()); }
-  setMode(m: 'secoes' | 'documento') { if (m !== 'secoes') this.closeRefs(); this.mode = m; if (m === 'documento') setTimeout(() => this.renderPreview()); }
+  setMode(m: 'secoes' | 'documento') { if (m === 'documento' && !this.canWrite()) return; if (m !== 'secoes') this.closeRefs(); this.mode = m; if (m === 'documento') setTimeout(() => this.renderPreview()); }
 }

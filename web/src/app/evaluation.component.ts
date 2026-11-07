@@ -15,6 +15,7 @@ import {DropZoneComponent} from './ui/drop-zone.component';
 import {Identity, IdentityFormComponent, emptyIdentity} from './ui/identity-form.component';
 import {Pending, ReviewPanelComponent} from './ui/review-panel.component';
 import {SectionVersionsComponent} from './ui/section-versions.component';
+import {DevolutivaComponent} from './ui/devolutiva.component';
 import {CONCLUSION_GUIDANCE, OPTIONAL_SECTIONS, PERCEPTION_MAX_AGE, SECTIONS, SECTION_STATE, STATUS, SectionState, ageText, ageYears, brDate, brl, int, words} from './shared';
 
 /** Section the AI only writes from the psychologist's own guidance (never in "Gerar laudo"). */
@@ -38,7 +39,7 @@ async function writeClipboard(text: string): Promise<boolean> {
 @Component({
   selector: 'nl-evaluation',
   standalone: true,
-  imports: [CommonModule, FormsModule, DropZoneComponent, IdentityFormComponent, IconComponent, FilterSelectComponent, DictateComponent, ReviewPanelComponent, SectionVersionsComponent],
+  imports: [CommonModule, FormsModule, DropZoneComponent, IdentityFormComponent, IconComponent, FilterSelectComponent, DictateComponent, ReviewPanelComponent, SectionVersionsComponent, DevolutivaComponent],
   templateUrl: './evaluation.component.html',
   styleUrl: './evaluation.component.css',
 })

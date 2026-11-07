@@ -336,6 +336,7 @@
         <div #previewBox class="doc" [style.zoom]="zoom"></div>
       </div>
     </section>
+    <nl-devolutiva *ngIf="locked() && canWrite()" [evaluationId]="evaluationId" [aiReady]="aiReady" [patientName]="current?.patient_name || ''"></nl-devolutiva>
     <button *ngIf="canWrite()" class="link-danger self-start" (click)="remove()"><nl-icon name="trash"/> Excluir avaliação</button>
   </div>
 

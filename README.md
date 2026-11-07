@@ -60,6 +60,7 @@ Ditado por voz: o botão de microfone nos campos de texto (edição das seções
 - **Pacientes:** ficha com todas as avaliações da pessoa e **Nova reavaliação** (já com sexo, escolaridade e modelo da última).
 - **Prazos:** a data de finalização vira prazo no painel ("Atrasadas", "Vencem em 7 dias").
 - **Relatórios:** avaliações criadas e aprovadas por mês, tempo médio de trabalho e gasto estimado com IA.
+- **Devolutiva para a família** (ou para a própria pessoa, se adulta): depois do laudo aprovado, um texto em linguagem simples feito só a partir dos textos aprovados do laudo (demanda, interpretações, conclusão, recomendações), sem tabelas, sem anamnese, sem números nem classificações e sem acrescentar diagnóstico. É rascunho de IA (ou escrito à mão), com histórico, editado e aprovado pela psicóloga; o Word separado só sai depois da aprovação. Prompt em `api/src/prompts.mjs` (`devolutivaTask`, `DEVOLUTIVA_SYSTEM`).
 - **Esqueci minha senha:** sem serviço de e-mail, o pedido aparece para o administrador em Configurações > Usuários, que passa uma senha temporária.
 
 ## Endpoints
@@ -67,6 +68,7 @@ Ditado por voz: o botão de microfone nos campos de texto (edição das seções
 - `POST /api/setup` (somente quando não existem usuários) · `POST /api/login` · `GET /api/me` · `PUT /api/me/password`
 - `GET /api/evaluations/:id/review` · `POST /api/evaluations/:id/submit` · `POST /api/evaluations/:id/notes` (pedido de correção) · `POST /api/evaluations/:id/notes/:nid/resolve`
 - `GET /api/evaluations/:id/sections/:key/history` · `POST /api/evaluations/:id/sections/:key/restore` · `PUT .../sections/:key` aceita `merge:true` (salvamento automático)
+- `GET/PUT /api/evaluations/:id/devolutiva` · `POST .../devolutiva/generate` · `POST .../devolutiva/reopen` · `POST .../devolutiva/export` (Word, só aprovada)
 - `GET/POST /api/snippets` · `PUT/DELETE /api/snippets/:id` · `POST /api/password-requests` (sem login)
 - `GET/POST /api/users` · `PUT /api/users/:id` (nome, papel, ativo) · `POST /api/users/:id/password` (senha temporária) — só administrador
 - `GET/POST /api/patients`

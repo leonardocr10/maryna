@@ -292,4 +292,18 @@ class TestWorker(unittest.TestCase):
   self.assertEqual([m['key'] for m in r['markers']],['memoria'])
   self.assertEqual(r['titled_domains'],['inteligencia','memoria'])
 
+class TestLetter(unittest.TestCase):
+ def test_letter_builds_a_new_document_with_titles_and_paragraphs(self):
+  with tempfile.TemporaryDirectory() as t:
+   out=Path(t)/'devolutiva.docx'
+   r=run('letter',stdin={'out':str(out),'title':'Devolutiva','subtitle':'Pessoa Fictícia','content':'## Pontos fortes\n\nTexto sintético.\n\n## Como ajudar\n\nOrientação sintética.'})
+   ps=[(p.text,any(x.bold for x in p.runs)) for p in Document(out).paragraphs]
+   self.assertEqual(ps[0],('Devolutiva',True));self.assertIn(('Pontos fortes',True),ps);self.assertIn(('Orientação sintética.',False),ps)
+   self.assertEqual(r['paragraphs'],5)
+ def test_letter_never_overwrites(self):
+  with tempfile.TemporaryDirectory() as t:
+   out=Path(t)/'x.docx';out.write_bytes(b'existente')
+   with self.assertRaises(AssertionError):run('letter',stdin={'out':str(out),'content':'Texto.'})
+   self.assertEqual(out.read_bytes(),b'existente')
+
 if __name__=='__main__':unittest.main()

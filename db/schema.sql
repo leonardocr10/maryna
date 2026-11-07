@@ -98,6 +98,27 @@ CREATE TABLE IF NOT EXISTS password_requests(
   handled_at TEXT NULL,
   created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
+-- Devolutiva: plain-language letter for the family/patient, written from the approved report. Separate from the report DOCX.
+CREATE TABLE IF NOT EXISTS devolutivas(
+  evaluation_id TEXT PRIMARY KEY REFERENCES evaluations(id),
+  audience TEXT NOT NULL DEFAULT 'familia' CHECK(audience IN ('familia','paciente')),
+  content TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','approved')),
+  warnings_json TEXT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  approved_by TEXT NULL,
+  approved_at TEXT NULL,
+  updated_by TEXT NULL,
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE TABLE IF NOT EXISTS devolutiva_history(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  evaluation_id TEXT NOT NULL REFERENCES evaluations(id),
+  version INTEGER NOT NULL,
+  content TEXT NOT NULL,
+  actor_id TEXT,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
 CREATE TABLE IF NOT EXISTS prompt_templates(
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

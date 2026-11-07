@@ -331,11 +331,24 @@ def export(base,out,sections,highlight=False,fields=None):
  after=sha256(base)
  if before!=after:raise SystemExit('base document changed during export')
  return {'inserted':seen,'missing':[k for k in sections if k not in seen],'fields_filled':filled,'replaced':replaced,'fields_added':added,'base_sha256':before,'out_sha256':sha256(out)}
+def letter(out,title,subtitle,content):
+ """Standalone document (the devolutiva): title, patient name and the approved text, same body style as the report."""
+ if os.path.exists(out):raise SystemExit('output exists')
+ d=Document();sect=d.element.body.sectPr
+ head=new_paragraph(title,bold=True);jc=head.find(qn('w:pPr')).find(qn('w:jc'));jc.set(qn('w:val'),'center');sect.addprevious(head)
+ if subtitle:
+  sub=new_paragraph(subtitle);sub.find(qn('w:pPr')).find(qn('w:jc')).set(qn('w:val'),'center');sect.addprevious(sub)
+ sect.addprevious(new_paragraph(''))
+ for text,bold in blocks(content):sect.addprevious(new_paragraph(text,bold))
+ d.save(out)
+ return {'out':out,'paragraphs':len(blocks(content))}
 def main():
  op=sys.argv[1]
  sys.stdout.reconfigure(encoding='utf-8')
  if op=='inspect': print(json.dumps(inspect(sys.argv[2]),ensure_ascii=False))
  elif op=='export':
   spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(export(spec['base'],spec['out'],spec['sections'],spec.get('highlight',False),spec.get('fields')),ensure_ascii=False))
+ elif op=='letter':
+  spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(letter(spec['out'],spec.get('title',''),spec.get('subtitle',''),spec['content']),ensure_ascii=False))
  else: raise SystemExit('unknown operation')
 if __name__=='__main__':main()

@@ -520,3 +520,54 @@ test('a re-evaluation is a new evaluation of the same patient', async () => {
   assert.equal(both.length, 2);
   assert.ok(both.every(e => 'model_name' in e && 'open_notes' in e));
 });
+
+// ---- Devolutiva ----
+test('devolutiva: only from the approved report, pseudonymised, approved before the Word file', async () => {
+  const id = await withFiles();
+  const ev = `/api/evaluations/${id}`;
+  assert.equal((await api('POST', ev + '/devolutiva/generate', {token: tokens.psy, body: {}})).status, 409, 'report must be approved first');
+  await api('PUT', ev + '/sections/anamnesis', {token: tokens.psy, body: {content: 'Anamnese sintética que não vai para a devolutiva.'}});
+  await api('PUT', ev + '/sections/inteligencia', {token: tokens.psy, body: {content: 'Interpretação sintética de habilidades.'}});
+  await api('PUT', ev + '/sections/conclusao', {token: tokens.psy, body: {content: `Conclusão sintética sobre ${PATIENT}.`}});
+  assert.equal((await api('POST', ev + '/approve', {token: tokens.psy, body: {approveSections: true}})).status, 200);
+
+  assert.equal((await api('POST', ev + '/devolutiva/generate', {token: tokens.assistant, body: {}})).status, 403);
+  const from = aiRequests.length;
+  const g = await api('POST', ev + '/devolutiva/generate', {token: tokens.psy, body: {audience: 'familia', notes: 'Tom breve.'}});
+  assert.equal(g.status, 200, JSON.stringify(g.data));
+  const sent = aiRequests.slice(from).join('\n');
+  assert.ok(sent.includes('Conclusão sintética'), 'uses the approved conclusion');
+  assert.ok(sent.includes('Interpretação sintética'), 'uses the approved interpretations');
+  assert.ok(!sent.includes('Anamnese sintética'), 'never the anamnesis section');
+  assert.ok(!sent.includes('sono agitado'), 'never the anamnesis notes');
+  assert.ok(!sent.includes('Teste 0'), 'never the raw tables');
+  assert.ok(!sent.includes('Fulano'), 'names are pseudonymised');
+  assert.ok(sent.includes('devolutivas de avaliações'), 'own system prompt (plain language)');
+  assert.equal(g.data.devolutiva.status, 'draft');
+  assert.equal(g.data.devolutiva.content, AI_TEXT.replace('[PACIENTE]', PATIENT));
+
+  assert.equal((await api('POST', ev + '/devolutiva/export', {token: tokens.psy})).status, 409, 'no Word file before approval');
+  const edited = await api('PUT', ev + '/devolutiva', {token: tokens.psy, body: {content: '## Pontos fortes\n\nTexto sintético revisado pela psicóloga.'}});
+  assert.equal(edited.data.devolutiva.version, 2);
+  const ok = await api('PUT', ev + '/devolutiva', {token: tokens.psy, body: {content: edited.data.devolutiva.content, approve: true}});
+  assert.equal(ok.data.devolutiva.status, 'approved');
+  assert.equal(ok.data.devolutiva.approved_by, 'u-psy');
+  assert.equal((await api('PUT', ev + '/devolutiva', {token: tokens.psy, body: {content: 'Mudança depois de aprovada, sintética.'}})).status, 409);
+  assert.equal((await api('POST', ev + '/devolutiva/generate', {token: tokens.psy, body: {}})).status, 409);
+
+  const out = await api('POST', ev + '/devolutiva/export', {token: tokens.psy});
+  assert.equal(out.status, 200);
+  const file = path.join(tmp, 'devolutiva-' + id + '.docx');
+  fs.writeFileSync(file, out.data);
+  const paras = docxText(file);
+  assert.ok(paras.includes('Pontos fortes'));
+  assert.ok(paras.includes('Texto sintético revisado pela psicóloga.'));
+  assert.equal((await api('POST', ev + '/devolutiva/export', {token: tokens.assistant})).status, 403);
+
+  assert.equal((await api('POST', ev + '/devolutiva/reopen', {token: tokens.psy})).data.devolutiva.status, 'draft');
+  assert.equal((await api('DELETE', ev, {token: tokens.psy})).status, 200);
+  const d = db();
+  assert.equal(d.prepare('SELECT COUNT(*) n FROM devolutivas WHERE evaluation_id=?').get(id).n, 0);
+  assert.equal(d.prepare('SELECT COUNT(*) n FROM devolutiva_history WHERE evaluation_id=?').get(id).n, 0);
+  d.close();
+});

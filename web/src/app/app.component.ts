@@ -1,7 +1,7 @@
 import {Component, HostListener, effect, inject, signal} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {FormsModule} from '@angular/forms';
-import {Api} from './api.service';
+import {Api, ROLE_NAMES} from './api.service';
 import {STATUS, brDate} from './shared';
 import {NewEvaluationComponent} from './new-evaluation.component';
 import {EvaluationComponent} from './evaluation.component';
@@ -32,7 +32,7 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
 </ng-template>
 
 <!-- Login -->
-<div *ngIf="!api.loggedIn()" class="login">
+<div *ngIf="!api.loggedIn() || mustChange()" class="login">
   <svg class="login-waves" viewBox="0 0 1440 900" preserveAspectRatio="none" aria-hidden="true">
     <path class="w1" d="M0 0 H880 C760 220 760 420 860 600 C900 700 880 800 820 900 H0z"/>
     <path class="w2" d="M0 760 C300 660 600 700 900 820 V900 H0z"/>
@@ -50,7 +50,7 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
     </ul>
   </section>
   <section class="login-side">
-    <form class="login-card" (submit)="$event.preventDefault();login()">
+    <form *ngIf="!api.loggedIn()" class="login-card" (submit)="$event.preventDefault();login()">
       <img class="login-logo" src="assets/brand/neurolaudos-logo.webp" alt="NeuroLaudos IA — Elaboração assistida de laudos">
       <div><h1>Acesse sua conta</h1><p class="sub">Entre para gerenciar avaliações e laudos.</p></div>
       <div class="field"><label for="lg-email">E-mail</label>
@@ -61,10 +61,24 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
       <button class="btn btn-primary btn-block" type="submit" [disabled]="!email||!password||loggingIn"><nl-icon name="login"/> {{loggingIn ? 'Entrando…' : 'Entrar'}}</button>
       <p class="login-meta"><span><nl-icon name="shield"/> Ambiente seguro e confidencial (LGPD)</span></p>
     </form>
+    <!-- First access or password reset by the admin: the temporary password is replaced before anything else -->
+    <form *ngIf="api.loggedIn() && mustChange()" class="login-card" (submit)="$event.preventDefault();firstPassword()">
+      <img class="login-logo" src="assets/brand/neurolaudos-logo.webp" alt="NeuroLaudos IA — Elaboração assistida de laudos">
+      <div><h1>Crie a sua senha</h1><p class="sub">Olá, {{api.me()?.name}}. A senha que você recebeu é temporária: escolha uma só sua para continuar.</p></div>
+      <div class="field"><label for="fp-cur">Senha temporária</label>
+        <div class="with-ico"><nl-icon name="lock"/><input id="fp-cur" class="input" type="password" name="cur" [(ngModel)]="pwTemp" autocomplete="current-password"></div></div>
+      <div class="field"><label for="fp-new">Nova senha <small>(mín. 10 caracteres)</small></label>
+        <div class="with-ico"><nl-icon name="lock"/><input id="fp-new" class="input" type="password" name="next" [(ngModel)]="pwNew" autocomplete="new-password"></div></div>
+      <div class="field"><label for="fp-rep">Repita a nova senha</label>
+        <div class="with-ico"><nl-icon name="lock"/><input id="fp-rep" class="input" type="password" name="rep" [(ngModel)]="pwRepeat" autocomplete="new-password"></div>
+        <span *ngIf="pwRepeat && pwRepeat!==pwNew" class="caption field-hint-warn">As senhas não são iguais.</span></div>
+      <button class="btn btn-primary btn-block" type="submit" [disabled]="!pwTemp || pwNew.length<10 || pwNew!==pwRepeat || loggingIn"><nl-icon name="check"/> {{loggingIn ? 'Salvando…' : 'Salvar e entrar'}}</button>
+      <button type="button" class="link" (click)="logout()">Sair</button>
+    </form>
   </section>
 </div>
 
-<div *ngIf="api.loggedIn()" class="app" [class.nav-collapsed]="navCollapsed()">
+<div *ngIf="api.loggedIn() && !mustChange()" class="app" [class.nav-collapsed]="navCollapsed()">
   <aside class="nav" aria-label="Navegação principal">
     <button type="button" class="nav-brand" (click)="goHome()" title="NeuroLaudos IA">
       <img class="brand-full" src="assets/brand/neurolaudos-logo-light.webp" alt="NeuroLaudos IA — Elaboração assistida de laudos">
@@ -77,7 +91,7 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
     <button type="button" class="nav-item nav-collapse" (click)="toggleNav()" [attr.aria-expanded]="!navCollapsed()" [title]="navCollapsed() ? 'Expandir menu' : 'Recolher menu'">
       <nl-icon name="chevl"/><span class="lbl">{{navCollapsed() ? 'Expandir menu' : 'Recolher menu'}}</span></button>
     <div class="nav-user">
-      <span class="avatar">NL</span><span class="lbl"><b>NeuroLaudos</b><small>Profissional</small></span>
+      <span class="avatar" [title]="api.me()?.email || ''">{{initials()}}</span><span class="lbl"><b>{{api.me()?.name || 'NeuroLaudos'}}</b><small>{{roleName()}}</small></span>
       <button type="button" class="nav-logout" (click)="logout()" title="Sair" aria-label="Sair"><nl-icon name="logout"/></button>
     </div>
   </aside>
@@ -232,6 +246,7 @@ export class AppComponent {
   theme = inject(ThemeService);
   STATUS = STATUS; brDate = brDate; clock = clock; duration = duration;
   email = ''; password = ''; showPw = false; loggingIn = false;
+  pwTemp = ''; pwNew = ''; pwRepeat = '';
 
   // Open screen/evaluation survive a page reload (kept per browser tab).
   private saved = (() => { try { return JSON.parse(sessionStorage.getItem('nl_view') || '{}'); } catch { return {}; } })();
@@ -248,7 +263,7 @@ export class AppComponent {
 
 
   constructor() {
-    if (this.api.loggedIn()) this.load();
+    if (this.api.loggedIn()) this.api.loadMe().then(() => { if (!this.mustChange()) this.load(); });
     effect(() => { try { sessionStorage.setItem('nl_view', JSON.stringify({screen: this.screen(), id: this.selectedId()})); } catch {} });
   }
 
@@ -256,7 +271,23 @@ export class AppComponent {
 
   async login() {
     this.loggingIn = true;
-    try { await this.api.login(this.email, this.password); this.password = ''; this.showPw = false; await this.load(); } catch {} finally { this.loggingIn = false; }
+    try {
+      await this.api.login(this.email, this.password);
+      if (this.mustChange()) this.pwTemp = this.password;
+      this.password = ''; this.showPw = false;
+      if (!this.mustChange()) await this.load();
+    } catch {} finally { this.loggingIn = false; }
+  }
+  mustChange() { return !!this.api.me()?.must_change_password; }
+  roleName() { const r = this.api.me()?.role; return r ? ROLE_NAMES[r] : ''; }
+  initials() { const n = (this.api.me()?.name || 'NeuroLaudos').trim().split(/\s+/); return ((n[0]?.[0] || '') + (n.length > 1 ? n[n.length - 1][0] : '')).toUpperCase(); }
+  async firstPassword() {
+    this.loggingIn = true;
+    try {
+      const r = await this.api.req<any>('PUT', '/me/password', {current: this.pwTemp, next: this.pwNew});
+      this.api.signedIn(r); this.pwTemp = this.pwNew = this.pwRepeat = '';
+      this.api.notify('Senha criada. Bem-vinda(o)!'); await this.load();
+    } catch {} finally { this.loggingIn = false; }
   }
   logout() { if (this.blocked()) return; this.timer.stop(); this.api.logout(); this.selectedId.set(''); this.screen.set('evaluation'); try { sessionStorage.removeItem('nl_view'); } catch {} }
   async load() {

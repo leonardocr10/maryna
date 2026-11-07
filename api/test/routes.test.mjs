@@ -94,7 +94,7 @@ before(async () => {
   // cwd is the empty temp folder, so the developer's api/.env is never read.
   server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', path.join(ROOT, 'api/src/server.mjs')], {
     cwd: tmp, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'],
-    env: {...process.env, ADMIN_EMAIL: '', ADMIN_PASSWORD: '', TTS_PROVIDER: '', DICTATION_ENABLED: 'false', PORT: String(port), HOST: '127.0.0.1',
+    env: {...process.env, ADMIN_EMAIL: '', ADMIN_PASSWORD: '', TTS_PROVIDER: '', DICTATION_ENABLED: 'false', API_RATE_LIMIT: '100000', PORT: String(port), HOST: '127.0.0.1',
       DB_FILE: path.join(tmp, 'data.db'), STORAGE_DIR: path.join(tmp, 'storage'), JWT_SECRET: randomBytes(32).toString('hex'),
       FILE_ENCRYPTION_KEY: KEY, PYTHON_BIN: PYTHON, OPENAI_API_KEY: 'sk-test-sintetica', OPENAI_BASE_URL: `http://127.0.0.1:${fakeAI.address().port}/v1`,
       AI_ENABLED: 'true', ALLOW_EXTERNAL_AI: 'true', GENERATED_TEXT_RED: 'false'},
@@ -308,4 +308,92 @@ test('deleting an evaluation removes its encrypted files and drafts', async () =
   assert.ok(d.prepare("SELECT COUNT(*) n FROM audit_logs WHERE evaluation_id=? AND action='evaluation_deleted'").get(id).n === 1);
   d.close();
   assert.equal((await api('GET', `/api/evaluations/${id}`, {token: tokens.psy})).status, 404);
+});
+
+// ---- Accounts and roles ----
+const login = (email, password) => api('POST', '/api/login', {body: {email, password}});
+/** Admin creates an account with a temporary password; the person logs in and sets their own. */
+async function account(email, role, temp = 'temporaria-sintetica-1', own = 'propria-senha-sintetica-1') {
+  const c = await api('POST', '/api/users', {token: tokens.admin, body: {name: 'Conta Sintética', email, role, password: temp}});
+  assert.equal(c.status, 201, JSON.stringify(c.data));
+  const first = await login(email, temp);
+  const changed = await api('PUT', '/api/me/password', {token: first.data.token, body: {current: temp, next: own}});
+  assert.equal(changed.status, 200);
+  return {id: c.data.id, token: changed.data.token, password: own};
+}
+
+test('only an admin lists or creates accounts; e-mails are unique regardless of case', async () => {
+  assert.equal((await api('GET', '/api/users', {token: tokens.psy})).status, 403);
+  assert.equal((await api('POST', '/api/users', {token: tokens.psy, body: {name: 'X Y', email: 'x@exemplo.test', role: 'admin', password: 'qualquer-senha-1'}})).status, 403);
+  const c = await api('POST', '/api/users', {token: tokens.admin, body: {name: 'Nova Psi', email: 'Nova.Psi@Exemplo.test', role: 'psychologist', password: 'temporaria-sintetica-1'}});
+  assert.equal(c.status, 201);
+  assert.equal(c.data.email, 'nova.psi@exemplo.test');
+  assert.equal(c.data.must_change_password, true);
+  assert.equal(c.data.password_hash, undefined);
+  assert.equal((await api('POST', '/api/users', {token: tokens.admin, body: {name: 'Outra', email: 'NOVA.PSI@exemplo.test', role: 'assistant', password: 'temporaria-sintetica-2'}})).status, 409);
+  const list = await api('GET', '/api/users', {token: tokens.admin});
+  assert.equal(list.status, 200);
+  assert.ok(list.data.users.some(u => u.email === 'nova.psi@exemplo.test'));
+  assert.ok(list.data.users.every(u => u.password_hash === undefined));
+});
+
+test('a temporary password must be replaced before using the system', async () => {
+  const temp = 'temporaria-sintetica-1';
+  await api('POST', '/api/users', {token: tokens.admin, body: {name: 'Primeiro Acesso', email: 'primeiro@exemplo.test', role: 'assistant', password: temp}});
+  const first = await login('PRIMEIRO@exemplo.test', temp);
+  assert.equal(first.status, 200, 'e-mail is case-insensitive');
+  assert.equal(first.data.must_change_password, true);
+  const blocked = await api('GET', '/api/evaluations', {token: first.data.token});
+  assert.equal(blocked.status, 403);
+  assert.equal(blocked.data.code, 'password_change_required');
+  assert.equal((await api('GET', '/api/me', {token: first.data.token})).status, 200);
+  // wrong current password is 400 (the screen must not log out on it)
+  assert.equal((await api('PUT', '/api/me/password', {token: first.data.token, body: {current: 'errada', next: 'nova-senha-sintetica-1'}})).status, 400);
+  assert.equal((await api('PUT', '/api/me/password', {token: first.data.token, body: {current: temp, next: temp}})).status, 400);
+  const ok = await api('PUT', '/api/me/password', {token: first.data.token, body: {current: temp, next: 'nova-senha-sintetica-1'}});
+  assert.equal(ok.status, 200);
+  assert.equal(ok.data.must_change_password, false);
+  assert.equal((await api('GET', '/api/evaluations', {token: first.data.token})).status, 401, 'old session ends');
+  assert.equal((await api('GET', '/api/evaluations', {token: ok.data.token})).status, 200);
+});
+
+test('deactivating an account ends its session at once and blocks login', async () => {
+  const u = await account('desativar@exemplo.test', 'psychologist');
+  assert.equal((await api('GET', '/api/evaluations', {token: u.token})).status, 200);
+  assert.equal((await api('PUT', `/api/users/${u.id}`, {token: tokens.admin, body: {active: false}})).status, 200);
+  assert.equal((await api('GET', '/api/evaluations', {token: u.token})).status, 401);
+  assert.equal((await login('desativar@exemplo.test', u.password)).status, 403);
+  assert.equal((await api('PUT', `/api/users/${u.id}`, {token: tokens.admin, body: {active: true}})).status, 200);
+  assert.equal((await login('desativar@exemplo.test', u.password)).status, 200);
+});
+
+test('a role change applies to the open session, without a new login', async () => {
+  const u = await account('papel@exemplo.test', 'psychologist');
+  const id = await withFiles(u.token);
+  assert.equal((await api('POST', `/api/evaluations/${id}/preview`, {token: u.token})).status, 200);
+  assert.equal((await api('PUT', `/api/users/${u.id}`, {token: tokens.admin, body: {role: 'assistant'}})).status, 200);
+  assert.equal((await api('POST', `/api/evaluations/${id}/preview`, {token: u.token})).status, 403);
+  assert.equal((await api('GET', `/api/evaluations/${id}`, {token: u.token})).status, 200, 'still reads');
+});
+
+test('an admin reset sets a temporary password and ends open sessions', async () => {
+  const u = await account('reset@exemplo.test', 'assistant');
+  const r = await api('POST', `/api/users/${u.id}/password`, {token: tokens.admin, body: {password: 'redefinida-sintetica-1'}});
+  assert.equal(r.status, 200);
+  assert.equal(r.data.must_change_password, true);
+  assert.equal((await api('GET', '/api/evaluations', {token: u.token})).status, 401);
+  assert.equal((await login('reset@exemplo.test', u.password)).status, 401, 'old password no longer works');
+  const again = await login('reset@exemplo.test', 'redefinida-sintetica-1');
+  assert.equal(again.data.must_change_password, true);
+  assert.equal((await api('POST', `/api/users/${u.id}/password`, {token: tokens.admin, body: {password: 'curta'}})).status, 400);
+});
+
+test('an admin cannot lock themselves out', async () => {
+  const me = (await api('GET', '/api/me', {token: tokens.admin})).data;
+  assert.equal((await api('PUT', `/api/users/${me.id}`, {token: tokens.admin, body: {active: false}})).status, 409);
+  assert.equal((await api('PUT', `/api/users/${me.id}`, {token: tokens.admin, body: {role: 'psychologist'}})).status, 409);
+  assert.equal((await api('POST', `/api/users/${me.id}/password`, {token: tokens.admin, body: {password: 'outra-senha-sintetica'}})).status, 409);
+  assert.equal((await api('PUT', '/api/users/nao-existe', {token: tokens.admin, body: {active: false}})).status, 404);
+  // still an active admin
+  assert.equal((await api('GET', '/api/users', {token: tokens.admin})).status, 200);
 });

@@ -6,7 +6,7 @@
 - [x] Sanitizar/extrair somente seções necessárias do DOCX para envio à IA: evite envio irrestrito de todas as tabelas.
 - [ ] Pseudonimização feita (lista revisável por avaliação); faltam controle de acesso por papel, retenção e avaliação de impacto de privacidade.
 - [ ] Endurecer upload: zip bomb e validação DOCX feitos; faltam malware scan e log redaction.
-- [ ] MFA, gestão de contas, RBAC efetivo para estagiária x psicóloga e recuperação segura de acesso.
+- [ ] Gestão de contas e papéis feita (criar, papel, desativar, senha temporária com troca obrigatória, revogação de sessão); faltam MFA e recuperação de acesso por e-mail.
 - [x] Completar revisão da profissional: aprovação rastreável por usuário, timestamp e bloqueio da versão editada.
 
 ## P1 — funcional

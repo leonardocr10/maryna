@@ -53,7 +53,8 @@ Ditado por voz: o botão de microfone nos campos de texto (edição das seções
 
 ## Endpoints
 - `GET /api/health`
-- `POST /api/setup` (somente quando não existem usuários) · `POST /api/login` · `PUT /api/me/password`
+- `POST /api/setup` (somente quando não existem usuários) · `POST /api/login` · `GET /api/me` · `PUT /api/me/password`
+- `GET/POST /api/users` · `PUT /api/users/:id` (nome, papel, ativo) · `POST /api/users/:id/password` (senha temporária) — só administrador
 - `GET/POST /api/patients`
 - `GET/POST /api/evaluations` · `GET/DELETE /api/evaluations/:id`
 - `POST /api/evaluations/:id/upload/base|anamnesis` (multipart `file`, DOCX validado)
@@ -71,7 +72,7 @@ Ditado por voz: o botão de microfone nos campos de texto (edição das seções
 - Corrigir e validar o posicionamento visual de inserções para todos os diferentes modelos DOCX; preservar espaçamento, numeração de páginas e eventuais caixas de texto. Adicionar testes por modelos anonimizados.
 - Pseudonimização (`api/src/privacy.mjs`): nome, data de nascimento, autora, CRP, telefone, e-mail, clínica e nomes após palavras-guia (Dr., psi, pediatra, colégio…) viram marcadores como `[PACIENTE]` antes do envio e voltam no texto final. A psicóloga confere e completa a lista na tela. Nomes soltos sem palavra-guia podem escapar: a lista precisa ser revisada. Ainda faltam base legal, política de retenção e contrato antes de uso clínico.
 - Persistir somente arquivos criptografados, mas conteúdo de seções e dados do paciente estão no arquivo SQLite sem criptografia: implementar criptografia de banco, backup criptografado, monitoramento, rotação de segredos, segregação de funções e política de expurgo.
-- Auth inicial não inclui MFA, renovação/invalidacão de tokens, criação de outros usuários nem recuperação de senha. Adicionar antes de liberar acesso remoto.
+- Contas e papéis: o administrador cria contas (Configurações > Usuários) com senha temporária, troca o papel, desativa e redefine senha; a troca vale na hora, pois cada requisição relê a conta. Ainda faltam MFA e recuperação de senha por e-mail. Adicionar antes de liberar acesso remoto.
 - Aprovação registra usuário e horário (`approved_by`/`approved_at`), mas ainda não há política de completude por template nem bloqueio de versão por assinatura.
 - Não há geração de PDF operacional: adicionar conversor com validação visual.
 - A conferência de pontuação não realiza normatização nem cálculo psicológico. A IA não pode inventar normas ou classificar testes.

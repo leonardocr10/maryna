@@ -7,12 +7,13 @@ import {MODEL_OPTIONS, SECTIONS, brDate, brl, int, withCurrent} from './shared';
 import {WorkTimer, duration} from './work-timer.service';
 import {ThemeService} from './theme.service';
 import {IconComponent} from './ui/icon.component';
+import {UsersComponent} from './users.component';
 
-/** Settings with vertical tabs: Minha conta / IA e custos. */
+/** Settings with vertical tabs: Minha conta / IA e custos / Tempo / Aparência / Usuários (admin). */
 @Component({
   selector: 'nl-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule, FilterSelectComponent, IconComponent],
+  imports: [CommonModule, FormsModule, FilterSelectComponent, IconComponent, UsersComponent],
   template: `
 <div class="pagehead"><span class="hicon"><nl-icon name="gear"/></span><div><h1>Configurações</h1><p>Conta, inteligência artificial, custos, tempo de trabalho e aparência.</p></div></div>
 <div class="layout">
@@ -21,7 +22,10 @@ import {IconComponent} from './ui/icon.component';
     <button type="button" role="tab" [attr.aria-selected]="tab==='ia'" [class.on]="tab==='ia'" (click)="tab='ia';load()"><span class="vi"><nl-icon name="spark"/></span><span><strong>IA e custos</strong><span>Modelo, geração e gastos</span></span></button>
     <button type="button" role="tab" [attr.aria-selected]="tab==='tempo'" [class.on]="tab==='tempo'" (click)="tab='tempo';timer.loadStats()"><span class="vi"><nl-icon name="clock"/></span><span><strong>Tempo</strong><span>Média por avaliação</span></span></button>
     <button type="button" role="tab" [attr.aria-selected]="tab==='aparencia'" [class.on]="tab==='aparencia'" (click)="tab='aparencia'"><span class="vi"><nl-icon name="sun"/></span><span><strong>Aparência</strong><span>Tema claro ou escuro</span></span></button>
+    <button *ngIf="api.isAdmin()" type="button" role="tab" [attr.aria-selected]="tab==='usuarios'" [class.on]="tab==='usuarios'" (click)="tab='usuarios'"><span class="vi"><nl-icon name="users"/></span><span><strong>Usuários</strong><span>Contas e papéis</span></span></button>
   </nav>
+
+  <div class="panel" *ngIf="tab==='usuarios' && api.isAdmin()"><nl-users></nl-users></div>
 
   <div class="panel" *ngIf="tab==='aparencia'">
     <section class="card">
@@ -226,11 +230,11 @@ tfoot td{font-weight:600;border-top:1px solid var(--border-card);border-bottom:0
 `],
 })
 export class SettingsComponent {
-  private api = inject(Api);
+  api = inject(Api);
   brl = brl; int = int; brDate = brDate;
   timer = inject(WorkTimer); duration = duration;
   theme = inject(ThemeService);
-  tab: 'conta' | 'ia' | 'tempo' | 'aparencia' = 'conta';
+  tab: 'conta' | 'ia' | 'tempo' | 'aparencia' | 'usuarios' = 'conta';
   t() { return this.timer.stats(); }
   pwCurrent = ''; pwNext = ''; saving = false;
   model = 'gpt-4.1'; enabled = false; configured = false; privacyGate = false; usage: any = null; creditOpen = false; creditInput = '';
@@ -280,7 +284,8 @@ export class SettingsComponent {
   }
   async changePassword() {
     this.saving = true;
-    try { await this.api.req('PUT', '/me/password', {current: this.pwCurrent, next: this.pwNext}); this.pwCurrent = ''; this.pwNext = ''; this.api.notify('Senha alterada.'); }
+    // the server ends the other sessions and returns a fresh token for this one
+    try { const r = await this.api.req<any>('PUT', '/me/password', {current: this.pwCurrent, next: this.pwNext}); this.api.signedIn(r); this.pwCurrent = ''; this.pwNext = ''; this.api.notify('Senha alterada. Outras sessões abertas foram encerradas.'); }
     catch {} finally { this.saving = false; }
   }
 }

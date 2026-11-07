@@ -163,3 +163,16 @@ export function generationParams(model) {
 
 /** Added when the automatic check sends the text back for a rewrite. */
 export const RETRY_KEEP = ' Mantenha a mesma extensão, profundidade e estrutura do texto, alterando só o necessário.';
+
+// ---- Ditado por voz (transcrição em tempo real) ----
+// Only guides the speech-to-text model: it describes the setting and lists literal terms. No patient data ever goes here,
+// and the transcript is never rewritten by a generative model.
+export const DICTATION_PROMPT = 'Ditado em português do Brasil de uma psicóloga redigindo um laudo neuropsicológico. '
+  + 'Transcreva exatamente o que foi dito, com pontuação e acentuação corretas, sem resumir, completar ou corrigir o conteúdo.';
+export const DICTATION_KEYWORDS = [
+  'neuropsicológica', 'neuropsicológico', 'anamnese', 'funções executivas', 'memória operacional', 'memória episódica',
+  'atenção sustentada', 'atenção dividida', 'atenção alternada', 'velocidade de processamento', 'flexibilidade cognitiva',
+  'controle inibitório', 'praxia', 'gnosia', 'linguagem expressiva', 'linguagem receptiva', 'quociente de inteligência',
+  'percentil', 'escore ponderado', 'desvio padrão', 'WISC-V', 'WAIS-III', 'WASI', 'BPA-2', 'RAVLT', 'FDT', 'TDAH', 'TEA',
+  'TOD', 'DIVA-5', 'BFP', 'Figura Complexa de Rey', 'Stroop', 'Trilhas', 'SNAP-IV', 'psicopedagógica', 'fonoaudiológica',
+];

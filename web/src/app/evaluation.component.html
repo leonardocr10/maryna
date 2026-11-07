@@ -134,7 +134,7 @@
                 <span class="tag" [class.custom]="isCustom(s.id)" [class.model]="isFromModel(s.id)">{{isCustom(s.id)?'Personalizada':isFromModel(s.id)?'Do modelo':'Padrão'}}</span>
               </button>
               <div *ngIf="instrOpen===s.id" class="acc-body">
-                <textarea class="input mono" rows="7" [(ngModel)]="instrDraft[s.id]" (blur)="saveInstruction(s.id)"></textarea>
+                <nl-dictate [evaluationId]="evaluationId" (inserted)="saveInstructionLater(s.id)"><textarea class="input mono" rows="7" [(ngModel)]="instrDraft[s.id]" (blur)="saveInstruction(s.id)"></textarea></nl-dictate>
                 <div class="row-between"><span class="caption">Limite sugerido: {{instruction(s.id)?.limit}} palavras</span><button class="link" (click)="resetInstruction(s.id)">{{instruction(s.id)?.model ? 'Usar a do modelo' : 'Usar padrão'}}</button></div>
               </div>
             </div>
@@ -209,7 +209,7 @@
           <div *ngIf="s.id===MANUAL_KEY && !locked() && editing!==s.id" class="ed-instr">
             <label [for]="'guide-'+s.id">Suas orientações para a conclusão</label>
             <small class="hint">A IA junta os textos das seções de resultados (sem a descrição da demanda e sem a anamnese) seguindo esta orientação. Complete ou mude como quiser, por exemplo dizendo quais características citar no final.</small>
-            <textarea [id]="'guide-'+s.id" class="input" rows="5" [(ngModel)]="instrDraft[s.id]" placeholder="Ex.: Integrar os achados de atenção e funções executivas com as queixas escolares; destacar memória preservada; mencionar que os dados são compatíveis com a hipótese que será descrita na Hipótese Diagnóstica."></textarea>
+            <nl-dictate [evaluationId]="evaluationId"><textarea [id]="'guide-'+s.id" class="input" rows="5" [(ngModel)]="instrDraft[s.id]" placeholder="Ex.: Integrar os achados de atenção e funções executivas com as queixas escolares; destacar memória preservada; mencionar que os dados são compatíveis com a hipótese que será descrita na Hipótese Diagnóstica."></textarea></nl-dictate>
             <div class="ed-instr-row">
               <small class="mono">{{words(instrDraft[s.id])}} palavras</small>
               <!-- If the AI text is not good: write it by hand, or use ChatGPT and paste the answer -->
@@ -223,7 +223,7 @@
             <p *ngFor="let p of paragraphs(text(s.id))" [class.ptitle]="p.title">{{p.text}}</p>
             <p *ngIf="!text(s.id)" class="muted">{{s.id===MANUAL_KEY ? 'Ainda sem conclusão. Escreva suas orientações acima ou use Editar para escrever você mesma.' : s.id===DEMAND_KEY ? 'O arquivo base não tem texto nesta parte. Escreva em Editar ou gere com a IA.' : 'Sem texto ainda.'}}</p>
           </div>
-          <textarea *ngIf="editing===s.id" class="draft editing" [(ngModel)]="editText" aria-label="Texto da seção" (keydown.escape)="editing=''"></textarea>
+          <nl-dictate *ngIf="editing===s.id" [evaluationId]="evaluationId"><textarea class="draft editing" [(ngModel)]="editText" aria-label="Texto da seção" (keydown.escape)="editing=''"></textarea></nl-dictate>
           <p *ngIf="s.id===DEMAND_KEY && demandIsFromFile() && editing!==s.id" class="footnote from-file">Texto do arquivo enviado, sem alteração e sem IA.</p>
           <div *ngIf="editing===s.id" class="ed-editbar">
             <span>Editando o texto. As mudanças valem só para esta avaliação.</span>
@@ -236,7 +236,7 @@
           <!-- Instruction for this section -->
           <div *ngIf="sectionInstr===s.id" class="ed-instr">
             <label [for]="'instr-'+s.id">Instrução para regenerar esta seção</label>
-            <textarea [id]="'instr-'+s.id" class="input" rows="5" [(ngModel)]="instrDraft[s.id]"></textarea>
+            <nl-dictate [evaluationId]="evaluationId"><textarea [id]="'instr-'+s.id" class="input" rows="5" [(ngModel)]="instrDraft[s.id]"></textarea></nl-dictate>
             <div class="ed-instr-row">
               <small>A IA usa só os dados desta seção no arquivo base, mais a sua instrução.</small>
               <button class="link" (click)="resetInstruction(s.id)">{{instruction(s.id)?.model ? 'Usar a do modelo' : 'Usar padrão'}}</button>

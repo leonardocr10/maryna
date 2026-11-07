@@ -6,6 +6,7 @@ import {Api} from './api.service';
 import {ConfirmService} from './confirm.service';
 import {CONCLUSION_GUIDANCE, SECTIONS, brDate, fold} from './shared';
 import {IconComponent} from './ui/icon.component';
+import {DictateComponent} from './ui/dictate.component';
 import {DropZoneComponent} from './ui/drop-zone.component';
 import {FilterSelectComponent, SelectOption} from './ui/filter-select.component';
 import {ModelReportComponent, MODEL_STATUS} from './ui/model-report.component';
@@ -20,7 +21,7 @@ const blankForm = () => ({name: '', description: '', audience: 'geral' as Audien
 @Component({
   selector: 'nl-models',
   standalone: true,
-  imports: [CommonModule, FormsModule, IconComponent, DropZoneComponent, FilterSelectComponent, ModelReportComponent],
+  imports: [CommonModule, FormsModule, IconComponent, DropZoneComponent, FilterSelectComponent, ModelReportComponent, DictateComponent],
   template: `
 <div class="pagehead">
   <span class="hicon"><nl-icon name="doc"/></span>
@@ -89,7 +90,7 @@ const blankForm = () => ({name: '', description: '', audience: 'geral' as Audien
           <span class="itag" [class.on]="s.model">{{s.model ? 'Do modelo' : 'Padrão do sistema'}}</span><nl-icon name="chevd" class="chev"/>
         </button>
         <div *ngIf="instrOpen===s.key" class="ibody">
-          <textarea class="input mono" rows="8" [(ngModel)]="instrDraft[s.key]" [attr.aria-label]="'Instrução de ' + sectionName(s.key)"></textarea>
+          <nl-dictate><textarea class="input mono" rows="8" [(ngModel)]="instrDraft[s.key]" [attr.aria-label]="'Instrução de ' + sectionName(s.key)"></textarea></nl-dictate>
           <div class="irow-foot">
             <span class="caption">{{s.limit ? 'Extensão de referência: ' + s.limit + ' palavras' : ''}}</span>
             <span class="spacer"></span>

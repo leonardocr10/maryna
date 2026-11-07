@@ -8,6 +8,8 @@ import {WorkTimer} from './work-timer.service';
 import {Reader} from './reader.service';
 import {ConfirmService} from './confirm.service';
 import {IconComponent} from './ui/icon.component';
+import {DictateComponent} from './ui/dictate.component';
+import {Dictation} from './dictation/dictation.service';
 import {FilterSelectComponent} from './ui/filter-select.component';
 import {DropZoneComponent} from './ui/drop-zone.component';
 import {Identity, IdentityFormComponent, emptyIdentity} from './ui/identity-form.component';
@@ -34,7 +36,7 @@ async function writeClipboard(text: string): Promise<boolean> {
 @Component({
   selector: 'nl-evaluation',
   standalone: true,
-  imports: [CommonModule, FormsModule, DropZoneComponent, IdentityFormComponent, IconComponent, FilterSelectComponent],
+  imports: [CommonModule, FormsModule, DropZoneComponent, IdentityFormComponent, IconComponent, FilterSelectComponent, DictateComponent],
   templateUrl: './evaluation.component.html',
   styleUrl: './evaluation.component.css',
 })
@@ -42,6 +44,8 @@ export class EvaluationComponent implements OnDestroy {
   private api = inject(Api);
   private timer = inject(WorkTimer);
   reader = inject(Reader);
+  dictation = inject(Dictation);
+  private instrSaveTimer: any;
   private confirm = inject(ConfirmService);
   @ViewChild('previewBox') previewBox?: ElementRef<HTMLDivElement>;
   @Output() changed = new EventEmitter<void>();
@@ -69,7 +73,7 @@ export class EvaluationComponent implements OnDestroy {
   open = ''; editing = ''; editText = ''; sectionInstr = '';
   mode: 'secoes' | 'documento' = 'secoes'; previewLoading = false;
 
-  ngOnDestroy() { clearTimeout(this.idTimer); this.reader.stop(); }
+  ngOnDestroy() { clearTimeout(this.idTimer); clearTimeout(this.instrSaveTimer); this.reader.stop(); }
 
   // ---------- loading ----------
   async load(first = false) {
@@ -268,6 +272,8 @@ export class EvaluationComponent implements OnDestroy {
       return true;
     } catch { return false; }
   }
+  /** Dictated text reaches the instruction field without a blur, so it is saved shortly after. */
+  saveInstructionLater(k: string) { clearTimeout(this.instrSaveTimer); this.instrSaveTimer = setTimeout(() => this.saveInstruction(k), 1500); }
   async resetInstruction(k: string) { const ins = this.instruction(k); if (!ins) return; this.instrDraft[k] = this.inherited(ins); await this.saveInstruction(k, this.inherited(ins)); }
 
   // ---------- report model of this evaluation ----------
@@ -312,11 +318,13 @@ export class EvaluationComponent implements OnDestroy {
   toggle(k: string) { this.reader.stop(); this.closeRefs(); this.gptOpen = ''; this.open = this.open === k ? '' : k; this.editing = ''; this.sectionInstr = ''; }
   startEdit(k: string) { this.reader.stop(); this.editing = k; this.editText = this.text(k); this.sectionInstr = ''; setTimeout(() => (document.querySelector('textarea.draft.editing') as HTMLTextAreaElement | null)?.focus()); }
   async saveEdit(k: string) {
+    await this.dictation.stop(); // the last dictated words enter the text before it is saved
     if (!this.editText.trim()) { this.api.notify('O texto não pode ficar vazio.'); return; }
     try { await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content: this.editText}); this.editing = ''; await this.load(); this.changed.emit(); this.api.notify('Texto salvo. A seção voltou para revisão.'); } catch {}
   }
   openInstr(k: string) { this.sectionInstr = this.sectionInstr === k ? '' : k; this.editing = ''; }
   async regenerate(k: string, withInstruction = false, skipConfirm = false) {
+    if (withInstruction) await this.dictation.stop();
     if (!this.aiReady) { this.api.notify('Geração pela API desligada. Ative em Configurações.'); return; }
     if (!skipConfirm && this.state(k) !== 'pend') {
       const name = this.available().find(x => x.id === k)?.name || 'esta seção';
@@ -336,6 +344,7 @@ export class EvaluationComponent implements OnDestroy {
     finally { this.generating = false; this.generatingChange.emit(false); this.changed.emit(); }
   }
   async generateConclusion() {
+    await this.dictation.stop();
     const text = (this.instrDraft[MANUAL_KEY] || '').trim();
     if (text.length < 10) { this.api.notify('Escreva suas orientações para a conclusão (o que você concluiu e quer destacar).'); return; }
     if (this.state(MANUAL_KEY) !== 'pend' && !await this.confirm.ask({tone: 'review', title: 'Gerar a conclusão de novo?',

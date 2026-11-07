@@ -49,6 +49,8 @@ Instrução da psicóloga: tem prioridade sobre as regras padrão (extensão, fo
 
 Custo: estimado a partir de `PRICES` em `api/src/server.mjs` (USD por 1M tokens, sobrescreva com `OPENAI_PRICE_INPUT`/`_CACHED`/`_OUTPUT`) e do câmbio `USD_BRL` no `api/.env`. O valor cobrado de fato está no painel da OpenAI. Na pré-visualização, o texto inserido aparece em vermelho (`GENERATED_TEXT_RED=false` desliga); o Word baixado sai sempre na cor normal.
 
+Ditado por voz: o botão de microfone nos campos de texto (edição das seções, orientações da conclusão, instruções da avaliação e do modelo) transcreve a fala em português em tempo real. O texto provisório aparece abaixo do campo e entra no campo, na posição do cursor, a cada pausa da fala, sem apagar o que já estava escrito; dá para pausar, continuar, concluir e editar à mão durante o ditado. Só um campo dita por vez. O áudio vai do navegador direto para a OpenAI (WebRTC, modelo `gpt-live-transcribe`) com uma credencial temporária de 60 s criada pelo servidor; a chave da API nunca vai para o navegador, e nada do áudio ou do texto ditado é gravado ou registrado no servidor (só a abertura da sessão entra no registro de auditoria). Fica desligado por padrão: exige `DICTATION_ENABLED=true`, `AI_ENABLED=true` e `ALLOW_EXTERNAL_AI=true` no `api/.env` e autorização da psicóloga. Limites de custo: `DICTATION_MAX_SECONDS` por sessão e `DICTATION_DAILY_LIMIT` sessões por pessoa por dia. O microfone exige `localhost` ou HTTPS (no modo LAN por HTTP, os outros computadores não conseguem ditar). A transcrição nunca é reescrita por IA.
+
 ## Endpoints
 - `GET /api/health`
 - `POST /api/setup` (somente quando não existem usuários) · `POST /api/login` · `PUT /api/me/password`
@@ -62,6 +64,7 @@ Custo: estimado a partir de `PRICES` em `api/src/server.mjs` (USD por 1M tokens,
 - `PUT /api/evaluations/:id/sections/:key` body `{content,approve}`
 - `POST /api/evaluations/:id/preview` (DOCX com rascunhos atuais)
 - `POST /api/evaluations/:id/approve` body `{approveSections:true}` opcional · `POST /api/evaluations/:id/export`
+- `GET /api/dictation/status` · `POST /api/dictation/session` (credencial temporária para o ditado)
 - `GET/PUT /api/ai/settings` (verifica se o modelo existe na conta) · `PUT /api/ai/prompts/:id` · `GET /api/ai/usage`
 
 ## Limitações abertas antes de produção

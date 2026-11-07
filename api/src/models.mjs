@@ -34,7 +34,9 @@ export function modelReport(inspected, audience = 'geral') {
   const domains = new Set(inspected?.titled_domains || []);
   const childOnlyRequired = audience === 'infantil' || audience === 'geral';
 
-  const sections = MODEL_SECTIONS.map(([key, name]) => {
+  const titles = inspected?.titles || {};
+  const sections = MODEL_SECTIONS.map(([key, fallback]) => {
+    const name = titles[key] ? niceTitle(titles[key]) : fallback;
     const required = !OPTIONAL.has(key) && (!CHILD_ONLY.has(key) || childOnlyRequired);
     const m = markers.find(x => x.key === key);
     let state, note;
@@ -48,10 +50,10 @@ export function modelReport(inspected, audience = 'geral') {
     return {key, name, state, required, note, old_text: !!old, pos};
   })
     // a section the model does not have is simply not listed
-    .filter(s => !(s.state === 'optional' && OPTIONAL.has(s.key)));
+    .filter(s => s.state !== 'optional');
   // Headings of fixed parts the intern fills (sources, instruments applied...): listed so the model reads as in Word.
   const listed = sections.map(s => s.pos).filter(p => p !== null);
-  const fixed = fixedHeadings(inspected, markers).filter(h => !listed.includes(h.pos));
+  const fixed = (inspected?.fixed_blocks ? inspected.fixed_blocks.map(b => ({key: b.key, name: niceTitle(b.label), state: 'fixed', required: false, note: 'Texto do arquivo base, preenchido pela estagiária. Pode ser reescrito na avaliação.', old_text: false, pos: b.index})) : fixedHeadings(inspected, markers)).filter(h => !listed.includes(h.pos));
   const ordered = [...sections.filter(s => s.pos !== null), ...fixed].sort((a, b) => a.pos - b.pos).concat(sections.filter(s => s.pos === null));
 
   // Fields appear in the order of SECTIONS when the document follows the expected structure.
@@ -80,6 +82,12 @@ export function modelReport(inspected, audience = 'geral') {
   const ready = counted.filter(s => s.state === 'ok' || s.state === 'auto').length;
   const status = missing.length || filledId.length ? 'incomplete' : warnings.length ? 'attention' : 'complete';
   return {status, ready, total: counted.length, sections: shown, identification, tables, warnings, blank: !filledId.length};
+}
+
+/** "COMPORTAMENTO SOCIAL:" -> "Comportamento social"; mixed-case titles keep their case. */
+export function niceTitle(t) {
+  const s = String(t || '').replace(/\s*:\s*$/, '').replace(/\s+/g, ' ').trim();
+  return s === s.toUpperCase() ? s.charAt(0) + s.slice(1).toLowerCase() : s;
 }
 
 /**

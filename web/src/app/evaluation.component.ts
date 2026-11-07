@@ -21,7 +21,7 @@ import {SectionVersionsComponent} from './ui/section-versions.component';
 import {DevolutivaComponent} from './ui/devolutiva.component';
 import {PlanComponent} from './ui/plan.component';
 import {DeliveryComponent} from './ui/delivery.component';
-import {CONCLUSION_GUIDANCE, HAND_ONLY, OPTIONAL_SECTIONS, PERCEPTION_MAX_AGE, SECTIONS, SECTION_STATE, STATUS, SectionState, ageText, ageYears, brDate, brl, int, words} from './shared';
+import {AI_MODE_CONFIRM, CONCLUSION_GUIDANCE, HAND_ONLY, niceTitle, OPTIONAL_SECTIONS, PERCEPTION_MAX_AGE, SECTIONS, SECTION_STATE, STATUS, SectionState, ageText, ageYears, brDate, brl, int, words} from './shared';
 
 /** Section the AI only writes from the psychologist's own guidance (never in "Gerar laudo"). */
 const MANUAL_KEY = 'conclusao';
@@ -99,7 +99,7 @@ export class EvaluationComponent implements OnDestroy {
         this.loadModels();
         const s = await this.api.req('GET', '/ai/settings').catch(() => null);
         this.aiReady = !!(s && s.enabled && s.configured && s.privacy_gate);
-        this.step = !this.docsReady() ? 1 : !this.autoDrafted() ? 2 : 3;
+        this.step = !this.docsReady() ? 1 : this.aiOn() && !this.autoDrafted() ? 2 : 3;
       }
       if (this.docsReady() && !this.inspection) await this.inspect();
       if (this.docsReady() && !this.instructions.length || first) await this.loadInstructions();
@@ -162,14 +162,17 @@ export class EvaluationComponent implements OnDestroy {
     const found = this.placeable();
     const list = SECTIONS.filter(s =>
       !(this.inspection && OPTIONAL_SECTIONS.includes(s.id) && !found.has(s.id)) &&
-      !(s.id === 'percepcao' && age !== null && age >= PERCEPTION_MAX_AGE && !this.text(s.id).trim()));
-    if (!this.fixedBlocks().length) return list;
+      !(s.id === 'percepcao' && !this.text(s.id).trim() && ((age !== null && age >= PERCEPTION_MAX_AGE) || (age === null && !!this.inspection && !found.has(s.id)))));
+    // names as written in the document ("Comportamento social", "Sugestões e encaminhamentos")
+    const named = list.map(s => ({...s, name: this.docTitle(s.id) || s.name}));
+    if (!this.fixedBlocks().length) return named;
     // fixed parts of the file join the list in the order they appear in the Word document
-    const all = [...list, ...this.fixedBlocks().map((b: any) => ({id: b.key, name: b.name}))];
+    const all = [...named, ...this.fixedBlocks().map((b: any) => ({id: b.key, name: b.name}))];
     return all.map((s, i) => ({s, i, p: this.docPos(s.id)})).sort((a, b) => (a.p ?? 1e9) - (b.p ?? 1e9) || a.i - b.i).map(x => x.s);
   }
   /** Fixed parts under a heading box ("Fontes fundamentais", "Instrumentos aplicados"...): text of the file, editable by hand. */
-  fixedBlocks() { return (this.inspection?.fixed_blocks || []).map((b: any) => ({...b, name: b.label.charAt(0) + b.label.slice(1).toLowerCase()})); }
+  fixedBlocks() { return (this.inspection?.fixed_blocks || []).map((b: any) => ({...b, name: niceTitle(b.label)})); }
+  docTitle(k: string) { const t = this.inspection?.titles?.[k]; return t ? niceTitle(t) : ''; }
   /** Untouched copy of the uploaded files (manual evaluations start from it). */
   fromFile(k: string) { const r = this.section(k); return !!r && r.source_summary === 'from_file' && (r.version || 1) === 1 && !!r.content?.trim(); }
   isFixed(k: string) { return k.startsWith('fixo_'); }
@@ -201,6 +204,8 @@ export class EvaluationComponent implements OnDestroy {
   /** Saved formatting of the section, only while it still matches the text (any other change, e.g. a new AI draft, drops it). */
   richOf(k: string): string {
     const s = this.section(k), h = s?.content_html;
+    // untouched fixed part of the file: its own formatting (bold labels, lists)
+    if (!s?.content && this.isFixed(k)) { const f = this.fixedBlocks().find((b: any) => b.key === k)?.existing_html; return f ? sanitizeHtml(f) : ''; }
     if (!h || !s?.content) return '';
     const n = (t: string) => t.replace(/\s+/g, ' ').trim();
     return n(textFromHtml(h)) === n(s.content) ? sanitizeHtml(h) : '';
@@ -244,7 +249,8 @@ export class EvaluationComponent implements OnDestroy {
   }
   async setAiMode(mode: 'ai' | 'manual') {
     if ((this.current?.ai_mode || 'ai') === mode || this.readOnly()) return;
-    try { await this.api.req('PUT', `/evaluations/${this.evaluationId}/mode`, {mode}); this.current = {...this.current, ai_mode: mode}; this.changed.emit(); if (mode === 'manual' && this.docsReady()) await this.inspect(); this.api.notify(mode === 'manual' ? 'Avaliação manual: a IA fica desligada.' : 'IA ligada nesta avaliação.'); } catch {}
+    if (mode === 'ai' && !await this.confirm.ask(AI_MODE_CONFIRM)) return;
+    try { await this.api.req('PUT', `/evaluations/${this.evaluationId}/mode`, {mode}); this.current = {...this.current, ai_mode: mode}; this.changed.emit(); if (mode === 'manual' && this.step === 2) this.goStep(3); if (mode === 'manual' && this.docsReady()) await this.inspect(); this.api.notify(mode === 'manual' ? 'Avaliação manual: a IA fica desligada.' : 'IA ligada nesta avaliação.'); } catch {}
   }
   stepDone(i: number) {
     if (i === 2 && !this.aiOn()) return this.docsReady(); return [this.idModel.name.trim().length >= 2, this.docsReady(), this.autoKeys().length > 0 && this.autoDrafted() === this.autoKeys().length, this.allApproved()][i]; }
@@ -616,6 +622,8 @@ export class EvaluationComponent implements OnDestroy {
     if (!await this.confirm.ask({tone: 'danger', title: 'Excluir esta avaliação?', body: `A avaliação de ${this.current?.patient_name || 'este paciente'} será apagada definitivamente.`, facts: ['Os documentos enviados serão apagados', 'Os textos e o histórico serão apagados', 'Não é possível desfazer'], ok: 'Excluir avaliação'})) return;
     try { await this.api.req('DELETE', '/evaluations/' + this.evaluationId); this.api.notify('Avaliação excluída.'); this.deleted.emit(); } catch {}
   }
-  goStep(i: number) { if (i !== 3) this.closeRefs(); this.step = i; if (i === 3 && this.mode === 'documento') setTimeout(() => this.renderPreview()); }
+  /** Steps shown: a manual evaluation has no AI step, so "Conferir e baixar" becomes the third one. */
+  stepIdx() { return this.aiOn() ? [0, 1, 2, 3] : [0, 1, 3]; }
+  goStep(i: number) { if (i === 2 && !this.aiOn()) i = 3; if (i !== 3) this.closeRefs(); this.step = i; if (i === 3 && this.mode === 'documento') setTimeout(() => this.renderPreview()); }
   setMode(m: 'secoes' | 'documento') { if (m === 'documento' && !this.canWrite()) return; if (m !== 'secoes') this.closeRefs(); this.mode = m; if (m === 'documento') setTimeout(() => this.renderPreview()); }
 }

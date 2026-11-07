@@ -72,6 +72,10 @@ export const CONCLUSION_GUIDANCE = 'Fazer texto discorrido de conclusão e racio
 export const OPTIONAL_SECTIONS = ['personalidade', 'comportamento_diva', 'hipotese'];
 /** Written by the psychologist only (no AI button, never drafted automatically). */
 export const HAND_ONLY = ['hipotese'];
+/** Confirmation shown before an evaluation switches to AI drafting (paid calls). */
+export const AI_MODE_CONFIRM = {tone: 'review' as const, title: 'Usar a IA nesta avaliação?',
+  body: 'Com IA, cada seção gerada é enviada à OpenAI e consome créditos da conta da API. Os nomes e dados pessoais são trocados por marcadores antes do envio.',
+  facts: ['Cada geração ou regeneração de seção é cobrada', 'O custo aparece em Custo da IA desta avaliação', 'Dá para voltar ao modo Manual depois'], ok: 'Usar a IA'};
 
 export type EvalStatus = 'rs' | 'rv' | 'ap';
 export const STATUS: Record<EvalStatus, {label: string; css: string}> = {rs: {label: 'Rascunho', css: 'idle'}, rv: {label: 'Em revisão', css: 'warn'}, ap: {label: 'Aprovada', css: 'ok'}};
@@ -88,3 +92,6 @@ export const SECTION_STATE: Record<SectionState, {label: string; css: string}> =
 export const words = (t: string) => (t || '').trim().split(/\s+/).filter(Boolean).length;
 export const brl = (v: number) => (v || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: (v || 0) < 1 ? 3 : 2});
 export const int = (v: number) => (v || 0).toLocaleString('pt-BR');
+
+/** "COMPORTAMENTO SOCIAL:" -> "Comportamento social"; mixed-case titles keep their case (same as api/src/models.mjs). */
+export function niceTitle(t: string) { const s = String(t || '').replace(/\s*:\s*$/, '').replace(/\s+/g, ' ').trim(); return s === s.toUpperCase() ? s.charAt(0) + s.slice(1).toLowerCase() : s; }

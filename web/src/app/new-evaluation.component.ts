@@ -1,6 +1,8 @@
 import {Component, EventEmitter, Output, inject} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {Api} from './api.service';
+import {ConfirmService} from './confirm.service';
+import {AI_MODE_CONFIRM} from './shared';
 import {DropZoneComponent} from './ui/drop-zone.component';
 import {Identity, IdentityFormComponent, emptyIdentity} from './ui/identity-form.component';
 import {IconComponent} from './ui/icon.component';
@@ -38,8 +40,8 @@ import {FilterSelectComponent} from './ui/filter-select.component';
     <section class="card mode">
       <div class="sec-title"><span class="num">3</span><h2>Como a avaliação será escrita</h2></div>
       <div class="modes" role="radiogroup" aria-label="Modo da avaliação">
-        <button type="button" role="radio" class="opt" [class.on]="aiMode==='ai'" [attr.aria-checked]="aiMode==='ai'" (click)="aiMode='ai'"><nl-icon name="spark"/><span><b>Com IA</b><small>A IA redige rascunhos das seções a partir dos arquivos; você revisa e aprova.</small></span></button>
         <button type="button" role="radio" class="opt" [class.on]="aiMode==='manual'" [attr.aria-checked]="aiMode==='manual'" (click)="aiMode='manual'"><nl-icon name="edit"/><span><b>Manual</b><small>Nada é enviado à IA. O sistema só lê os arquivos e você escreve cada seção.</small></span></button>
+        <button type="button" role="radio" class="opt" [class.on]="aiMode==='ai'" [attr.aria-checked]="aiMode==='ai'" (click)="chooseAi()"><nl-icon name="spark"/><span><b>Com IA</b><small>A IA redige rascunhos das seções a partir dos arquivos; você revisa e aprova.</small></span></button>
       </div>
     </section>
 
@@ -112,6 +114,9 @@ nl-icon{--ico-size:16px}
 })
 export class NewEvaluationComponent {
   private api = inject(Api);
+  private confirm = inject(ConfirmService);
+  /** Choosing AI asks first: every generated section consumes API credits. */
+  async chooseAi() { if (this.aiMode === 'ai') return; if (await this.confirm.ask(AI_MODE_CONFIRM)) this.aiMode = 'ai'; }
   /** Only the psychologist (and admin) can start AI generation. */
   canGenerate() { const r = this.api.me()?.role; return r === 'admin' || r === 'psychologist'; }
   // Not named 'cancel': the native file-dialog 'cancel' event bubbles and would trigger it.
@@ -124,7 +129,7 @@ export class NewEvaluationComponent {
   models: {value: string; label: string}[] = [{value: '', label: 'Sem modelo'}];
   modelId = '';
   /** 'ai': drafts by the AI; 'manual': the AI is never called for this evaluation. */
-  aiMode: 'ai' | 'manual' = 'ai';
+  aiMode: 'ai' | 'manual' = 'manual';
   async ngOnInit() {
     try { const list: any[] = await this.api.req('GET', '/models'); this.models = [{value: '', label: 'Sem modelo'}, ...list.filter(m => m.active).map(m => ({value: m.id, label: m.name}))]; } catch {}
   }

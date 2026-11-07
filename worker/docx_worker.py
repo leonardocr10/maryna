@@ -192,8 +192,34 @@ def fixed_heading(ch,doc):
  cells=list(dict.fromkeys(clean(c.text) for r in Table(ch,doc).rows for c in r.cells if clean(c.text)))
  if len(cells)!=1:return None
  t=re.sub(r'\s*:\s*$','',cells[0])
- if len(t)<4 or len(t)>80 or t!=t.upper() or t.startswith('INTERPRETA') or domain_of(t):return None
+ if len(t)<4 or len(t)>80 or t.upper().startswith('INTERPRETA') or domain_of(t.upper()) or not re.search(r'[A-Za-zÀ-ÿ]{3}',t):return None
  return t
+def paragraph_html(p):
+ """One body paragraph as editor HTML: bold/italic/underline runs; Word list paragraphs become list items."""
+ esc=lambda s:s.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+ parts=[]
+ for r in p.runs:
+  t=esc(r.text)
+  if not t:continue
+  if r.underline:t='<u>'+t+'</u>'
+  if r.italic:t='<i>'+t+'</i>'
+  if r.bold:t='<b>'+t+'</b>'
+  parts.append(t)
+ body=''.join(parts).strip() or esc(p.text.strip())
+ ppr=p._p.pPr
+ is_list=ppr is not None and ppr.numPr is not None
+ return ('li' if is_list else 'p'),body
+def block_html(paragraphs):
+ """Paragraphs (with text) as editor HTML, consecutive list items grouped in one <ul>."""
+ out=[];open_list=False
+ for p in paragraphs:
+  if not clean(p.text):continue
+  kind,body=paragraph_html(p)
+  if kind=='li' and not open_list:out.append('<ul>');open_list=True
+  if kind!='li' and open_list:out.append('</ul>');open_list=False
+  out.append('<'+kind+'>'+body+'</'+kind+'>')
+ if open_list:out.append('</ul>')
+ return ''.join(out)
 def fixed_blocks(doc):
  """[(key,label,heading element)] after the first section marker, in document order."""
  out=[];m=Markers();started=False;keys=set()
@@ -203,6 +229,16 @@ def fixed_blocks(doc):
   if not started:continue
   label=fixed_heading(ch,doc)
   if label and fixed_slug(label) not in keys:keys.add(fixed_slug(label));out.append((fixed_slug(label),label,ch))
+ return out
+def section_titles(elements,markers):
+ """Heading of each section as written in the document (\"COMPORTAMENTO SOCIAL:\", \"SUGESTÕES E ENCAMINHAMENTOS:\")."""
+ text=lambda e:e.get('text','') if e['type']=='p' else ' '.join(dict.fromkeys(x.strip() for row in e['rows'] for x in row if x.strip()))
+ out={}
+ for m in markers:
+  if m.get('section_start') is not None and m['section_start']>0:t=text(elements[m['section_start']-1])
+  else:t=m['label']
+  t=re.sub(r'\s*:\s*$','',clean(t))
+  if t and len(t)<=80 and not t.upper().startswith('INTERPRETA'):out[m['key']]=t
  return out
 def inspect(path):
  d=open_docx(path);elements=list(all_elements(d));markers=[];m=Markers()
@@ -218,7 +254,7 @@ def inspect(path):
    markers.append({'key':k,'index':i,'label':txt,'existing_paragraphs':sum(1 for ch in old if clean(Paragraph(ch,d).text)),'existing_text':'\n\n'.join(t for t in (Paragraph(ch,d).text.strip() for ch in old) if t)})
  section_ranges(elements,markers)
  titled=sorted({domain_of(e['text'] if e['type']=='p' else ' '.join(x for row in e['rows'] for x in row)) for e in elements}-{None})
- return {'elements':elements,'markers':markers,'titled_domains':titled,'title_ranges':title_ranges(elements,markers),'identification':identification(d),'place_date':(lambda p:clean(p.text) if p is not None else None)(place_date_paragraph(d)),'fixed_blocks':[{'key':k,'label':label,'index':position[ch],'existing_text':'\n\n'.join(clean(Paragraph(o,d).text) for o in existing_narrative(ch,d) if clean(Paragraph(o,d).text))} for k,label,ch in fixed_blocks(d)],'warnings':['Conferir visualmente a ordem dos marcadores e os resultados.']}
+ return {'elements':elements,'markers':markers,'titled_domains':titled,'title_ranges':title_ranges(elements,markers),'identification':identification(d),'place_date':(lambda p:clean(p.text) if p is not None else None)(place_date_paragraph(d)),'fixed_blocks':[(lambda html:{'key':k,'label':label,'index':position[ch],'existing_html':html,'existing_text':plain_from_html(html)})(block_html([Paragraph(o,d) for o in existing_narrative(ch,d)])) for k,label,ch in fixed_blocks(d)],'titles':section_titles(elements,markers),'warnings':['Conferir visualmente a ordem dos marcadores e os resultados.']}
 
 REPORT_FONT='Arial';REPORT_HALF_POINTS='22'  # Arial 11 pt
 def run_props(bold=False,red=False):

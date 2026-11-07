@@ -245,3 +245,5 @@ nl-rich-editor .rte-area { font: 14.5px/1.65 var(--font); color: var(--text); }
 .file-text .ft-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;--ico-size:15px;color:var(--text-2)}
 .file-text .ft-head b{font-size:13px;color:var(--text)}.file-text .ft-head small{font-size:12px;color:var(--text-3)}
 .file-text p{font-size:13.5px;line-height:1.6;color:var(--text-2);margin:6px 0 0}
+.stepper.three { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 760px) { .stepper.three { grid-template-columns: 1fr 1fr; } }

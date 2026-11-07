@@ -226,10 +226,11 @@
 
           <!-- Text: read mode, or edited in place -->
           <div *ngIf="editing!==s.id" class="draft" [class.is-loading]="gen[s.id]==='running'" [class.empty]="!text(s.id)">
-            <p *ngFor="let p of paragraphs(text(s.id))" [class.ptitle]="p.title">{{p.text}}</p>
+            <div *ngIf="richOf(s.id); else plainText" class="rich-view" [innerHTML]="richView(s.id)"></div>
+            <ng-template #plainText><p *ngFor="let p of paragraphs(text(s.id))" [class.ptitle]="p.title">{{p.text}}</p></ng-template>
             <p *ngIf="!text(s.id)" class="muted">{{s.id===MANUAL_KEY ? 'Ainda sem conclusão. Escreva suas orientações acima ou use Editar para escrever você mesma.' : s.id===DEMAND_KEY ? 'O arquivo base não tem texto nesta parte. Escreva em Editar ou gere com a IA.' : 'Sem texto ainda.'}}</p>
           </div>
-          <nl-dictate *ngIf="editing===s.id" [evaluationId]="evaluationId"><textarea class="draft editing" [(ngModel)]="editText" (ngModelChange)="autosaveLater(s.id)" aria-label="Texto da seção" (keydown.escape)="closeEdit()"></textarea></nl-dictate>
+          <nl-dictate *ngIf="editing===s.id" [evaluationId]="evaluationId" (keydown.escape)="closeEdit()"><nl-rich-editor #rte [html]="editInitHtml" label="Texto da seção" (htmlChange)="editHtml=$event" (textChange)="onEditText(s.id, $event)"></nl-rich-editor></nl-dictate>
           <p *ngIf="s.id===DEMAND_KEY && demandIsFromFile() && editing!==s.id" class="footnote from-file">Texto do arquivo enviado, sem alteração e sem IA.</p>
           <div *ngIf="editing===s.id" class="ed-editbar">
             <span>{{autoSaving ? 'Salvando…' : autoSaved ? 'Salvo automaticamente às ' + autoSaved + '.' : 'Editando o texto. Salva sozinho a cada pausa.'}}</span>

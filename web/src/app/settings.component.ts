@@ -158,6 +158,7 @@ import {AuditComponent} from './audit.component';
         <div class="seg"><button *ngFor="let v of views" [class.on]="view===v.id" (click)="view=v.id">{{v.label}}</button></div>
         <p *ngIf="!details" class="caption">Carregando…</p>
         <ng-container *ngIf="details">
+          <p *ngIf="perReport() as p" class="caption">Custo médio por laudo completo: <b>{{brl(p.avg)}}</b> ({{p.n}} {{p.n===1?'avaliação':'avaliações'}} com IA no período).</p>
           <p *ngIf="!rows().length" class="caption empty">Nenhum gasto neste período.</p>
           <div *ngIf="rows().length" class="table-wrap">
             <table>
@@ -166,6 +167,7 @@ import {AuditComponent} from './audit.component';
                 <th *ngIf="view==='recent'">Seção</th><th *ngIf="view==='recent'">Modelo</th>
                 <th *ngIf="view!=='recent'" class="num">Chamadas</th>
                 <th class="num">Entrada</th><th class="num">Saída</th><th class="num">Total tokens</th><th class="num">Custo</th>
+                <th *ngIf="view!=='recent'" class="num">Média/chamada</th><th *ngIf="view==='recent'" class="num">Tempo</th><th *ngIf="view==='recent'">Situação</th>
               </tr></thead>
               <tbody>
                 <tr *ngFor="let r of rows()">
@@ -174,12 +176,14 @@ import {AuditComponent} from './audit.component';
                   <td *ngIf="view!=='recent'" class="num mono">{{r.calls}}</td>
                   <td class="num mono">{{int(r.input_tokens)}}</td><td class="num mono">{{int(r.output_tokens)}}</td>
                   <td class="num mono">{{int(+r.input_tokens + +r.output_tokens)}}</td><td class="num mono strong">{{brl(r.cost_brl)}}</td>
+                  <td *ngIf="view!=='recent'" class="num mono">{{brl(r.calls ? r.cost_brl / r.calls : 0)}}</td>
+                  <td *ngIf="view==='recent'" class="num mono">{{r.duration_ms ? (r.duration_ms / 1000).toFixed(1).replace('.', ',') + ' s' : '—'}}</td><td *ngIf="view==='recent'">{{statusName(r.status)}}</td>
                 </tr>
               </tbody>
-              <tfoot *ngIf="view!=='recent'"><tr><td>Total do período</td><td class="num mono">{{totals().calls}}</td><td class="num mono">{{int(totals().input_tokens)}}</td><td class="num mono">{{int(totals().output_tokens)}}</td><td class="num mono">{{int(totals().input_tokens+totals().output_tokens)}}</td><td class="num mono strong">{{brl(totals().cost_brl)}}</td></tr></tfoot>
+              <tfoot *ngIf="view!=='recent'"><tr><td>Total do período</td><td class="num mono">{{totals().calls}}</td><td class="num mono">{{int(totals().input_tokens)}}</td><td class="num mono">{{int(totals().output_tokens)}}</td><td class="num mono">{{int(totals().input_tokens+totals().output_tokens)}}</td><td class="num mono strong">{{brl(totals().cost_brl)}}</td><td class="num mono">{{brl(totals().calls ? totals().cost_brl / totals().calls : 0)}}</td></tr></tfoot>
             </table>
           </div>
-          <p class="caption note">Entrada = texto enviado (instruções + dados do laudo). Saída = texto escrito pela IA. Valores estimados pela tabela de preços e câmbio de {{brl(details.usd_brl)}}/US$; o valor cobrado de fato está no painel da OpenAI.</p>
+          <p class="caption note">Entrada = texto enviado (instruções + dados do laudo). Saída = texto escrito pela IA (inclui o raciocínio interno do modelo, cobrado como saída). Média/chamada na visão Por seção mostra o custo médio de cada tipo de texto (anamnese, interpretações, conclusão). Valores estimados pela tabela de preços e câmbio de {{brl(details.usd_brl)}}/US$; o valor cobrado de fato está no painel da OpenAI.</p>
         </ng-container>
       </div>
     </section>
@@ -282,6 +286,9 @@ export class SettingsComponent {
   rows(): any[] { const d = this.details; if (!d) return []; return ({evaluation: d.byEvaluation, day: d.byDay, section: d.bySection, model: d.byModel, recent: d.recent} as any)[this.view] || []; }
   totals() { return this.rows().reduce((t, r) => ({calls: t.calls + Number(r.calls || 0), input_tokens: t.input_tokens + Number(r.input_tokens), output_tokens: t.output_tokens + Number(r.output_tokens), cost_brl: t.cost_brl + Number(r.cost_brl)}), {calls: 0, input_tokens: 0, output_tokens: 0, cost_brl: 0}); }
   firstColumn() { return ({evaluation: 'Avaliação', day: 'Dia', section: 'Seção', model: 'Modelo', recent: 'Quando / paciente'} as any)[this.view]; }
+  /** Average AI cost of one evaluation (a full report) in the period; connection tests left out. */
+  perReport() { const list = (this.details?.byEvaluation || []).filter((r: any) => r.evaluation_id); if (!list.length) return null; return {n: list.length, avg: list.reduce((s: number, r: any) => s + Number(r.cost_brl || 0), 0) / list.length}; }
+  statusName(s: string) { return ({ok: 'Concluída', incomplete: 'Cortada (limite)', invalid: 'Formato inválido', error: 'Erro'} as any)[s] || s || '—'; }
   sectionName(k: string) { return k === 'teste_conexao' ? 'Teste de conexão' : SECTIONS.find(s => s.id === k)?.name || k || '—'; }
   label(r: any) {
     if (this.view === 'evaluation') return r.patient_name || (r.evaluation_id ? 'Avaliação excluída' : 'Teste de conexão');

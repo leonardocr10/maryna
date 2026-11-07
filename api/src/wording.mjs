@@ -24,6 +24,10 @@ export const CATEGORY_RULE = 'PROIBIDO usar categorias de desempenho no texto, m
 /** Same intent when the psychologist wrote the instruction: what she asks for comes first. */
 export const CATEGORY_RULE_SOFT = 'Classificações, categorias e pontuações: se a psicóloga pedir, cite-as exatamente como constam nas tabelas, sem omitir nenhuma; se ela não tratar disso, descreva o que a pessoa consegue fazer e onde tem dificuldade, sem usar categorias como "inferior", "superior" ou "média".';
 
+// Transcription/meta wording ("a anotação registra", "consta o registro"): the text should narrate, not describe the notes.
+const META_RE = /\b(?:a|as|nas?|segundo\s+as?|conforme\s+as?)\s+anota[cç](?:[aã]o|[oõ]es)\b|\bconsta(?:m)?\s+(?:o\s+|um\s+)?registros?\b|\bconsta(?:m)?\s+que\b|\bh[aá]\s+registros?\s+de\b|\bo\s+texto\s+(?:apresenta|informa|registra)\b|\bas\s+informa[cç][oõ]es\s+dispon[ií]veis\s+(?:indicam|apontam|sugerem)\b|\bfoi\s+registrad[oa]\s+que\b/giu;
+export const metalanguageTerms = text => unique(String(text || '').match(META_RE));
+
 const unique = list => [...new Set((list || []).map(x => x.replace(/\s+/g, ' ').trim().toLowerCase()))];
 export const categoryTerms = text => unique(String(text || '').match(CATEGORY_RE));
 export const numberTerms = text => unique(String(text || '').match(NUMBER_RE));

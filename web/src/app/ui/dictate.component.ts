@@ -104,6 +104,10 @@ export class DictateComponent implements AfterContentInit, OnDestroy {
   /** Fired after dictated text is inserted, for fields that save on their own (e.g. on blur). */
   @Output() inserted = new EventEmitter<string>();
   field?: Field;
+  /** Rich editor (nl-rich-editor) instead of a text field. */
+  private rich?: HTMLElement;
+  private richRange: Range | null = null;
+  private readonly trackRich = () => { const s = document.getSelection(); if (this.rich && s?.rangeCount && this.rich.contains(s.anchorNode)) this.richRange = s.getRangeAt(0).cloneRange(); };
   private caret: number | null = null;
   private readonly sink = {insert: (t: string) => this.insert(t)};
   private readonly track = () => { const f = this.field; if (f && document.activeElement === f) this.caret = f.selectionEnd ?? f.value.length; };
@@ -118,13 +122,16 @@ export class DictateComponent implements AfterContentInit, OnDestroy {
     paused: 'Ditado pausado. O microfone está desligado.', processing: 'Transcrevendo o final…'} as Record<string, string>)[this.myState()] || '');
 
   ngAfterContentInit() {
-    this.field = this.host.nativeElement.querySelector('textarea, input') as Field | undefined;
-    for (const e of this.events) this.field?.addEventListener(e, this.track);
+    this.rich = this.host.nativeElement.querySelector('.rte-area') as HTMLElement | undefined;
+    this.field = this.rich ? {disabled: false, readOnly: false} as Field : this.host.nativeElement.querySelector('textarea, input') as Field | undefined;
+    if (this.rich) document.addEventListener('selectionchange', this.trackRich);
+    else for (const e of this.events) this.field?.addEventListener(e, this.track);
     this.dictation.loadStatus();
   }
 
   ngOnDestroy() {
-    for (const e of this.events) this.field?.removeEventListener(e, this.track);
+    document.removeEventListener('selectionchange', this.trackRich);
+    if (!this.rich) for (const e of this.events) this.field?.removeEventListener(e, this.track);
     if (this.dictation.isMine(this)) this.dictation.cancel();
   }
 
@@ -145,6 +152,7 @@ export class DictateComponent implements AfterContentInit, OnDestroy {
 
   /** Inserts at the cursor of this field (or where it was last), never over a selection, then notifies ngModel. */
   private insert(text: string) {
+    if (this.rich) { this.insertRich(text); return; }
     const f = this.field; if (!f || !text.trim()) return;
     const focused = document.activeElement === f;
     const len = f.value.length;
@@ -154,6 +162,21 @@ export class DictateComponent implements AfterContentInit, OnDestroy {
     f.setRangeText(piece, at, at, focused ? 'end' : 'preserve');
     this.caret = at + piece.length;
     f.dispatchEvent(new Event('input', {bubbles: true}));
+    this.inserted.emit(piece);
+  }
+
+  /** Rich editor: inserts at the last cursor position (or at the end) through the editor's own input flow. */
+  private insertRich(text: string) {
+    const el = this.rich!; if (!text.trim() || el.getAttribute('contenteditable') !== 'true') return;
+    el.focus();
+    const s = document.getSelection();
+    if (this.richRange && el.contains(this.richRange.startContainer)) { s?.removeAllRanges(); s?.addRange(this.richRange); }
+    else if (s) { const r = document.createRange(); r.selectNodeContents(el); r.collapse(false); s.removeAllRanges(); s.addRange(r); }
+    const r = s?.rangeCount ? s.getRangeAt(0) : null;
+    const before = r ? (r.startContainer.textContent || '').slice(0, r.startOffset) : '';
+    const piece = fitInsertion(before, '', text) || text;
+    document.execCommand('insertText', false, piece);
+    this.trackRich();
     this.inserted.emit(piece);
   }
 }

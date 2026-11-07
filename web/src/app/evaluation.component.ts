@@ -9,6 +9,9 @@ import {Reader} from './reader.service';
 import {ConfirmService} from './confirm.service';
 import {IconComponent} from './ui/icon.component';
 import {DictateComponent} from './ui/dictate.component';
+import {RichEditorComponent} from './ui/rich-editor.component';
+import {htmlFromText, sanitizeHtml, textFromHtml} from './rich-text';
+import {DomSanitizer} from '@angular/platform-browser';
 import {Dictation} from './dictation/dictation.service';
 import {FilterSelectComponent} from './ui/filter-select.component';
 import {DropZoneComponent} from './ui/drop-zone.component';
@@ -41,7 +44,7 @@ async function writeClipboard(text: string): Promise<boolean> {
 @Component({
   selector: 'nl-evaluation',
   standalone: true,
-  imports: [CommonModule, FormsModule, DropZoneComponent, IdentityFormComponent, IconComponent, FilterSelectComponent, DictateComponent, ReviewPanelComponent, SectionVersionsComponent, DevolutivaComponent, PlanComponent, DeliveryComponent],
+  imports: [CommonModule, FormsModule, DropZoneComponent, IdentityFormComponent, IconComponent, FilterSelectComponent, DictateComponent, RichEditorComponent, ReviewPanelComponent, SectionVersionsComponent, DevolutivaComponent, PlanComponent, DeliveryComponent],
   templateUrl: './evaluation.component.html',
   styleUrl: './evaluation.component.css',
 })
@@ -182,6 +185,21 @@ export class EvaluationComponent implements OnDestroy {
   reviewRows() { return this.inspection ? this.applicable() : this.available(); }
   section(k: string) { return this.sections.find(s => s.section_key === k); }
   text(k: string) { return this.section(k)?.content || ''; }
+  private domSan = inject(DomSanitizer);
+  /** Saved formatting of the section, only while it still matches the text (any other change, e.g. a new AI draft, drops it). */
+  richOf(k: string): string {
+    const s = this.section(k), h = s?.content_html;
+    if (!h || !s?.content) return '';
+    const n = (t: string) => t.replace(/\s+/g, ' ').trim();
+    return n(textFromHtml(h)) === n(s.content) ? sanitizeHtml(h) : '';
+  }
+  private richCache = new Map<string, any>();
+  richView(k: string) { const h = this.richOf(k); let v = this.richCache.get(h); if (!v) { v = this.domSan.bypassSecurityTrustHtml(h); this.richCache.set(h, v); } return v; }
+  @ViewChild('rte') rte?: RichEditorComponent;
+  editHtml = ''; editInitHtml = '';
+  onEditText(k: string, t: string) { this.editText = t; this.autosaveLater(k); }
+  /** Replaces the whole text being edited (answer pasted from ChatGPT). */
+  private setEditText(t: string) { this.editText = t; this.editInitHtml = this.editHtml = htmlFromText(t); }
   state(k: string): SectionState { const s = this.section(k); return !s?.content?.trim() ? 'pend' : s.status === 'approved' ? 'ap' : 'gen'; }
   drafted() { return this.available().filter(s => this.state(s.id) !== 'pend').length; }
   approved() { return this.available().filter(s => this.state(s.id) === 'ap').length; }
@@ -377,32 +395,27 @@ export class EvaluationComponent implements OnDestroy {
   snippetsFor(k: string) { return this.snippets.filter(x => !x.section_key || x.section_key === k).map(x => ({label: x.title, value: x.id, group: x.section_key ? 'Desta seção' : 'Qualquer seção'})); }
   insertSnippet(id: string) {
     const sn = this.snippets.find(x => x.id === id); if (!sn) return;
-    const ta = document.querySelector('textarea.draft.editing') as HTMLTextAreaElement | null;
-    const at = ta ? ta.selectionStart : this.editText.length, end = ta ? ta.selectionEnd : at;
-    const before = this.editText.slice(0, at), sep = before && !/\s$/.test(before) ? ' ' : '';
-    this.editText = before + sep + sn.text + this.editText.slice(end);
-    this.autosaveLater(this.editing);
-    setTimeout(() => { if (ta) { const p = at + sep.length + sn.text.length; ta.focus(); ta.setSelectionRange(p, p); } });
+    this.rte?.insertText(sn.text);
   }
   autosaveLater(k: string) { clearTimeout(this.autoTimer); this.autoTimer = setTimeout(() => this.autosave(k), 2500); }
   async autosave(k: string) {
     this.autoTimer = null;
-    if (!k || this.editing !== k || !this.editText.trim() || this.readOnly() || this.editText === this.text(k)) return;
-    const content = this.editText; this.autoSaving = true;
+    if (!k || this.editing !== k || !this.editText.trim() || this.readOnly() || (this.editText === this.text(k) && this.editHtml === this.section(k)?.content_html)) return;
+    const content = this.editText, html = this.editHtml; this.autoSaving = true;
     try {
-      await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content, merge: true});
-      const s = this.section(k); if (s) { s.content = content; s.status = 'edited'; }
+      await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content, html, merge: true});
+      const s = this.section(k); if (s) { s.content = content; s.content_html = html; s.status = 'edited'; }
       this.autoSaved = new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
     } catch {} finally { this.autoSaving = false; }
   }
   /** Leaves edit mode; text already saved automatically stays saved. */
   async closeEdit() { clearTimeout(this.autoTimer); this.autoTimer = null; const saved = !!this.autoSaved; this.editing = ''; this.autoSaved = ''; if (saved) { await this.load(); this.changed.emit(); } }
-  startEdit(k: string) { this.reader.stop(); this.loadSnippets(); this.versionsOpen = ''; this.autoSaved = ''; this.editing = k; this.editText = this.text(k); this.sectionInstr = ''; setTimeout(() => (document.querySelector('textarea.draft.editing') as HTMLTextAreaElement | null)?.focus()); }
+  startEdit(k: string) { this.reader.stop(); this.loadSnippets(); this.versionsOpen = ''; this.autoSaved = ''; this.editing = k; this.editText = this.text(k); this.editInitHtml = this.editHtml = this.richOf(k) || htmlFromText(this.editText); this.sectionInstr = ''; setTimeout(() => this.rte?.focus()); }
   async saveEdit(k: string) {
     await this.dictation.stop(); // the last dictated words enter the text before it is saved
     if (!this.editText.trim()) { this.api.notify('O texto não pode ficar vazio.'); return; }
     clearTimeout(this.autoTimer); this.autoTimer = null;
-    try { await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content: this.editText, merge: true}); this.editing = ''; this.autoSaved = ''; await this.load(); this.changed.emit(); this.api.notify('Texto salvo. A seção voltou para revisão.'); } catch {}
+    try { await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content: this.editText, html: this.editHtml, merge: true}); this.editing = ''; this.autoSaved = ''; await this.load(); this.changed.emit(); this.api.notify('Texto salvo. A seção voltou para revisão.'); } catch {}
   }
   openInstr(k: string) { this.sectionInstr = this.sectionInstr === k ? '' : k; this.editing = ''; }
   async regenerate(k: string, withInstruction = false, skipConfirm = false) {
@@ -536,7 +549,7 @@ export class EvaluationComponent implements OnDestroy {
   /** Opens the editor with the answer from the clipboard (or empty, to paste with Ctrl+V). */
   async pasteGptAnswer(k: string) {
     this.startEdit(k);
-    try { const t = (await navigator.clipboard.readText()).trim(); if (t && t !== this.gptText.trim()) { this.editText = t; this.api.notify('Resposta colada. Revise e salve a edição.'); return; } } catch {}
+    try { const t = (await navigator.clipboard.readText()).trim(); if (t && t !== this.gptText.trim()) { this.setEditText(t); this.api.notify('Resposta colada. Revise e salve a edição.'); return; } } catch {}
     setTimeout(() => (document.querySelector('textarea.draft.editing') as HTMLTextAreaElement | null)?.select(), 30);
     this.api.notify('Cole a resposta do ChatGPT com Ctrl+V (substitui o texto) e salve a edição.');
   }
@@ -553,7 +566,7 @@ export class EvaluationComponent implements OnDestroy {
     this.copied = id; clearTimeout(this.copiedTimer);
     this.copiedTimer = setTimeout(() => this.copied = '', 1800);
   }
-  async pasteAnswer() { try { this.editText = (await navigator.clipboard.readText()).trim(); } catch { this.api.notify('Use Ctrl+V dentro do campo.'); } }
+  async pasteAnswer() { try { this.setEditText((await navigator.clipboard.readText()).trim()); } catch { this.api.notify('Use Ctrl+V dentro do campo.'); } }
 
   async remove() {
     if (this.generating || !this.canWrite()) return;

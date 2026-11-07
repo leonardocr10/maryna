@@ -230,6 +230,144 @@ def insert_after(anchor,content,red=False):
  for text,bold in blocks(content):
   p=new_paragraph(text,bold,red);last.addnext(p);last=p
 
+# ---------- formatted text from the app's editor (sanitized HTML subset, see web/src/app/rich-text.ts) ----------
+from html.parser import HTMLParser
+def _pt(v):
+ m=re.fullmatch(r'\s*([\d.]+)\s*(pt|px|em)?\s*',v or '')
+ if not m:return None
+ try:n=float(m.group(1))
+ except ValueError:return None
+ u=m.group(2) or 'px'
+ return n if u=='pt' else n*0.75 if u=='px' else n*11
+def _hex(v):
+ v=(v or '').strip().lower()
+ m=re.fullmatch(r'#([0-9a-f]{6})',v) or re.fullmatch(r'#([0-9a-f]{3})',v)
+ if m:h=m.group(1);return (h if len(h)==6 else ''.join(c*2 for c in h)).upper()
+ m=re.fullmatch(r'rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)',v)
+ if m and (m.group(4) is None or float(m.group(4))>0):return ''.join('%02X'%min(255,int(m.group(i))) for i in (1,2,3))
+ return None
+def _style(v):
+ out={}
+ for part in (v or '').split(';'):
+  if ':' in part:k,val=part.split(':',1);out[k.strip().lower()]=val.strip()
+ return out
+class _Rich(HTMLParser):
+ """Collects blocks: {'kind':'p'|'h3'|'li','list':'ul'|'ol'|None,'n':int,'style':{},'runs':[(text,fmt)]}."""
+ BLOCK={'p','h3','li','div','h1','h2','h4','h5','h6'}
+ def __init__(s):
+  super().__init__(convert_charrefs=True);s.blocks=[];s.cur=None;s.fmt=[{}];s.lists=[]
+ def _open(s,tag,style):
+  kind='h3' if tag[0]=='h' else 'li' if tag=='li' else 'p'
+  lst=s.lists[-1] if s.lists else None;n=0
+  if kind=='li' and lst:lst[1]+=1;n=lst[1]
+  s.cur={'kind':kind,'list':lst[0] if (kind=='li' and lst) else None,'n':n,'style':style,'runs':[]};s.blocks.append(s.cur)
+ def handle_starttag(s,tag,attrs):
+  st=_style(dict(attrs).get('style'))
+  if tag in ('ul','ol'):s.lists.append([tag,0]);s.cur=None;return
+  if tag in s.BLOCK:s._open(tag,st);s.fmt.append(dict(s.fmt[-1]));return
+  if tag=='br':
+   if s.cur is not None:s.cur['runs'].append(('\n',dict(s.fmt[-1])))
+   return
+  f=dict(s.fmt[-1])
+  if tag in ('b','strong'):f['b']=True
+  elif tag in ('i','em'):f['i']=True
+  elif tag=='u':f['u']=True
+  elif tag in ('s','strike'):f['s']=True
+  elif tag=='sub':f['va']='subscript'
+  elif tag=='sup':f['va']='superscript'
+  if _pt(st.get('font-size')):f['sz']=_pt(st['font-size'])
+  if _hex(st.get('color')):f['color']=_hex(st['color'])
+  if _hex(st.get('background-color')):f['bg']=_hex(st['background-color'])
+  if st.get('font-weight') in ('bold','600','700','800','900'):f['b']=True
+  if st.get('font-style')=='italic':f['i']=True
+  td=st.get('text-decoration','')+' '+st.get('text-decoration-line','')
+  if 'underline' in td:f['u']=True
+  if 'line-through' in td:f['s']=True
+  s.fmt.append(f)
+ def handle_endtag(s,tag):
+  if tag in ('ul','ol'):
+   if s.lists:s.lists.pop()
+   s.cur=None;return
+  if tag=='br':return
+  if len(s.fmt)>1:s.fmt.pop()
+  if tag in s.BLOCK:s.cur=None
+ def handle_data(s,d):
+  if not d:return
+  if s.cur is None:
+   if not d.strip():return
+   s._open('p',{})
+  s.cur['runs'].append((d,dict(s.fmt[-1])))
+def rich_blocks(html):
+ r=_Rich();r.feed(html or '');r.close()
+ out=[]
+ for b in r.blocks:
+  b['text']=clean(''.join(t for t,_ in b['runs']))
+  if b['text']:out.append(b)
+ return out
+def plain_from_html(html):
+ """Same rules as textFromHtml in web/src/app/rich-text.ts."""
+ lines=[]
+ for b in rich_blocks(html):
+  if b['kind']=='h3':lines.append('## '+b['text'])
+  elif b['kind']=='li':lines.append((str(b['n'])+'. ' if b['list']=='ol' else '- ')+b['text'])
+  else:lines.append(b['text'])
+ return '\n\n'.join(lines)
+def rich_matches(html,content):
+ """The formatting is used only while it still describes the saved text (a new AI draft or a restore drops it)."""
+ return bool(html) and clean(plain_from_html(html))==clean(content)
+def _twips(pt):return str(int(round(pt*20)))
+def _rich_props(f,title=False,red=False):
+ rpr=run_props(bool(f.get('b')) or title,red and not f.get('color'))
+ sz=rpr.find(qn('w:sz'))
+ def before_sz(tag,val=None):
+  e=OxmlElement(tag)
+  if val is not None:e.set(qn('w:val'),val)
+  sz.addprevious(e)
+ if f.get('i'):before_sz('w:i');before_sz('w:iCs')
+ if f.get('s'):before_sz('w:strike')
+ if f.get('color'):before_sz('w:color',f['color'])
+ if f.get('sz'):
+  for tag in ('w:sz','w:szCs'):rpr.find(qn(tag)).set(qn('w:val'),str(int(round(f['sz']*2))))
+ if f.get('u'):u=OxmlElement('w:u');u.set(qn('w:val'),'single');rpr.append(u)
+ if f.get('bg'):sh=OxmlElement('w:shd');sh.set(qn('w:val'),'clear');sh.set(qn('w:color'),'auto');sh.set(qn('w:fill'),f['bg']);rpr.append(sh)
+ if f.get('va'):v=OxmlElement('w:vertAlign');v.set(qn('w:val'),f['va']);rpr.append(v)
+ return rpr
+def rich_paragraph(b,red=False):
+ """Body paragraph with the report defaults (Arial 11, justified, 1.5) overridden by the editor's formatting."""
+ st=b['style'];title=b['kind']=='h3'
+ p=new_paragraph('',bold=title);ppr=p.find(qn('w:pPr'));sp=ppr.find(qn('w:spacing'))
+ lh=st.get('line-height','')
+ if re.fullmatch(r'[\d.]+',lh):
+  try:sp.set(qn('w:line'),str(int(round(float(lh)*240))));sp.set(qn('w:lineRule'),'auto')
+  except ValueError:pass
+ elif _pt(lh):sp.set(qn('w:line'),_twips(_pt(lh)));sp.set(qn('w:lineRule'),'atLeast')
+ if _pt(st.get('margin-top')) is not None:sp.set(qn('w:before'),_twips(_pt(st['margin-top'])))
+ if _pt(st.get('margin-bottom')) is not None:sp.set(qn('w:after'),_twips(_pt(st['margin-bottom'])))
+ ind=ppr.find(qn('w:ind'));left=_pt(st.get('margin-left')) or 0
+ if b['kind']=='li':left+=18;ind.set(qn('w:hanging'),_twips(18));ind.attrib.pop(qn('w:firstLine'),None)
+ ind.set(qn('w:left'),_twips(left))
+ al={'left':'left','start':'left','center':'center','right':'right','end':'right','justify':'both'}.get(st.get('text-align',''))
+ if al:ppr.find(qn('w:jc')).set(qn('w:val'),al)
+ runs=list(b['runs'])
+ if b['kind']=='li':runs.insert(0,((str(b['n'])+'.' if b['list']=='ol' else '•')+'\t',runs[0][1] if runs else {}))
+ start=True
+ for text,f in runs:
+  r=OxmlElement('w:r');r.append(_rich_props(f,title,red))
+  if text=='\n':r.append(OxmlElement('w:br'));p.append(r);start=True;continue
+  head,tab,tail=text.partition('\t')
+  parts=[re.sub(r'\s+',' ',head)]+(['\t',tail] if tab else [])
+  for part in parts:
+   if part=='\t':r.append(OxmlElement('w:tab'));start=False;continue
+   if start:part=part.lstrip()
+   if not part:continue
+   t=OxmlElement('w:t');t.set(qn('xml:space'),'preserve');t.text=part;r.append(t);start=False
+  if len(r)>1:p.append(r)
+ return p
+def insert_rich_after(anchor,html,red=False):
+ last=anchor;first=True
+ for b in rich_blocks(html):
+  if b['kind']=='h3' and not first:blank=new_paragraph('');last.addnext(blank);last=blank
+  p=rich_paragraph(b,red);last.addnext(p);last=p;first=False
 def sha256(path):
  h=hashlib.sha256()
  with open(path,'rb') as f:
@@ -305,7 +443,8 @@ def fieldless_anchors(d):
   last=max([i for i in range(start-1,end) if elements[i]['type']=='table' or elements[i].get('text')],default=start-1)
   out[k]=children[last]
  return out
-def export(base,out,sections,highlight=False,fields=None):
+def export(base,out,sections,highlight=False,fields=None,rich=None):
+ rich={k:v for k,v in (rich or {}).items() if k in sections and rich_matches(v,sections[k])}
  if os.path.abspath(base)==os.path.abspath(out):raise SystemExit('out must differ from base')
  before=sha256(base)
  d=open_docx(base);seen=[];m=Markers();replaced={}
@@ -321,16 +460,17 @@ def export(base,out,sections,highlight=False,fields=None):
    for old in current:
     if clean(Paragraph(old,d).text):replaced[k]=replaced.get(k,0)+1
     old.getparent().remove(old)
-   insert_after(ch,sections[k],highlight)
+   insert_rich_after(ch,rich[k],highlight) if k in rich else insert_after(ch,sections[k],highlight)
  # sections written by hand for a title without field: add the field label and the text after the section's content
  for k,anchor in anchors.items():
   if k in sections and clean(sections[k]) and k not in seen:
    label=new_paragraph(FIELD_LABEL,bold=True);anchor.addnext(label)
-   insert_after(label,sections[k],highlight);seen.append(k);added.append(k)
+   insert_rich_after(label,rich[k],highlight) if k in rich else insert_after(label,sections[k],highlight)
+   seen.append(k);added.append(k)
  d.save(out)
  after=sha256(base)
  if before!=after:raise SystemExit('base document changed during export')
- return {'inserted':seen,'missing':[k for k in sections if k not in seen],'fields_filled':filled,'replaced':replaced,'fields_added':added,'base_sha256':before,'out_sha256':sha256(out)}
+ return {'inserted':seen,'missing':[k for k in sections if k not in seen],'fields_filled':filled,'replaced':replaced,'fields_added':added,'formatted':sorted(rich),'base_sha256':before,'out_sha256':sha256(out)}
 def letter(out,title,subtitle,content):
  """Standalone document (the devolutiva): title, patient name and the approved text, same body style as the report."""
  if os.path.exists(out):raise SystemExit('output exists')
@@ -347,7 +487,7 @@ def main():
  sys.stdout.reconfigure(encoding='utf-8')
  if op=='inspect': print(json.dumps(inspect(sys.argv[2]),ensure_ascii=False))
  elif op=='export':
-  spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(export(spec['base'],spec['out'],spec['sections'],spec.get('highlight',False),spec.get('fields')),ensure_ascii=False))
+  spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(export(spec['base'],spec['out'],spec['sections'],spec.get('highlight',False),spec.get('fields'),spec.get('rich')),ensure_ascii=False))
  elif op=='letter':
   spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(letter(spec['out'],spec.get('title',''),spec.get('subtitle',''),spec['content']),ensure_ascii=False))
  else: raise SystemExit('unknown operation')

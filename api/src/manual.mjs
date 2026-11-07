@@ -1,7 +1,7 @@
 // Manual mode (ChatGPT web): the section data as readable text, with tables as Markdown tables instead of JSON.
 
 const LABELS = {
-  trecho_da_secao: 'Trecho desta seção no arquivo base', anotacoes_anamnese: 'Anotações da anamnese', identificacao: 'Identificação',
+  trecho_da_secao: 'Trecho desta seção no arquivo base', anotacoes_anamnese: 'Anotações da anamnese', relato_da_entrevista: 'Relato da entrevista de anamnese', identificacao: 'Identificação',
   textos_das_secoes: 'Textos das seções', idade_em_anos: 'Idade',
 };
 const cell = v => String(v ?? '').replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim();

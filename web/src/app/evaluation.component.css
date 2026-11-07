@@ -225,3 +225,7 @@ textarea.draft.editing { resize: vertical; min-height: 180px; field-sizing: cont
 .prev-head b { display: flex; gap: 6px; align-items: center; color: var(--text); }
 .prev-head .link { margin-left: auto; }
 .prev-box .ptitle { font-weight: 600; color: var(--text); }
+.rich-view :is(p, h3, li) { white-space: normal; }
+.rich-view h3 { font-size: inherit; font-weight: 700; margin: 14px 0 4px; }
+.rich-view :is(ul, ol) { margin: 0 0 12px; padding-left: 1.6em; }
+nl-rich-editor .rte-area { font: 14.5px/1.65 var(--font); color: var(--text); }

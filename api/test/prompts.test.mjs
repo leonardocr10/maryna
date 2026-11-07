@@ -43,12 +43,16 @@ test('reasoning settings only for models that accept them', () => {
 });
 
 test('every section follows the same writing standard, with reference length instead of a cap', () => {
-  for (const key of ['demanda', 'anamnesis', 'conclusao', 'recomendacoes']) {
+  for (const key of ['demanda', 'conclusao', 'recomendacoes']) {
     const p = promptFor(key);
     assert.match(p, /PADRÃO DE REDAÇÃO/, key);
     assert.doesNotMatch(p, /até \d+ palavras/, key);
     assert.match(depthRule(key, false), /Extensão de referência/, key);
   }
+  // the anamnesis has its own writing standard (narrative by topic) and a length that follows the notes
+  assert.match(promptFor('anamnesis'), /REDAÇÃO:/);
+  assert.doesNotMatch(promptFor('anamnesis'), /até \d+ palavras/);
+  assert.match(depthRule('anamnesis', false), /proporcional/);
   assert.match(promptFor('anamnesis'), /"## Título do tópico"/);
   assert.match(promptFor('recomendacoes'), /"Psicoterapia: \.\.\."/);
 });

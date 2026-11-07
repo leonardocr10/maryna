@@ -175,6 +175,8 @@ export class EvaluationComponent implements OnDestroy {
   docTitle(k: string) { const t = this.inspection?.titles?.[k]; return t ? niceTitle(t) : ''; }
   /** Untouched copy of the uploaded files (manual evaluations start from it). */
   fromFile(k: string) { const r = this.section(k); return !!r && r.source_summary === 'from_file' && (r.version || 1) === 1 && !!r.content?.trim(); }
+  /** Section lists are rebuilt on every change check (names from the document): keep the same DOM rows by id, or clicks get lost. */
+  bySection = (_: number, s: {id: string}) => s.id;
   isFixed(k: string) { return k.startsWith('fixo_'); }
   fixedText(k: string) { return this.fixedBlocks().find((b: any) => b.key === k)?.existing_text || ''; }
   private docPos(k: string): number | null {

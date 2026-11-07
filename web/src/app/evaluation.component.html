@@ -120,7 +120,7 @@
                 <p *ngIf="generating" class="gen-title">Gerando seções… {{genDone()}}/{{genKeys().length}}</p>
                 <div *ngIf="generating" class="progress"><span [style.width.%]="genPct()"></span></div>
                 <ul class="genlist">
-                  <li *ngFor="let s of available()">
+                  <li *ngFor="let s of available(); trackBy: bySection">
                     <span class="dot" [class]="'dot '+dotClass(s.id)"></span><span class="nm">{{s.name}}</span>
                     <span *ngIf="gen[s.id]==='running' || gen[s.id]==='error' || s.id===DEMAND_KEY || (s.id===MANUAL_KEY && state(s.id)==='pend')" class="caption">{{rowLabel(s.id)}}</span>
                     <span *ngIf="!(gen[s.id]==='running' || gen[s.id]==='error' || s.id===DEMAND_KEY || (s.id===MANUAL_KEY && state(s.id)==='pend'))" [class]="'badge '+SECTION_STATE[state(s.id)].css">{{SECTION_STATE[state(s.id)].label}}</span>
@@ -157,7 +157,7 @@
         <section *ngIf="docsReady() && !readOnly() && instructions.length" class="card stepcard">
           <div class="card-head"><h2>Instruções desta avaliação</h2><small>{{instrModel ? 'Do modelo "' + instrModel.name + '" · ' : ''}}{{customCount()===1?"1 personalizada":customCount()+" personalizadas"}}</small></div>
           <div class="acc">
-            <div *ngFor="let s of available(); let i=index" class="acc-row" [class.open]="instrOpen===s.id" [hidden]="!autoKeys().includes(s.id)">
+            <div *ngFor="let s of available(); let i=index; trackBy: bySection" class="acc-row" [class.open]="instrOpen===s.id" [hidden]="!autoKeys().includes(s.id)">
               <button class="acc-head" (click)="instrOpen = instrOpen===s.id ? '' : s.id" [attr.aria-expanded]="instrOpen===s.id">
                 <span class="mono n">{{(i+1).toString().padStart(2,'0')}}</span><span class="acc-name">{{s.name}}</span>
                 <span class="tag" [class.custom]="isCustom(s.id)" [class.model]="isFromModel(s.id)">{{isCustom(s.id)?'Personalizada':isFromModel(s.id)?'Do modelo':'Padrão'}}</span>
@@ -212,15 +212,21 @@
       <div *ngIf="reviewRows().length" class="work">
         <nav class="card seclist" aria-label="Seções da avaliação">
           <h2><nl-icon name="doc"/> Seções da avaliação <span>({{reviewRows().length}})</span></h2>
-          <button *ngFor="let s of reviewRows(); let i=index" type="button" class="sec-item" [class.on]="cur()===s.id" [class.sec-missing]="isMissing(s.id)" (click)="select(s.id)" [attr.aria-current]="cur()===s.id ? 'true' : null">
+          <button *ngFor="let s of reviewRows(); let i=index; trackBy: bySection" type="button" class="sec-item" [class.on]="cur()===s.id" [class.sec-missing]="isMissing(s.id)" (click)="select(s.id)" [attr.aria-current]="cur()===s.id ? 'true' : null">
             <span class="mono num">{{(i+1).toString().padStart(2,'0')}}</span>
             <span class="sec-name">{{s.name}}</span>
             <span *ngIf="isMissing(s.id)" class="badge danger">Falta</span>
             <span *ngIf="!isMissing(s.id)" [class]="'badge '+SECTION_STATE[state(s.id)].css">{{SECTION_STATE[state(s.id)].label}}</span>
           </button>
+          <!-- closing "Cidade, data." line, last thing of the report -->
+          <div *ngIf="placeInFile() || placeDate" class="sec-place">
+            <label for="place-date-2" class="mlabel">Local e data (final do laudo)</label>
+            <input id="place-date-2" class="input" [(ngModel)]="placeDate" (blur)="savePlaceDate()" (keyup.enter)="savePlaceDate()" [disabled]="readOnly()" [placeholder]="placeInFile()" maxlength="120">
+            <button *ngIf="!readOnly()" type="button" class="link" (click)="todayPlaceDate()">Usar a data de hoje</button>
+          </div>
         </nav>
 
-        <ng-container *ngFor="let s of reviewRows(); let i=index">
+        <ng-container *ngFor="let s of reviewRows(); let i=index; trackBy: bySection">
         <!-- A section missing from the base document can still be drafted by hand; its text just does not go into the Word file -->
         <section *ngIf="cur()===s.id" class="card editor">
           <div class="edhead">
@@ -327,6 +333,7 @@
             <div class="ft-head"><nl-icon name="doc"/><b>No arquivo base, nesta seção</b><small>Tudo o que o Word já tem neste bloco. Fica como está; o texto acima entra no campo de interpretação.</small></div>
             <ng-container *ngFor="let b of fileBlock(s.id)">
               <p *ngIf="b.type==='p'">{{b.text}}</p>
+              <img *ngIf="b.type==='img'" [src]="b.src" class="ft-img" alt="Imagem do arquivo base" loading="lazy">
               <div *ngIf="b.type==='table'" class="ref-scroll"><table class="dt">
                 <tr *ngFor="let row of b.grid; let r=index">
                   <ng-container *ngFor="let c of row">
@@ -358,7 +365,7 @@
 
           <div *ngIf="!readOnly() && state(s.id)==='gen' && !isMissing(s.id) && editing!==s.id" class="ed-approve">
             <button class="btn btn-primary" (click)="approveAndNext(s.id)"><nl-icon name="check"/> {{isLastPending(s.id) ? 'Aprovar' : 'Aprovar e próxima'}}</button>
-            <span class="ai-note"><nl-icon name="spark"/> Rascunho de IA · só entra no Word depois de aprovado</span>
+            <span *ngIf="aiOn()" class="ai-note"><nl-icon name="spark"/> Rascunho de IA · só entra no Word depois de aprovado</span>
           </div>
         </section>
         </ng-container>

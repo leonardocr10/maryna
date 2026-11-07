@@ -247,3 +247,7 @@ nl-rich-editor .rte-area { font: 14.5px/1.65 var(--font); color: var(--text); }
 .file-text p{font-size:13.5px;line-height:1.6;color:var(--text-2);margin:6px 0 0}
 .stepper.three { grid-template-columns: repeat(3, 1fr); }
 @media (max-width: 760px) { .stepper.three { grid-template-columns: 1fr 1fr; } }
+.file-text .ft-img{display:block;max-width:100%;height:auto;margin:10px 0;border-radius:4px;background:#fff}
+.sec-place{display:flex;flex-direction:column;gap:6px;margin-top:10px;padding:12px;border:1px dashed var(--border-card);border-radius:var(--radius-sm)}
+.sec-place .mlabel{font-size:12.5px;font-weight:600;color:var(--text-2)}
+.sec-place .link{align-self:flex-start;font-size:12.5px}

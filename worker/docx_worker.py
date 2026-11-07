@@ -566,12 +566,32 @@ def letter(out,title,subtitle,content):
  for text,bold in blocks(content):sect.addprevious(new_paragraph(text,bold))
  d.save(out)
  return {'out':out,'paragraphs':len(blocks(content))}
+# Pictures inside body paragraphs (score tables pasted as images, charts saved as pictures), by element index -- the
+# same order as all_elements. Only for showing on screen; they are never sent to the AI.
+MAX_IMAGE=4*1024*1024
+def images(path):
+ import base64
+ d=open_docx(path);out={};i=0
+ for ch in d.element.body.iterchildren():
+  if not (ch.tag.endswith('}p') or ch.tag.endswith('}tbl')):continue
+  if ch.tag.endswith('}p'):
+   srcs=[]
+   for blip in ch.iter(qn('a:blip')):
+    rid=blip.get(qn('r:embed'))
+    part=d.part.related_parts.get(rid) if rid else None
+    if part is None or not str(part.content_type).startswith('image/') or len(part.blob)>MAX_IMAGE:continue
+    if part.content_type not in ('image/png','image/jpeg','image/gif','image/webp'):continue
+    srcs.append('data:'+part.content_type+';base64,'+base64.b64encode(part.blob).decode())
+   if srcs:out[str(i)]=srcs
+  i+=1
+ return out
 def main():
  op=sys.argv[1]
  sys.stdout.reconfigure(encoding='utf-8')
  if op=='inspect': print(json.dumps(inspect(sys.argv[2]),ensure_ascii=False))
  elif op=='export':
   spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(export(spec['base'],spec['out'],spec['sections'],spec.get('highlight',False),spec.get('fields'),spec.get('rich')),ensure_ascii=False))
+ elif op=='images': print(json.dumps(images(sys.argv[2])))
  elif op=='letter':
   spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(letter(spec['out'],spec.get('title',''),spec.get('subtitle',''),spec['content']),ensure_ascii=False))
  else: raise SystemExit('unknown operation')

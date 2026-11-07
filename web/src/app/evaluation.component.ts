@@ -108,7 +108,7 @@ export class EvaluationComponent implements OnDestroy {
     } catch {}
   }
   async inspect() {
-    try { this.inspection = await this.api.req('POST', `/evaluations/${this.evaluationId}/inspect`); } catch { this.inspection = null; }
+    try { this.inspection = await this.api.req('POST', `/evaluations/${this.evaluationId}/inspect`); if (this.inspection?.synced) await this.load(); } catch { this.inspection = null; }
     if (this.canWrite()) try { this.privacy = await this.api.req('GET', `/evaluations/${this.evaluationId}/privacy`); } catch {}
     try { this.references = await this.api.req('GET', `/evaluations/${this.evaluationId}/references`); } catch { this.references = {}; }
   }
@@ -168,6 +168,8 @@ export class EvaluationComponent implements OnDestroy {
   }
   /** Fixed parts under a heading box ("Fontes fundamentais", "Instrumentos aplicados"...): text of the file, editable by hand. */
   fixedBlocks() { return (this.inspection?.fixed_blocks || []).map((b: any) => ({...b, name: b.label.charAt(0) + b.label.slice(1).toLowerCase()})); }
+  /** Untouched copy of the uploaded files (manual evaluations start from it). */
+  fromFile(k: string) { const r = this.section(k); return !!r && r.source_summary === 'from_file' && (r.version || 1) === 1 && !!r.content?.trim(); }
   isFixed(k: string) { return k.startsWith('fixo_'); }
   fixedText(k: string) { return this.fixedBlocks().find((b: any) => b.key === k)?.existing_text || ''; }
   private docPos(k: string): number | null {
@@ -240,7 +242,7 @@ export class EvaluationComponent implements OnDestroy {
   }
   async setAiMode(mode: 'ai' | 'manual') {
     if ((this.current?.ai_mode || 'ai') === mode || this.readOnly()) return;
-    try { await this.api.req('PUT', `/evaluations/${this.evaluationId}/mode`, {mode}); this.current = {...this.current, ai_mode: mode}; this.changed.emit(); this.api.notify(mode === 'manual' ? 'Avaliação manual: a IA fica desligada.' : 'IA ligada nesta avaliação.'); } catch {}
+    try { await this.api.req('PUT', `/evaluations/${this.evaluationId}/mode`, {mode}); this.current = {...this.current, ai_mode: mode}; this.changed.emit(); if (mode === 'manual' && this.docsReady()) await this.inspect(); this.api.notify(mode === 'manual' ? 'Avaliação manual: a IA fica desligada.' : 'IA ligada nesta avaliação.'); } catch {}
   }
   stepDone(i: number) {
     if (i === 2 && !this.aiOn()) return this.docsReady(); return [this.idModel.name.trim().length >= 2, this.docsReady(), this.autoKeys().length > 0 && this.autoDrafted() === this.autoKeys().length, this.allApproved()][i]; }

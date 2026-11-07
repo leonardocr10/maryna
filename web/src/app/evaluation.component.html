@@ -254,7 +254,7 @@
             <p *ngIf="!text(s.id)" class="muted">{{s.id===MANUAL_KEY ? 'Ainda sem conclusão. Escreva suas orientações acima ou use Editar para escrever você mesma.' : s.id===DEMAND_KEY ? 'O arquivo base não tem texto nesta parte. Escreva em Editar ou gere com a IA.' : 'Sem texto ainda.'}}</p>
           </div>
           <nl-dictate *ngIf="editing===s.id" [evaluationId]="evaluationId" (keydown.escape)="closeEdit()"><nl-rich-editor #rte [html]="editInitHtml" label="Texto da seção" (htmlChange)="editHtml=$event" (textChange)="onEditText(s.id, $event)"></nl-rich-editor></nl-dictate>
-          <p *ngIf="s.id===DEMAND_KEY && demandIsFromFile() && editing!==s.id" class="footnote from-file">Texto do arquivo enviado, sem alteração e sem IA.</p>
+          <p *ngIf="editing!==s.id && ((s.id===DEMAND_KEY && demandIsFromFile()) || (s.id!==DEMAND_KEY && fromFile(s.id)))" class="footnote from-file">Texto do arquivo enviado, sem alteração e sem IA.</p>
           <div *ngIf="editing===s.id" class="ed-editbar">
             <span>{{autoSaving ? 'Salvando…' : autoSaved ? 'Salvo automaticamente às ' + autoSaved + '.' : 'Editando o texto. Salva sozinho a cada pausa.'}}</span>
             <button *ngIf="aiOn()" class="link" (click)="openGpt(s.id)" title="Copia o pedido e abre o ChatGPT">Abrir no ChatGPT</button>

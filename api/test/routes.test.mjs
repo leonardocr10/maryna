@@ -600,6 +600,22 @@ test('fixed parts of the base document can be rewritten by hand, never by the AI
   assert.equal((await api('POST', `/api/evaluations/${id}/generate/hipotese`, {token: tokens.psy, body: {}})).status, 409);
 });
 
+test('a manual evaluation starts with the text of the uploaded files', async () => {
+  const id = await withFiles();
+  await api('PUT', `/api/evaluations/${id}/mode`, {token: tokens.psy, body: {mode: 'manual'}});
+  const calls = aiRequests.length;
+  const r = await api('POST', `/api/evaluations/${id}/inspect`, {token: tokens.psy});
+  assert.equal(r.status, 200);
+  assert.ok(r.data.synced >= 1);
+  const sections = (await api('GET', `/api/evaluations/${id}`, {token: tokens.psy})).data.sections;
+  const ana = sections.find(x => x.section_key === 'anamnesis');
+  assert.ok(ana?.content?.trim(), 'anamnesis copied from the anamnesis document');
+  assert.equal(ana.source_summary, 'from_file');
+  assert.equal(aiRequests.length, calls, 'no AI call');
+  // a second inspection changes nothing
+  assert.equal((await api('POST', `/api/evaluations/${id}/inspect`, {token: tokens.psy})).data.synced, 0);
+});
+
 test('an evaluation can be created as manual', async () => {
   const p = await api('POST', '/api/patients', {token: tokens.psy, body: {name: 'Paciente Fictício Manual'}});
   const e = await api('POST', '/api/evaluations', {token: tokens.psy, body: {patient_id: p.data.id, ai_mode: 'manual'}});

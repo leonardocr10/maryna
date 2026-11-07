@@ -31,10 +31,23 @@ if not exist "api\.env" (
 rem The API uses this Python even if api\.env says "python" (dotenv keeps variables already set).
 set "PYTHON_BIN=%PY%"
 
+rem ---- HTTPS (optional): Caddy in C:\caddy (or CADDY_DIR) in front of port 9091 ----
+rem Browsers only allow the microphone (voice dictation) over HTTPS or localhost.
+if not defined CADDY_DIR set "CADDY_DIR=C:\caddy"
+set "HTTPS_ON="
+if exist "%CADDY_DIR%\caddy.exe" if exist "%CADDY_DIR%\Caddyfile" set "HTTPS_ON=1"
+if defined HTTPS_ON (
+  tasklist /FI "IMAGENAME eq caddy.exe" 2>nul | find /I "caddy.exe" >nul || (
+    echo Iniciando o HTTPS - Caddy em %CADDY_DIR%...
+    start "Caddy HTTPS - NeuroLaudos" /min /D "%CADDY_DIR%" "%CADDY_DIR%\caddy.exe" run --config "%CADDY_DIR%\Caddyfile"
+  )
+)
+
 echo.
 echo Abrindo na porta 9091:
 echo   - neste computador: http://localhost:9091
 echo   - outros computadores e internet: http://IP-DESTE-COMPUTADOR:9091 (enderecos abaixo)
+if defined HTTPS_ON echo   - com HTTPS e microfone: o endereco do Caddyfile em %CADDY_DIR%
 echo.
 echo ATENCAO: o sistema aceita acessos de fora deste computador.
 echo   - Pela internet, a conexao NAO e criptografada (http): senha e dados de saude

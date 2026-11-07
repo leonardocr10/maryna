@@ -74,6 +74,11 @@ export class EvaluationComponent implements OnDestroy {
   step = 0;
   uploading = '';
   aiReady = false; usdBrl = 5.5;
+  /** The server refuses AI generation without the AI-use consent on the evaluation (REQUIRE_AI_CONSENT). */
+  consentRequired = true;
+  needsConsent() { return this.consentRequired && !this.current?.consent_ai_at; }
+  /** Says why nothing is generated and opens Identificação, where the consent is registered. */
+  private blockedByConsent() { if (!this.needsConsent()) return false; this.api.notify('Registre o consentimento para uso de IA (Identificação > Consentimento) e depois gere os textos.'); this.step = 0; return true; }
   gen: Record<string, Gen> = {}; generating = false;
   open = ''; editing = ''; editText = ''; sectionInstr = '';
   mode: 'secoes' | 'documento' = 'secoes'; previewLoading = false;
@@ -95,6 +100,7 @@ export class EvaluationComponent implements OnDestroy {
         this.loadModels();
         const s = await this.api.req('GET', '/ai/settings').catch(() => null);
         this.aiReady = !!(s && s.enabled && s.configured && s.privacy_gate);
+        this.consentRequired = s?.consent_required !== false;
         this.step = !this.docsReady() ? 1 : !this.autoDrafted() ? 2 : 3;
       }
       if (this.docsReady() && !this.inspection) await this.inspect();
@@ -223,6 +229,7 @@ export class EvaluationComponent implements OnDestroy {
   async upload(kind: 'base' | 'anamnesis', f: File) {
     if (this.locked()) return;
     if (!f.name.toLowerCase().endsWith('.docx')) { this.api.notify('Envie um arquivo .docx (Word).'); return; }
+    const wasReady = this.docsReady();
     this.uploading = kind;
     try {
       await this.api.upload(this.evaluationId, kind, f);
@@ -234,7 +241,20 @@ export class EvaluationComponent implements OnDestroy {
       }
       this.changed.emit();
       this.api.notify(this.missing().length && this.inspection ? 'Atenção: faltam no documento: ' + this.missing().join(', ') + '.' : kind === 'base' ? 'Arquivo base enviado.' : 'Anamnese enviada.');
-    } catch {} finally { this.uploading = ''; }
+    } catch { return; } finally { this.uploading = ''; }
+    await this.offerGeneration(wasReady);
+  }
+  /** The second file completes the pair: nothing drafted yet, so offer the AI drafting right away (paid call, so it asks first). */
+  private async offerGeneration(wasReady: boolean) {
+    if (wasReady || !this.docsReady() || this.readOnly() || this.generating || this.autoDrafted()) return;
+    this.step = 2;
+    if (!this.aiReady || this.blockedByConsent()) return;
+    const n = this.autoKeys().length;
+    if (!n || !await this.confirm.ask({tone: 'review', title: 'Gerar os textos com IA agora?',
+      body: `Os dois arquivos foram enviados. A IA redige ${n} ${n === 1 ? 'seção' : 'seções'} como rascunho para sua revisão.`,
+      facts: ['Cada seção usa só os dados do próprio tópico', 'Nomes e dados pessoais são ocultados antes do envio', 'O custo entra em Custo da IA desta avaliação'],
+      ok: 'Gerar com IA'})) return;
+    await this.generateAll(true);
   }
 
   // ---------- step 3: generation ----------
@@ -263,6 +283,7 @@ export class EvaluationComponent implements OnDestroy {
 
   async generateAll(skipConfirm = false, only?: string[]) {
     if (!this.aiReady) { this.api.notify('Geração pela API desligada. Ative em Configurações.'); return; }
+    if (this.blockedByConsent()) return;
     if (!skipConfirm && this.autoDrafted() && !await this.confirm.ask({tone: 'review', title: 'Gerar tudo de novo?',
       body: 'Os textos atuais de todas as seções geradas pela IA serão substituídos por novas versões. Edições feitas nelas serão perdidas.',
       facts: ['As versões anteriores ficam no histórico', 'Todas as seções voltam para revisão', 'O custo entra em Custo da IA desta avaliação'], ok: 'Regenerar tudo'})) return;
@@ -387,6 +408,7 @@ export class EvaluationComponent implements OnDestroy {
   async regenerate(k: string, withInstruction = false, skipConfirm = false) {
     if (withInstruction) await this.dictation.stop();
     if (!this.aiReady) { this.api.notify('Geração pela API desligada. Ative em Configurações.'); return; }
+    if (this.blockedByConsent()) return;
     if (!skipConfirm && this.state(k) !== 'pend') {
       const name = this.available().find(x => x.id === k)?.name || 'esta seção';
       const instr = (this.instrDraft[k] || '').trim();

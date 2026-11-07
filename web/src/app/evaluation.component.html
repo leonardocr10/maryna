@@ -50,7 +50,7 @@
         </div>
       </section>
 
-      <nl-plan *ngIf="step===0" [evaluationId]="evaluationId" [canWrite]="canWrite()" [locked]="locked()" (changed)="docsReady() && inspect()"></nl-plan>
+      <nl-plan *ngIf="step===0" [evaluationId]="evaluationId" [canWrite]="canWrite()" [locked]="locked()" (changed)="load(); docsReady() && inspect()"></nl-plan>
 
       <!-- 2. Arquivos -->
       <section *ngIf="step===1" class="card stepcard">
@@ -293,7 +293,7 @@
                 <button class="btn btn-secondary btn-sm" [class.on]="editing===s.id" [disabled]="editing===s.id" (click)="startEdit(s.id)"><nl-icon name="edit"/> {{text(s.id) ? 'Editar' : 'Escrever'}}</button>
                 <button *ngIf="s.id===DEMAND_KEY && demandInFile() && !demandIsFromFile()" class="btn btn-secondary btn-sm" (click)="useFileDemand()"><nl-icon name="doc"/> Usar o texto do arquivo</button>
                 <button *ngIf="s.id===DEMAND_KEY" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="generateDemand()"><nl-icon name="spark"/> {{gen[s.id]==='running'?'Gerando…':'Gerar com IA'}}</button>
-                <button *ngIf="s.id!==MANUAL_KEY && s.id!==DEMAND_KEY" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="regenerate(s.id)"><nl-icon name="restore"/> {{gen[s.id]==='running'?'Gerando…':'Regenerar'}}</button>
+                <button *ngIf="s.id!==MANUAL_KEY && s.id!==DEMAND_KEY" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="regenerate(s.id)"><nl-icon [name]="text(s.id) ? 'restore' : 'spark'"/> {{gen[s.id]==='running'?'Gerando…':text(s.id)?'Regenerar':'Gerar com IA'}}</button>
               </ng-container>
             </div>
           </div>

@@ -7,7 +7,7 @@ export const MODEL_STATUS: Record<string, {label: string; css: string}> = {
 };
 const STATE: Record<string, {icon: string; css: string; label: string}> = {
   ok: {icon: 'checkc', css: 'ok', label: 'Pronta'}, auto: {icon: 'info', css: 'warn', label: 'Campo criado ao baixar'},
-  optional: {icon: 'info', css: 'idle', label: 'Opcional'}, fixed: {icon: 'doc', css: 'idle', label: 'Do arquivo'}, missing: {icon: 'alert', css: 'danger', label: 'Falta'},
+  optional: {icon: 'info', css: 'idle', label: 'Opcional'}, fixed: {icon: 'doc', css: 'idle', label: 'Texto do arquivo'}, missing: {icon: 'alert', css: 'danger', label: 'Falta'},
 };
 
 /** Check list of a report model: which sections the AI can fill, identification fields and warnings. */

@@ -591,6 +591,15 @@ test('a manual evaluation never calls the AI; switching back to AI allows it', a
   assert.equal((await api('POST', `/api/evaluations/${id}/generate/anamnesis`, {token: tokens.psy, body: {}})).status, 200);
 });
 
+test('fixed parts of the base document can be rewritten by hand, never by the AI', async () => {
+  const id = await withFiles();
+  assert.ok([200, 201].includes((await api('PUT', `/api/evaluations/${id}/sections/fixo_fontes_fundamentais`, {token: tokens.psy, body: {content: 'Fontes fictícias reescritas.'}})).status));
+  assert.equal((await api('PUT', `/api/evaluations/${id}/sections/fixo_`, {token: tokens.psy, body: {content: 'x'}})).status, 400);
+  assert.equal((await api('PUT', `/api/evaluations/${id}/sections/qualquer`, {token: tokens.psy, body: {content: 'x'}})).status, 400);
+  assert.equal((await api('POST', `/api/evaluations/${id}/generate/fixo_fontes_fundamentais`, {token: tokens.psy, body: {}})).status, 400);
+  assert.equal((await api('POST', `/api/evaluations/${id}/generate/hipotese`, {token: tokens.psy, body: {}})).status, 409);
+});
+
 test('an evaluation can be created as manual', async () => {
   const p = await api('POST', '/api/patients', {token: tokens.psy, body: {name: 'Paciente Fictício Manual'}});
   const e = await api('POST', '/api/evaluations', {token: tokens.psy, body: {patient_id: p.data.id, ai_mode: 'manual'}});

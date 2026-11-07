@@ -114,7 +114,7 @@ export class EvaluationComponent implements OnDestroy {
   }
   refs(k: string) { return k === MANUAL_KEY ? [] : this.references[k] || []; }
   /** What the conclusion is built from: the texts of the result sections (no demand, no anamnesis), as the API sends them. */
-  conclusionSources() { return this.applicable().filter(s => !NOT_IN_CONCLUSION.includes(s.id) && this.text(s.id).trim()).map(s => ({name: s.name, text: this.text(s.id)})); }
+  conclusionSources() { return this.applicable().filter(s => !NOT_IN_CONCLUSION.includes(s.id) && !this.isFixed(s.id) && this.text(s.id).trim()).map(s => ({name: s.name, text: this.text(s.id)})); }
   /** Reference material behind a section: section texts for the conclusion, tables for the others. */
   refCount(k: string) { return k === MANUAL_KEY ? this.conclusionSources().length : this.refs(k).length; }
   refLabel(k: string) { return this.refOpen === k ? (k === MANUAL_KEY ? 'Ocultar textos' : 'Ocultar tabelas') : (k === MANUAL_KEY ? 'Ver textos das seções (' : 'Ver tabelas de referência (') + this.refCount(k) + ')'; }
@@ -158,13 +158,26 @@ export class EvaluationComponent implements OnDestroy {
   applicable() {
     const age = ageYears(this.idModel.birth_date, this.idModel.end_date);
     const found = this.placeable();
-    return SECTIONS.filter(s =>
+    const list = SECTIONS.filter(s =>
       !(this.inspection && OPTIONAL_SECTIONS.includes(s.id) && !found.has(s.id)) &&
       !(s.id === 'percepcao' && age !== null && age >= PERCEPTION_MAX_AGE && !this.text(s.id).trim()));
+    if (!this.fixedBlocks().length) return list;
+    // fixed parts of the file join the list in the order they appear in the Word document
+    const all = [...list, ...this.fixedBlocks().map((b: any) => ({id: b.key, name: b.name}))];
+    return all.map((s, i) => ({s, i, p: this.docPos(s.id)})).sort((a, b) => (a.p ?? 1e9) - (b.p ?? 1e9) || a.i - b.i).map(x => x.s);
+  }
+  /** Fixed parts under a heading box ("Fontes fundamentais", "Instrumentos aplicados"...): text of the file, editable by hand. */
+  fixedBlocks() { return (this.inspection?.fixed_blocks || []).map((b: any) => ({...b, name: b.label.charAt(0) + b.label.slice(1).toLowerCase()})); }
+  isFixed(k: string) { return k.startsWith('fixo_'); }
+  fixedText(k: string) { return this.fixedBlocks().find((b: any) => b.key === k)?.existing_text || ''; }
+  private docPos(k: string): number | null {
+    const m = (this.inspection?.markers || []).find((x: any) => x.key === k); if (m) return m.index;
+    const f = this.fixedBlocks().find((b: any) => b.key === k); if (f) return f.index;
+    const t = this.inspection?.title_ranges?.[k]; return t ? t[0] : null;
   }
   /** Sections the Word file can receive: those with an interpretation field, and titled sections without one
    * (the export creates the field right after their tables). */
-  placeable() { return new Set([...(this.inspection?.markers || []).map((m: any) => m.key), ...Object.keys(this.inspection?.title_ranges || {})]); }
+  placeable() { return new Set([...(this.inspection?.markers || []).map((m: any) => m.key), ...Object.keys(this.inspection?.title_ranges || {}), ...this.fixedBlocks().map((b: any) => b.key)]); }
   /** Title exists but the "Interpretação" field does not: the export adds it. */
   fieldAdded(k: string) { return !!this.inspection?.title_ranges?.[k] && !(this.inspection?.markers || []).some((m: any) => m.key === k); }
   available() { const found = this.placeable(); return this.inspection ? this.applicable().filter(s => found.has(s.id)) : this.applicable(); }
@@ -179,7 +192,7 @@ export class EvaluationComponent implements OnDestroy {
   /** Missing sections stay visible in the review list, in their place. */
   reviewRows() { return this.inspection ? this.applicable() : this.available(); }
   section(k: string) { return this.sections.find(s => s.section_key === k); }
-  text(k: string) { return this.section(k)?.content || ''; }
+  text(k: string) { return this.section(k)?.content || (this.isFixed(k) ? this.fixedText(k) : ''); }
   private domSan = inject(DomSanitizer);
   /** Saved formatting of the section, only while it still matches the text (any other change, e.g. a new AI draft, drops it). */
   richOf(k: string): string {
@@ -195,9 +208,9 @@ export class EvaluationComponent implements OnDestroy {
   onEditText(k: string, t: string) { this.editText = t; this.autosaveLater(k); }
   /** Replaces the whole text being edited (answer pasted from ChatGPT). */
   private setEditText(t: string) { this.editText = t; this.editInitHtml = this.editHtml = htmlFromText(t); }
-  state(k: string): SectionState { const s = this.section(k); return !s?.content?.trim() ? 'pend' : s.status === 'approved' ? 'ap' : 'gen'; }
+  state(k: string): SectionState { const s = this.section(k); if (this.isFixed(k) && !s?.content?.trim()) return 'file'; return !s?.content?.trim() ? 'pend' : s.status === 'approved' ? 'ap' : 'gen'; }
   drafted() { return this.available().filter(s => this.state(s.id) !== 'pend').length; }
-  approved() { return this.available().filter(s => this.state(s.id) === 'ap').length; }
+  approved() { return this.available().filter(s => this.state(s.id) === 'ap' || this.state(s.id) === 'file').length; }
   total() { return this.available().length; }
   allApproved() { return this.locked() || (this.total() > 0 && this.approved() === this.total()); }
   status() { return this.allApproved() ? STATUS.ap : this.autoDrafted() ? STATUS.rv : STATUS.rs; }
@@ -297,9 +310,9 @@ export class EvaluationComponent implements OnDestroy {
   }
 
   // ---------- step 3: generation ----------
-  autoKeys() { return this.available().map(s => s.id).filter(k => k !== MANUAL_KEY && k !== DEMAND_KEY && !HAND_ONLY.includes(k)); }
+  autoKeys() { return this.available().map(s => s.id).filter(k => k !== MANUAL_KEY && k !== DEMAND_KEY && !HAND_ONLY.includes(k) && !this.isFixed(k)); }
   /** Sections the AI never writes (the diagnostic hypothesis). */
-  isHand(k: string) { return HAND_ONLY.includes(k); }
+  isHand(k: string) { return HAND_ONLY.includes(k) || this.isFixed(k); }
   autoDrafted() { return this.autoKeys().filter(k => this.state(k) !== 'pend').length; }
   demandInFile() { return (this.inspection?.markers || []).find((m: any) => m.key === DEMAND_KEY)?.existing_text || ''; }
   private same(a: string, b: string) { return (a || '').replace(/\s+/g, ' ').trim() === (b || '').replace(/\s+/g, ' ').trim(); }
@@ -403,6 +416,7 @@ export class EvaluationComponent implements OnDestroy {
     if (k === DEMAND_KEY || k === 'anamnesis') return 'escrita a partir da anamnese';
     if (k === MANUAL_KEY) return 'escrita a partir das seções de resultados';
     if (k === 'recomendacoes') return 'escrita a partir das seções do laudo';
+    if (this.isFixed(k)) return 'texto do arquivo base; pode ser reescrito à mão';
     if (this.isHand(k)) return 'escrita pela psicóloga, sem IA';
     return 'escrita a partir das tabelas do arquivo base';
   }

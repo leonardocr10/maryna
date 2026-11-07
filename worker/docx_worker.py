@@ -180,6 +180,30 @@ def place_date_paragraph(doc):
    p=Paragraph(ch,doc)
    if PLACE_DATE_RE.match(clean(p.text)):found=p
  return found
+# Fixed parts the intern fills under a one-cell heading box ("FONTES FUNDAMENTAIS DE INFORMAÇÕES", "INSTRUMENTOS/
+# AVALIAÇÕES APLICADAS"...). The psychologist may rewrite them: key "fixo_<heading>", text = paragraphs under the box.
+import unicodedata
+def fixed_slug(label):
+ t=unicodedata.normalize('NFD',label).encode('ascii','ignore').decode().lower()
+ return 'fixo_'+re.sub(r'[^a-z0-9]+','_',t).strip('_')[:60]
+def fixed_heading(ch,doc):
+ """Label of a one-cell all-caps heading box that is not a section the system writes, else None."""
+ if not ch.tag.endswith('}tbl'):return None
+ cells=list(dict.fromkeys(clean(c.text) for r in Table(ch,doc).rows for c in r.cells if clean(c.text)))
+ if len(cells)!=1:return None
+ t=re.sub(r'\s*:\s*$','',cells[0])
+ if len(t)<4 or len(t)>80 or t!=t.upper() or t.startswith('INTERPRETA') or domain_of(t):return None
+ return t
+def fixed_blocks(doc):
+ """[(key,label,heading element)] after the first section marker, in document order."""
+ out=[];m=Markers();started=False;keys=set()
+ for ch in doc.element.body.iterchildren():
+  if not (ch.tag.endswith('}p') or ch.tag.endswith('}tbl')):continue
+  if m.key(element_text(ch,doc)):started=True;continue
+  if not started:continue
+  label=fixed_heading(ch,doc)
+  if label and fixed_slug(label) not in keys:keys.add(fixed_slug(label));out.append((fixed_slug(label),label,ch))
+ return out
 def inspect(path):
  d=open_docx(path);elements=list(all_elements(d));markers=[];m=Markers()
  children=[ch for ch in d.element.body.iterchildren() if ch.tag.endswith('}p') or ch.tag.endswith('}tbl')]
@@ -194,7 +218,7 @@ def inspect(path):
    markers.append({'key':k,'index':i,'label':txt,'existing_paragraphs':sum(1 for ch in old if clean(Paragraph(ch,d).text)),'existing_text':'\n\n'.join(t for t in (Paragraph(ch,d).text.strip() for ch in old) if t)})
  section_ranges(elements,markers)
  titled=sorted({domain_of(e['text'] if e['type']=='p' else ' '.join(x for row in e['rows'] for x in row)) for e in elements}-{None})
- return {'elements':elements,'markers':markers,'titled_domains':titled,'title_ranges':title_ranges(elements,markers),'identification':identification(d),'place_date':(lambda p:clean(p.text) if p is not None else None)(place_date_paragraph(d)),'warnings':['Conferir visualmente a ordem dos marcadores e os resultados.']}
+ return {'elements':elements,'markers':markers,'titled_domains':titled,'title_ranges':title_ranges(elements,markers),'identification':identification(d),'place_date':(lambda p:clean(p.text) if p is not None else None)(place_date_paragraph(d)),'fixed_blocks':[{'key':k,'label':label,'index':position[ch],'existing_text':'\n\n'.join(clean(Paragraph(o,d).text) for o in existing_narrative(ch,d) if clean(Paragraph(o,d).text))} for k,label,ch in fixed_blocks(d)],'warnings':['Conferir visualmente a ordem dos marcadores e os resultados.']}
 
 REPORT_FONT='Arial';REPORT_HALF_POINTS='22'  # Arial 11 pt
 def run_props(bold=False,red=False):
@@ -465,6 +489,15 @@ def export(base,out,sections,highlight=False,fields=None,rich=None):
   p=place_date_paragraph(d)
   if p is not None and (clean(p.text)==place or replace_span(p,0,len(p.text),place)):filled.append('__local_data')
  anchors=fieldless_anchors(d);added=[]
+ # fixed parts rewritten by the psychologist: same replacement as a section, under their heading box
+ for k,label,ch in fixed_blocks(d):
+  if k in sections and clean(sections[k]) and k not in seen:
+   current=existing_narrative(ch,d);seen.append(k)
+   if clean(' '.join(Paragraph(o,d).text for o in current))==clean(sections[k]):continue
+   for old in current:
+    if clean(Paragraph(old,d).text):replaced[k]=replaced.get(k,0)+1
+    old.getparent().remove(old)
+   insert_rich_after(ch,rich[k],highlight) if k in rich else insert_after(ch,sections[k],highlight)
  for ch in list(d.element.body.iterchildren()):
   if not (ch.tag.endswith('}p') or ch.tag.endswith('}tbl')) or ch.getparent() is None:continue
   k=m.key(element_text(ch,d))

@@ -98,7 +98,7 @@ export function fixedHeadings(inspected, markers = inspected?.markers || []) {
     if (cells.length !== 1) return;
     const t = cells[0].replace(/\s+/g, ' ').replace(/\s*:\s*$/, '');
     if (t.length < 4 || t.length > 80 || t !== t.toUpperCase() || /^INTERPRETA/.test(t)) return;
-    out.push({key: 'fixo_' + i, name: t.charAt(0) + t.slice(1).toLowerCase(), state: 'fixed', required: false, note: 'Texto do arquivo base, preenchido pela estagiária. O sistema não altera.', old_text: false, pos: i});
+    out.push({key: 'fixo_' + i, name: t.charAt(0) + t.slice(1).toLowerCase(), state: 'fixed', required: false, note: 'Texto do arquivo base, preenchido pela estagiária. Pode ser reescrito na avaliação.', old_text: false, pos: i});
   });
   return out;
 }

@@ -82,8 +82,8 @@ export function listStatus(e: any): EvalStatus {
   return e.generated_count > 0 ? 'rv' : 'rs';  // demand copied from the file alone is still a draft
 }
 
-export type SectionState = 'pend' | 'gen' | 'ap';
-export const SECTION_STATE: Record<SectionState, {label: string; css: string}> = {pend: {label: 'Pendente', css: 'idle'}, gen: {label: 'Revisar', css: 'warn'}, ap: {label: 'Aprovada', css: 'ok'}};
+export type SectionState = 'file' | 'pend' | 'gen' | 'ap';
+export const SECTION_STATE: Record<SectionState, {label: string; css: string}> = {file: {label: 'Do arquivo', css: 'idle'}, pend: {label: 'Pendente', css: 'idle'}, gen: {label: 'Revisar', css: 'warn'}, ap: {label: 'Aprovada', css: 'ok'}};
 
 export const words = (t: string) => (t || '').trim().split(/\s+/).filter(Boolean).length;
 export const brl = (v: number) => (v || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: (v || 0) < 1 ? 3 : 2});

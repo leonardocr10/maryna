@@ -134,9 +134,9 @@ app.get('/api/retention',auth,role('admin','psychologist'),wrap(async(req,res)=>
 // ---- Assessment plan, sessions and consent ----
 // The psychologist plans which instruments to apply; whoever applies them marks each one. Sessions (anamnese, application,
 // feedback) feed the week on the dashboard. Consent: AI generation (API and manual ChatGPT mode) needs the consent for AI
-// use registered on the evaluation (REQUIRE_AI_CONSENT=false turns the gate off).
+// use registered on the evaluation only when REQUIRE_AI_CONSENT=true (off by default).
 const SESSION_KINDS=['anamnese','aplicacao','devolutiva','outra'];
-const consentRequired=()=>process.env.REQUIRE_AI_CONSENT!=='false';
+const consentRequired=()=>process.env.REQUIRE_AI_CONSENT==='true';
 function requireAiConsent(e){if(consentRequired()&&!e.consent_ai_at)throw fail(409,'Registre o consentimento para uso de IA nesta avaliação (Identificação > Consentimento) antes de gerar textos.')}
 async function planOf(id){const [items]=await pool.execute('SELECT i.*,u.name applied_by_name FROM evaluation_plan i LEFT JOIN users u ON u.id=i.applied_by WHERE i.evaluation_id=? ORDER BY i.created_at',[id]);const [sessions]=await pool.execute('SELECT * FROM evaluation_sessions WHERE evaluation_id=? ORDER BY date,time',[id]);const [[c]]=await pool.execute('SELECT e.consent_care_at,e.consent_ai_at,e.consent_note,u.name consent_by_name FROM evaluations e LEFT JOIN users u ON u.id=e.consent_by WHERE e.id=?',[id]);return {items,sessions,consent:{...c,required:consentRequired()},catalog:INSTRUMENTS.map(i=>i.name)}}
 const dateIn=v=>/^\d{4}-\d{2}-\d{2}$/.test(v||'')?v:null,timeIn=v=>/^\d{2}:\d{2}$/.test(v||'')?v:null,textIn=(v,n)=>String(v||'').replace(/\s+/g,' ').trim().slice(0,n);

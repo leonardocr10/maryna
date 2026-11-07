@@ -99,7 +99,7 @@ before(async () => {
     env: {...process.env, ADMIN_EMAIL: '', ADMIN_PASSWORD: '', TTS_PROVIDER: '', DICTATION_ENABLED: 'false', API_RATE_LIMIT: '100000', PORT: String(port), HOST: '127.0.0.1',
       DB_FILE: path.join(tmp, 'data.db'), STORAGE_DIR: path.join(tmp, 'storage'), JWT_SECRET: randomBytes(32).toString('hex'),
       FILE_ENCRYPTION_KEY: KEY, PYTHON_BIN: PYTHON, OPENAI_API_KEY: 'sk-test-sintetica', OPENAI_BASE_URL: `http://127.0.0.1:${fakeAI.address().port}/v1`,
-      AI_ENABLED: 'true', ALLOW_EXTERNAL_AI: 'true', BACKUP_DIR: path.join(tmp, 'backups'), BACKUP_AUTO: 'false', GENERATED_TEXT_RED: 'false'},
+      AI_ENABLED: 'true', ALLOW_EXTERNAL_AI: 'true', REQUIRE_AI_CONSENT: 'true', BACKUP_DIR: path.join(tmp, 'backups'), BACKUP_AUTO: 'false', GENERATED_TEXT_RED: 'false'},
   });
   let stderr = '';
   server.stderr.on('data', d => stderr += d);

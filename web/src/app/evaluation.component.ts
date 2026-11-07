@@ -75,7 +75,7 @@ export class EvaluationComponent implements OnDestroy {
   uploading = '';
   aiReady = false; usdBrl = 5.5;
   /** The server refuses AI generation without the AI-use consent on the evaluation (REQUIRE_AI_CONSENT). */
-  consentRequired = true;
+  consentRequired = false;
   needsConsent() { return this.consentRequired && !this.current?.consent_ai_at; }
   /** Says why nothing is generated and opens Identificação, where the consent is registered. */
   private blockedByConsent() { if (!this.needsConsent()) return false; this.api.notify('Registre o consentimento para uso de IA (Identificação > Consentimento) e depois gere os textos.'); this.step = 0; return true; }
@@ -100,7 +100,7 @@ export class EvaluationComponent implements OnDestroy {
         this.loadModels();
         const s = await this.api.req('GET', '/ai/settings').catch(() => null);
         this.aiReady = !!(s && s.enabled && s.configured && s.privacy_gate);
-        this.consentRequired = s?.consent_required !== false;
+        this.consentRequired = s?.consent_required === true;
         this.step = !this.docsReady() ? 1 : !this.autoDrafted() ? 2 : 3;
       }
       if (this.docsReady() && !this.inspection) await this.inspect();

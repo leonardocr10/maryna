@@ -16,7 +16,7 @@ const KINDS: Record<string, string> = {anamnese: 'Anamnese', aplicacao: 'Aplica√
   template: `
 <ng-container *ngIf="data">
 <!-- Consent -->
-<section class="card stepcard">
+<section *ngIf="data.consent.required" class="card stepcard">
   <div class="card-head"><h2>Consentimento</h2><small>{{data.consent.consent_by_name ? 'Registrado por ' + data.consent.consent_by_name : 'Registre o termo assinado pelo respons√°vel ou pela pessoa avaliada'}}</small></div>
   <div class="card-body cons">
     <label class="chk"><input type="checkbox" [checked]="!!data.consent.consent_care_at" [disabled]="!canWrite || locked || busy" (change)="setConsent($any($event.target).checked, !!data.consent.consent_ai_at)">

@@ -120,11 +120,11 @@ export class NewEvaluationComponent {
   models: {value: string; label: string}[] = [{value: '', label: 'Sem modelo'}];
   modelId = '';
   /** The server blocks AI generation until the evaluation has the AI-use consent (REQUIRE_AI_CONSENT). */
-  consentRequired = true;
+  consentRequired = false;
   consentAi = false;
   async ngOnInit() {
     try { const list: any[] = await this.api.req('GET', '/models'); this.models = [{value: '', label: 'Sem modelo'}, ...list.filter(m => m.active).map(m => ({value: m.id, label: m.name}))]; } catch {}
-    try { const s = await this.api.req('GET', '/ai/settings'); this.consentRequired = s?.consent_required !== false; } catch {}
+    try { const s = await this.api.req('GET', '/ai/settings'); this.consentRequired = s?.consent_required === true; } catch {}
   }
   willGenerate() { return this.bothFiles() && this.canGenerate() && (!this.consentRequired || this.consentAi); }
 

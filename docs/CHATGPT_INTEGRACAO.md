@@ -1,6 +1,6 @@
-# Anamnese pelo ChatGPT (plugin MCP ou cópia e colagem)
+# Seções do laudo pelo ChatGPT (plugin MCP ou cópia e colagem)
 
-Alternativa à geração pela API, que continua igual. Na seção **Anamnese**, o botão **Gerar anamnese pelo ChatGPT** abre o painel com três métodos:
+Alternativa à geração pela API, que continua igual. Em **cada seção** (Anamnese, Descrição da demanda, interpretações, Conclusão e Recomendações), o botão **ChatGPT** abre o painel com três métodos. A **Hipótese diagnóstica** fica de fora: a IA nunca redige diagnóstico.
 
 | Método | Como funciona | Custo |
 |---|---|---|
@@ -14,11 +14,16 @@ Nada lê ou automatiza a página do ChatGPT (nem login, nem digitação, nem ext
 - Só para psicólogas(os) e administradores. Em avaliação **Manual**, o painel também funciona, mas só por escolha da pessoa naquela seção, com confirmação.
 - Os dados vão **pseudonimizados**, como no pedido manual existente: nomes, datas e contatos viram marcadores (`[PACIENTE]`, `[PESSOA_1]`...). Os nomes voltam ao salvar.
 - As anotações seguem a ordem do Word, parágrafo por parágrafo (tabelas em Markdown), para não misturar pai, mãe, madrasta e paciente.
-- Instrução padrão e formato: `api/src/prompts.mjs` (`CHATGPT_ANAMNESIS_INSTRUCTION`, `CHATGPT_ANAMNESIS_FORMAT`, `chatgptCommand`, `MCP_SERVER_INSTRUCTIONS`).
-- Cada tarefa tem um código `NL-XXXX-XXXX`, pertence a quem a criou e expira em `CHATGPT_TASK_HOURS` (padrão 24 h). Preparar uma nova encerra a anterior.
+- Cada seção recebe só os próprios dados (regra 10): o trecho dela no arquivo base, com **tabelas em texto (Markdown)**, a mesma instrução da geração por API e o guia do instrumento. A Anamnese usa a instrução própria para o ChatGPT. A Conclusão leva as orientações da psicóloga.
+- **Imagens** da seção (tabelas ou gráficos colados como figura no Word) não têm como trocar nomes por marcadores. Por isso só vão se a pessoa escolher:
+  - no plugin, marcando "Enviar também as imagens desta seção" ao preparar a tarefa (vão como imagens no resultado da ferramenta, até 8);
+  - na cópia e colagem, pelo botão **Copiar imagem** de cada uma.
+  - O botão **Copiar tabelas como imagem** monta uma figura a partir das tabelas, que já vão em texto.
+- Instrução padrão e formato: `api/src/prompts.mjs` (`CHATGPT_ANAMNESIS_INSTRUCTION`, `CHATGPT_ANAMNESIS_FORMAT`, `chatgptCommand`, `MCP_SERVER_INSTRUCTIONS`); as outras seções usam as mesmas tarefas da API.
+- Cada tarefa tem um código `NL-XXXX-XXXX`, é de uma seção, pertence a quem a criou e expira em `CHATGPT_TASK_HOURS` (padrão 24 h). Preparar uma nova para a mesma seção encerra a anterior; seções diferentes têm tarefas independentes.
 - A resposta é normalizada só no layout (títulos `## `, parágrafos separados por linha em branco). Nenhuma palavra é mudada.
 - Cada tarefa grava **uma vez**. Repetir o mesmo `id_operacao` devolve o primeiro resultado; outro id é recusado.
-- Se a Anamnese estiver vazia (ou for só a cópia intacta do arquivo), o rascunho entra direto como texto a revisar. Se já houver texto editado, gerado ou aprovado, o rascunho **espera a confirmação** da psicóloga (botão *Substituir pela versão do ChatGPT*). O texto anterior vai para Versões.
+- Se a seção estiver vazia (ou for só a cópia intacta do arquivo), o rascunho entra direto como texto a revisar, com os mesmos avisos da geração por API (categorias, números, gênero, marcadores). Se já houver texto editado, gerado ou aprovado, o rascunho **espera a confirmação** da psicóloga (botão *Substituir pela versão do ChatGPT*). O texto anterior vai para Versões.
 - O rascunho nunca é aprovado sozinho: a aprovação continua seção a seção.
 - Na auditoria ficam só as ações (tarefa criada, plugin leu, rascunho recebido ou aplicado, autorização, desconexão), nunca o conteúdo.
 - Limpeza a cada hora: tarefas vencidas expiram. Rascunhos não confirmados são apagados `CHATGPT_KEEP_DAYS` dias depois (padrão 7). Códigos e tokens OAuth vencidos também são apagados.
@@ -49,9 +54,10 @@ O que foi implementado (`api/src/mcp.mjs`, `api/src/oauth.mjs`, `api/src/chatgpt
 | `/api/oauth/register`, `/authorize`, `/token`, `/revoke` | Fluxo OAuth. |
 
 Ferramentas do plugin:
-- `obter_anamnese_pendente`: escopo `anamnese.ler`.
-- `salvar_rascunho_anamnese`: escopo `anamnese.salvar`; não destrutiva e idempotente.
-- `consultar_status_anamnese`: escopo `anamnese.ler`.
+- `obter_tarefa_pendente`: escopo `anamnese.ler` (o nome do escopo ficou da primeira versão, mas vale para qualquer seção).
+- `salvar_rascunho`: escopo `anamnese.salvar`; não destrutiva e idempotente.
+- `consultar_status_tarefa`: escopo `anamnese.ler`.
+- Os nomes da primeira versão (`obter_anamnese_pendente`, `salvar_rascunho_anamnese`, `consultar_status_anamnese`) continuam aceitos. Depois de atualizar o servidor, abra o plugin em https://chatgpt.com/plugins e clique em **Refresh** para o ChatGPT ver os nomes novos.
 
 Segurança:
 - O cliente é público (sem segredo) e só pode voltar para `https://chatgpt.com` (`CHATGPT_OAUTH_REDIRECT_HOSTS`).
@@ -81,7 +87,7 @@ Segurança:
 5. Na primeira vez que usar, o ChatGPT abre a tela de login do NeuroLaudos. Entre e clique em **Autorizar**.
 
 ### Como usar
-1. Na Anamnese: **Gerar anamnese pelo ChatGPT** → **ChatGPT — plugin (MCP)** → **Preparar anamnese**. O comando é copiado.
+1. Na seção: **ChatGPT** → **ChatGPT — plugin (MCP)** → **Preparar tarefa** (na Conclusão, escreva antes as suas orientações). O comando é copiado.
 2. **Abrir ChatGPT**, digite `@`, escolha **NeuroLaudos IA**, cole o comando e envie.
 3. Confirme quando o ChatGPT pedir para salvar. O painel mostra *Rascunho recebido* sozinho, consultando o próprio servidor a cada 5 s.
 4. Revise, edite e aprove a Anamnese como sempre.

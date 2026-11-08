@@ -878,7 +878,7 @@ test('ChatGPT plugin: OAuth with PKCE, scoped MCP tools, isolation per account a
   assert.ok(task.data.command.includes(task.data.code));
   const call = (name, args, bearer = access) => mcp(bearer, 'tools/call', {name, arguments: args});
   const got = (await call('obter_anamnese_pendente', {codigo: task.data.code.toLowerCase()})).data.result.structuredContent;
-  assert.ok(got.anotacoes_da_anamnese.includes(ANAMNESIS_FACT));
+  assert.ok(got.dados_da_secao.includes(ANAMNESIS_FACT));
   assert.ok(!JSON.stringify(got).includes(PATIENT), 'no patient name leaves through the plugin');
   assert.match(got.instrucao_de_redacao, /^FAZER TÓPICOS DE ANAMNESE/);
   assert.equal((await call('consultar_status_anamnese', {codigo: task.data.code})).data.result.structuredContent.status, 'processing');
@@ -916,4 +916,35 @@ test('ChatGPT plugin: OAuth with PKCE, scoped MCP tools, isolation per account a
   assert.equal((await api('DELETE', '/api/chatgpt/connection', {token: tokens.psy})).status, 200);
   assert.equal((await mcp(access, 'tools/list', {})).status, 401, 'disconnecting revokes the tokens');
   assert.equal((await api('DELETE', `/api/evaluations/${id}`, {token: tokens.psy})).status, 200, 'an evaluation with tasks can still be deleted');
+});
+
+test('ChatGPT for any section: only its own tables, conclusion guidance kept, images only on request, never the diagnosis', async () => {
+  const id = await withFiles();
+  const calls = aiRequests.length;
+  const paste = await api('POST', `/api/evaluations/${id}/chatgpt-tasks`, {token: tokens.psy, body: {mode: 'paste', section: 'inteligencia'}});
+  assert.equal(paste.status, 201, JSON.stringify(paste.data));
+  assert.equal(paste.data.section_key, 'inteligencia');
+  assert.ok(paste.data.text.includes('Teste 0'), 'its own table, as text');
+  assert.ok(!paste.data.text.includes('Teste 2'), 'no table of another section');
+  assert.ok(!paste.data.text.includes('sono agitado'), 'no anamnesis (rule 10)');
+  assert.ok(!paste.data.text.includes(PATIENT));
+  assert.equal((await api('POST', `/api/evaluations/${id}/chatgpt-tasks`, {token: tokens.psy, body: {mode: 'paste', section: 'hipotese'}})).status, 409, 'the AI never writes the diagnosis');
+  assert.equal((await api('POST', `/api/evaluations/${id}/chatgpt-tasks`, {token: tokens.psy, body: {mode: 'paste', section: 'outra'}})).status, 400);
+  // the anamnesis task of the same evaluation is independent of this one
+  const ana = await api('POST', `/api/evaluations/${id}/chatgpt-tasks`, {token: tokens.psy, body: {mode: 'paste'}});
+  assert.equal((await api('GET', `/api/evaluations/${id}/chatgpt-tasks/current?section=inteligencia`, {token: tokens.psy})).data.id, paste.data.id);
+  assert.equal((await api('GET', `/api/evaluations/${id}/chatgpt-tasks/current`, {token: tokens.psy})).data.id, ana.data.id);
+  const text = 'Os resultados obtidos indicam que [PRIMEIRO_NOME] demonstrou recursos para compreender instruções verbais e organizar respostas com apoio, mantendo desempenho consistente ao longo das tarefas propostas na sessão sintética.';
+  const saved = await api('POST', `/api/chatgpt-tasks/${paste.data.id}/result`, {token: tokens.psy, body: {text, op_id: 'op-' + randomBytes(8).toString('hex')}});
+  assert.equal(saved.status, 200, JSON.stringify(saved.data));
+  const s = (await api('GET', `/api/evaluations/${id}`, {token: tokens.psy})).data.sections.find(x => x.section_key === 'inteligencia');
+  assert.ok(s.content.startsWith('Os resultados obtidos indicam que Fulano'), 'first name back');
+  // plugin: conclusion guidance travels with the task; images go only when asked (none in this synthetic file)
+  const conc = await api('POST', `/api/evaluations/${id}/chatgpt-tasks`, {token: tokens.psy, body: {mode: 'mcp', section: 'conclusao', notes: 'Orientação sintética: destacar memória preservada.', include_images: true}});
+  assert.equal(conc.status, 201, JSON.stringify(conc.data));
+  assert.match(conc.data.command, /seção "Conclusão"/);
+  const d = db(); const row = d.prepare('SELECT notes,include_images FROM chatgpt_tasks WHERE id=?').get(conc.data.id); d.close();
+  assert.equal(row.notes, 'Orientação sintética: destacar memória preservada.');
+  assert.equal(row.include_images, 1);
+  assert.equal(aiRequests.length, calls, 'no API call');
 });

@@ -244,7 +244,7 @@ export class EvaluationComponent implements OnDestroy {
   }
   /** Body of a section-level AI request: a manual evaluation says the person chose it. */
   aiBody(extra: any = {}) { return this.aiOn() ? extra : {...extra, manual_ai: true}; }
-  async toggleCg() { if (this.cgOpen) { this.cgOpen = false; return; } if (await this.allowSectionAi()) this.cgOpen = true; }
+  async toggleCg(k: string) { if (this.cgOpen === k) { this.cgOpen = ''; return; } if (await this.allowSectionAi()) { this.gptOpen = ''; this.cgOpen = k; } }
   /** Closing "Cidade, data." line: what the evaluation saved, else what the base document says. */
   placeDate = '';
   placeInFile() { return this.inspection?.place_date || ''; }
@@ -581,8 +581,11 @@ export class EvaluationComponent implements OnDestroy {
   // ---------- ChatGPT (manual mode) ----------
   // The request carries this section's own tables/text and the instruction, with names replaced by markers (API side).
   gptOpen = ''; gptText = ''; gptHidden = 0; gptLoading = ''; gptCopied = false;
-  /** Anamnese generation panel (API, ChatGPT plugin or copy and paste). */
-  cgOpen = false;
+  /** Section whose generation panel is open (API, ChatGPT plugin or copy and paste). */
+  cgOpen = '';
+  sectionImages(k: string): string[] { return this.fileBlock(k).filter(b => b.type === 'img').map(b => b.src); }
+  /** "OpenAI API" in the panel: the same generation as the section's own buttons. */
+  useApiFor(k: string) { if (k === MANUAL_KEY) this.generateConclusion(); else if (k === DEMAND_KEY) this.generateDemand(); else this.regenerate(k); }
   /** Builds the request, copies it, opens ChatGPT and shows the panel to copy again or paste the answer back. */
   async openGpt(k: string) {
     if (this.gptLoading) return;

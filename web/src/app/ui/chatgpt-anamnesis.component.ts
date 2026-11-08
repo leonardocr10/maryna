@@ -6,7 +6,7 @@ import {ConfirmService} from '../confirm.service';
 import {IconComponent} from './icon.component';
 
 type Method = 'api' | 'mcp' | 'paste';
-interface Task {id: string; code: string; mode: 'mcp' | 'paste'; status: string; status_label: string; expires_at: string; applied: boolean; needs_confirmation: boolean; received_text: string | null; existing_approved: boolean; error: string | null; command?: string; text?: string | null; hidden?: number}
+interface Task {id: string; code: string; mode: 'mcp' | 'paste'; section_key: string; include_images?: boolean; status: string; status_label: string; expires_at: string; applied: boolean; needs_confirmation: boolean; received_text: string | null; existing_approved: boolean; error: string | null; command?: string; text?: string | null; hidden?: number}
 const OPEN = ['pending', 'processing'];
 const CHATGPT = 'https://chatgpt.com/';
 
@@ -20,7 +20,8 @@ async function writeClipboard(text: string): Promise<boolean> {
 const newOpId = () => 'op-' + (crypto.randomUUID?.() || Math.random().toString(36).slice(2) + Date.now().toString(36));
 
 /**
- * "Gerar anamnese pelo ChatGPT": the current API generation, the ChatGPT plugin (MCP) or assisted copy and paste.
+ * Writing one report section: the current API generation, the ChatGPT plugin (MCP) or assisted copy and paste.
+ * Only the section's own data goes (rule 10); tables travel as text, pictures only when the person chooses.
  * Nothing here reads the ChatGPT page: the plugin talks to the server, and copy and paste is done by the person.
  */
 @Component({
@@ -28,31 +29,31 @@ const newOpId = () => 'op-' + (crypto.randomUUID?.() || Math.random().toString(3
   standalone: true,
   imports: [CommonModule, FormsModule, IconComponent],
   template: `
-<div class="cg" role="region" aria-label="Geração da anamnese">
-  <div class="cg-head"><nl-icon name="spark"/><b>Geração da anamnese</b>
+<div class="cg" role="region" [attr.aria-label]="'Geração: ' + sectionName">
+  <div class="cg-head"><nl-icon name="spark"/><b>Gerar {{sectionName}}</b>
     <span *ngIf="task" [class]="'badge ' + badge()">{{task.status_label}}</span>
     <button class="x" (click)="closed.emit()" aria-label="Fechar">×</button></div>
 
   <fieldset class="methods" [disabled]="busy">
     <legend>Método de geração</legend>
     <label><input type="radio" name="cg-method" value="api" [(ngModel)]="method"> <span><b>OpenAI API</b><small>Geração atual, pelo servidor (custo por uso).</small></span></label>
-    <label [class.off]="!cfg?.mcp_enabled"><input type="radio" name="cg-method" value="mcp" [(ngModel)]="method" [disabled]="!cfg?.mcp_enabled"> <span><b>ChatGPT — plugin (MCP)</b><small>{{cfg?.mcp_enabled ? 'O ChatGPT busca as anotações e devolve o rascunho para cá, com sua autorização.' : 'Desligado neste computador (veja Configurações necessárias no README).'}}</small></span></label>
+    <label [class.off]="!cfg?.mcp_enabled"><input type="radio" name="cg-method" value="mcp" [(ngModel)]="method" [disabled]="!cfg?.mcp_enabled"> <span><b>ChatGPT — plugin (MCP)</b><small>{{cfg?.mcp_enabled ? 'O ChatGPT busca os dados desta seção e devolve o rascunho para cá, com sua autorização.' : 'Desligado neste computador (veja Configurações necessárias no README).'}}</small></span></label>
     <label><input type="radio" name="cg-method" value="paste" [(ngModel)]="method"> <span><b>ChatGPT — cópia e colagem assistida</b><small>Você cola o texto preparado no ChatGPT e cola a resposta aqui.</small></span></label>
   </fieldset>
 
-  <!-- A draft arrived while the evaluation already had an anamnesis: never replaced without her confirmation -->
+  <!-- A draft arrived while the section already had text: never replaced without her confirmation -->
   <div *ngIf="task?.needs_confirmation" class="alert warn small"><nl-icon name="info"/><div>
-    <p><b>Rascunho recebido do ChatGPT.</b> A avaliação já tem uma anamnese{{task?.existing_approved ? ' aprovada' : ''}}; ela só é substituída se você confirmar. O texto atual fica em Versões.</p>
+    <p><b>Rascunho recebido do ChatGPT.</b> Esta seção já tem texto{{task?.existing_approved ? ' aprovado' : ''}}; ele só é substituído se você confirmar. O texto atual fica em Versões.</p>
     <details><summary>Ver o rascunho recebido</summary><div class="cg-preview"><p *ngFor="let p of blocks(task?.received_text)" [class.t]="p.startsWith('## ')">{{p.replace('## ', '')}}</p></div></details>
     <div class="row"><button class="btn btn-primary btn-sm" [disabled]="busy || readOnly" (click)="apply()"><nl-icon name="check"/> Substituir pela versão do ChatGPT</button>
       <button class="btn btn-secondary btn-sm" [disabled]="busy" (click)="discard()">Descartar rascunho</button></div>
   </div></div>
-  <div *ngIf="task?.applied && task?.status!=='reviewed' && !task?.needs_confirmation" class="alert tip small" role="status"><nl-icon name="checkc"/><div><p>Rascunho do ChatGPT salvo na Anamnese. Revise, edite se precisar e aprove a seção.</p></div></div>
+  <div *ngIf="task?.applied && task?.status!=='reviewed' && !task?.needs_confirmation" class="alert tip small" role="status"><nl-icon name="checkc"/><div><p>Rascunho do ChatGPT salvo nesta seção. Revise, edite se precisar e aprove.</p></div></div>
   <div *ngIf="task?.status==='error'" class="alert danger small"><nl-icon name="alert"/><div><p>{{task?.error || 'A tarefa terminou com erro.'}} Prepare uma nova.</p></div></div>
 
   <!-- Current API generation (unchanged) -->
   <div *ngIf="method==='api'" class="pane">
-    <p class="hint">Gera a anamnese pela API da OpenAI, como hoje{{hasText ? ', substituindo o texto atual (que fica em Versões)' : ''}}.</p>
+    <p class="hint">Gera o texto pela API da OpenAI, como hoje{{hasText ? ', substituindo o texto atual (que fica em Versões)' : ''}}.</p>
     <div class="row"><button class="btn btn-primary btn-sm" [disabled]="readOnly" (click)="useApi.emit()"><nl-icon name="spark"/> {{hasText ? 'Regenerar pela API' : 'Gerar pela API'}}</button></div>
   </div>
 
@@ -73,11 +74,12 @@ const newOpId = () => 'op-' + (crypto.randomUUID?.() || Math.random().toString(3
         <button class="link" [disabled]="busy" (click)="prepare('mcp')">Gerar novo código</button>
         <button *ngIf="cfg?.connected" class="link" (click)="disconnect()">Desconectar ChatGPT</button>
       </div>
-      <small class="hint">O ChatGPT recebe as anotações com nomes, datas e contatos trocados por marcadores; os nomes voltam ao salvar. Nenhuma chamada paga à API é feita neste método; vale o limite do seu plano do ChatGPT.</small>
+      <small class="hint">O ChatGPT recebe só os dados desta seção (tabelas em texto), com nomes, datas e contatos trocados por marcadores; os nomes voltam ao salvar.{{task?.include_images ? ' As imagens da seção vão como estão.' : ''}} Nenhuma chamada paga à API é feita neste método; vale o limite do seu plano do ChatGPT.</small>
     </ng-container>
     <ng-template #prepareMcp>
-      <p class="hint">Cria uma tarefa com código, vinculada a esta avaliação e à sua conta, válida por {{cfg?.task_hours || 24}} h. O arquivo de anamnese não é alterado.</p>
-      <div class="row"><button class="btn btn-primary btn-sm" [disabled]="busy || readOnly" (click)="prepare('mcp')"><nl-icon name="spark"/> {{busy ? 'Preparando…' : 'Preparar anamnese'}}</button></div>
+      <p class="hint">Cria uma tarefa com código, vinculada a esta seção e à sua conta, válida por {{cfg?.task_hours || 24}} h. Os arquivos enviados não são alterados.</p>
+      <label *ngIf="images.length" class="check"><input type="checkbox" [(ngModel)]="sendImages"> Enviar também {{images.length===1 ? 'a imagem' : 'as ' + images.length + ' imagens'}} desta seção (tabelas ou gráficos colados como figura). <b>Imagens não têm nomes trocados por marcadores</b>: confira se não mostram o nome ou dados do paciente.</label>
+      <div class="row"><button class="btn btn-primary btn-sm" [disabled]="busy || readOnly" (click)="prepare('mcp')"><nl-icon name="spark"/> {{busy ? 'Preparando…' : 'Preparar tarefa'}}</button></div>
     </ng-template>
   </div>
 
@@ -90,20 +92,26 @@ const newOpId = () => 'op-' + (crypto.randomUUID?.() || Math.random().toString(3
         <div class="row">
           <button class="btn btn-secondary btn-sm" (click)="copy(pasteText, 'Texto e instrução copiados. No ChatGPT, cole com Ctrl+V.')"><nl-icon name="copy"/> Copiar texto e instrução</button>
           <button class="btn btn-secondary btn-sm" (click)="openChatGpt()"><nl-icon name="external"/> Abrir ChatGPT</button>
+          <button *ngIf="hasTables" class="btn btn-secondary btn-sm" (click)="copyTables.emit()" title="As tabelas já vão em texto; use a imagem se preferir colar a tabela como figura"><nl-icon name="table"/> Copiar tabelas como imagem</button>
           <small class="hint">{{hidden}} {{hidden===1 ? 'dado pessoal trocado' : 'dados pessoais trocados'}} por marcadores.</small>
         </div>
       </ng-container>
+      <!-- Pictures of the section: the person copies each one into ChatGPT herself (they are not pseudonymised) -->
+      <div *ngIf="images.length" class="imgs">
+        <span class="hint">Imagens desta seção no arquivo base (vão como estão, sem troca de nomes). Copie e cole no ChatGPT junto com o texto, se quiser:</span>
+        <div class="thumbs"><figure *ngFor="let src of images; let i = index"><img [src]="src" [alt]="'Imagem ' + (i+1) + ' da seção'"><button class="btn btn-secondary btn-sm" (click)="copyImage(src)"><nl-icon name="copy"/> Copiar imagem {{i+1}}</button></figure></div>
+      </div>
       <p *ngIf="!pasteText" class="hint">O texto preparado só fica na tela em que foi criado. Para copiar de novo, clique em <b>Preparar texto para ChatGPT</b>.</p>
       <label class="lbl" for="cg-answer">Colar resposta do ChatGPT</label>
-      <textarea id="cg-answer" class="input" rows="8" [(ngModel)]="answer" (ngModelChange)="opId=''" placeholder="Cole aqui a anamnese que o ChatGPT escreveu (títulos e parágrafos são mantidos)."></textarea>
+      <textarea id="cg-answer" class="input" rows="8" [(ngModel)]="answer" (ngModelChange)="opId=''" placeholder="Cole aqui o texto que o ChatGPT escreveu (títulos e parágrafos são mantidos)."></textarea>
       <div class="row">
         <small class="hint">{{words(answer)}} palavras</small><span class="grow"></span>
         <button class="link" [disabled]="busy" (click)="prepare('paste')">Preparar texto para ChatGPT</button>
-        <button class="btn btn-primary btn-sm" [disabled]="busy || readOnly || !answer.trim()" (click)="savePaste()"><nl-icon name="check"/> {{busy ? 'Salvando…' : 'Salvar anamnese'}}</button>
+        <button class="btn btn-primary btn-sm" [disabled]="busy || readOnly || !answer.trim()" (click)="savePaste()"><nl-icon name="check"/> {{busy ? 'Salvando…' : 'Salvar ' + (sectionKey==='anamnesis' ? 'anamnese' : 'rascunho')}}</button>
       </div>
     </ng-container>
     <ng-template #preparePaste>
-      <p class="hint">Junta o texto do arquivo de anamnese à instrução padrão, sem chamar a IA. O arquivo original não é alterado.</p>
+      <p class="hint">Junta os dados desta seção (textos e tabelas) à instrução padrão, sem chamar a IA. Os arquivos enviados não são alterados.</p>
       <div class="row"><button class="btn btn-primary btn-sm" [disabled]="busy || readOnly" (click)="prepare('paste')"><nl-icon name="doc"/> {{busy ? 'Preparando…' : 'Preparar texto para ChatGPT'}}</button></div>
     </ng-template>
   </div>
@@ -135,6 +143,11 @@ textarea{height:auto;padding:10px 12px}
 .lbl{font-size:13px;font-weight:600;color:var(--text)}
 .cg-preview{max-height:240px;overflow:auto;margin:8px 0;padding:8px 10px;background:var(--card);border-radius:6px}
 .cg-preview p{margin:0 0 8px;font-size:13px;line-height:1.55}.cg-preview p.t{font-weight:600}
+.check{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:var(--text-2);line-height:1.45}
+.imgs{display:flex;flex-direction:column;gap:8px}
+.thumbs{display:flex;gap:10px;flex-wrap:wrap}
+.thumbs figure{margin:0;display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.thumbs img{max-width:220px;max-height:140px;border:1px solid var(--border-card);border-radius:6px;background:#fff}
 @media (max-width:760px){.methods{grid-template-columns:1fr}}
 `],
 })
@@ -142,6 +155,14 @@ export class ChatgptAnamnesisComponent implements OnInit, OnDestroy {
   private api = inject(Api);
   private confirm = inject(ConfirmService);
   @Input() evaluationId = '';
+  @Input() sectionKey = 'anamnesis';
+  @Input() sectionName = 'Anamnese';
+  /** Psychologist's guidance sent with the request (the conclusion is written from it). */
+  @Input() notes = '';
+  /** Pictures of this section in the base document (data URLs), shown on screen. */
+  @Input() images: string[] = [];
+  @Input() hasTables = false;
+  @Output() copyTables = new EventEmitter<void>();
   @Input() hasText = false;
   @Input() readOnly = false;
   /** Manual evaluation: requests say the person chose the AI for this section. */
@@ -153,7 +174,7 @@ export class ChatgptAnamnesisComponent implements OnInit, OnDestroy {
   cfg: {mcp_enabled: boolean; connected: boolean; task_hours: number} | null = null;
   method: Method = 'paste';
   task: Task | null = null;
-  pasteText = ''; hidden = 0; answer = ''; opId = ''; busy = false;
+  pasteText = ''; hidden = 0; answer = ''; opId = ''; busy = false; sendImages = false;
   private poll: any;
 
   async ngOnInit() {
@@ -168,9 +189,9 @@ export class ChatgptAnamnesisComponent implements OnInit, OnDestroy {
   async refresh() {
     try {
       const before = this.task;
-      this.task = await this.api.req<Task | null>('GET', `/evaluations/${this.evaluationId}/chatgpt-tasks/current`);
+      this.task = await this.api.req<Task | null>('GET', `/evaluations/${this.evaluationId}/chatgpt-tasks/current?section=${encodeURIComponent(this.sectionKey)}`);
       if (before && OPEN.includes(before.status) && this.task && this.task.id === before.id && this.task.status === 'draft_received') {
-        this.api.notify(this.task.needs_confirmation ? 'Rascunho do ChatGPT recebido: confirme se quer substituir a anamnese.' : 'Rascunho do ChatGPT salvo na Anamnese.');
+        this.api.notify(this.task.needs_confirmation ? `Rascunho do ChatGPT recebido em ${this.sectionName}: confirme se quer substituir o texto.` : `Rascunho do ChatGPT salvo em ${this.sectionName}.`);
         if (this.task.applied) this.saved.emit();
       }
     } catch {}
@@ -183,7 +204,7 @@ export class ChatgptAnamnesisComponent implements OnInit, OnDestroy {
     if (this.busy) return;
     this.busy = true;
     try {
-      const r = await this.api.req<Task>('POST', `/evaluations/${this.evaluationId}/chatgpt-tasks`, {mode, ...(this.manual ? {manual_ai: true} : {})});
+      const r = await this.api.req<Task>('POST', `/evaluations/${this.evaluationId}/chatgpt-tasks`, {mode, section: this.sectionKey, ...(this.notes.trim() ? {notes: this.notes.trim()} : {}), ...(mode === 'mcp' && this.sendImages ? {include_images: true} : {}), ...(this.manual ? {manual_ai: true} : {})});
       this.task = r; this.method = mode;
       if (mode === 'paste') { this.pasteText = r.text || ''; this.hidden = r.hidden || 0; this.answer = ''; this.opId = ''; }
       const text = mode === 'mcp' ? r.command || '' : this.pasteText;
@@ -202,26 +223,37 @@ export class ChatgptAnamnesisComponent implements OnInit, OnDestroy {
     try {
       const r = await this.api.req<Task & {shape?: {titles: number; paragraphs: number}}>('POST', `/chatgpt-tasks/${this.task.id}/result`, {text: this.answer, op_id: this.opId});
       this.task = r;
-      if (r.applied) { this.answer = ''; this.pasteText = ''; this.api.notify(`Anamnese salva como rascunho${r.shape ? ` (${r.shape.titles} tópicos, ${r.shape.paragraphs} parágrafos)` : ''}. Revise e aprove.`); this.saved.emit(); }
-      else this.api.notify('Rascunho recebido. Confirme se quer substituir a anamnese atual.');
+      if (r.applied) { this.answer = ''; this.pasteText = ''; this.api.notify(`${this.sectionName}: salvo como rascunho${r.shape ? ` (${r.shape.titles} tópicos, ${r.shape.paragraphs} parágrafos)` : ''}. Revise e aprove.`); this.saved.emit(); }
+      else this.api.notify('Rascunho recebido. Confirme se quer substituir o texto atual.');
     } catch {} finally { this.busy = false; }
   }
   async apply() {
     if (!this.task || this.busy) return;
-    if (!await this.confirm.ask({title: 'Substituir a anamnese pelo rascunho do ChatGPT?', body: 'O texto atual da Anamnese será trocado pelo rascunho recebido.', facts: ['O texto atual fica em Versões e pode ser restaurado', this.task.existing_approved ? 'A Anamnese volta a precisar de aprovação' : 'O rascunho entra para revisão e aprovação'], ok: 'Substituir'})) return;
+    if (!await this.confirm.ask({title: `Substituir ${this.sectionName} pelo rascunho do ChatGPT?`, body: 'O texto atual da seção será trocado pelo rascunho recebido.', facts: ['O texto atual fica em Versões e pode ser restaurado', this.task.existing_approved ? 'A seção volta a precisar de aprovação' : 'O rascunho entra para revisão e aprovação'], ok: 'Substituir'})) return;
     this.busy = true;
-    try { this.task = await this.api.req<Task>('POST', `/chatgpt-tasks/${this.task.id}/apply`, {}); this.api.notify('Anamnese substituída pelo rascunho do ChatGPT. Revise e aprove.'); this.saved.emit(); }
+    try { this.task = await this.api.req<Task>('POST', `/chatgpt-tasks/${this.task.id}/apply`, {}); this.api.notify(`${this.sectionName}: texto substituído pelo rascunho do ChatGPT. Revise e aprove.`); this.saved.emit(); }
     catch {} finally { this.busy = false; }
   }
   async discard() {
     if (!this.task || this.busy) return;
     this.busy = true;
-    try { await this.api.req('POST', `/chatgpt-tasks/${this.task.id}/discard`, {}); this.task = null; this.api.notify('Rascunho descartado. A anamnese atual ficou como estava.'); }
+    try { await this.api.req('POST', `/chatgpt-tasks/${this.task.id}/discard`, {}); this.task = null; this.api.notify('Rascunho descartado. O texto atual ficou como estava.'); }
     catch {} finally { this.busy = false; }
   }
   async disconnect() {
     if (!await this.confirm.ask({title: 'Desconectar o ChatGPT?', body: 'O plugin perde o acesso à sua conta até você autorizar de novo no ChatGPT.', ok: 'Desconectar'})) return;
     try { await this.api.req('DELETE', '/chatgpt/connection'); if (this.cfg) this.cfg.connected = false; this.api.notify('ChatGPT desconectado.'); } catch {}
+  }
+  /** One picture to the clipboard (PNG); downloaded when the browser does not allow copying images. */
+  async copyImage(src: string) {
+    try {
+      const png = await new Promise<Blob>((resolve, reject) => { const img = new Image(); img.onload = () => { const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; c.getContext('2d')!.drawImage(img, 0, 0); c.toBlob(b => b ? resolve(b) : reject(new Error('png')), 'image/png'); }; img.onerror = reject; img.src = src; });
+      await navigator.clipboard.write([new ClipboardItem({'image/png': png})]);
+      this.api.notify('Imagem copiada. No ChatGPT, cole com Ctrl+V.');
+    } catch {
+      const a = document.createElement('a'); a.href = src; a.download = 'imagem-da-secao'; a.click();
+      this.api.notify('O navegador não deixou copiar a imagem: ela foi baixada. Arraste o arquivo para o ChatGPT.');
+    }
   }
   blocks(t?: string | null) { return String(t || '').split(/\n{2,}/).filter(Boolean); }
   words(t: string) { return (t.match(/[\p{L}\p{N}]+/gu) || []).length; }

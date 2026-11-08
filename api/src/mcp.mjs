@@ -4,14 +4,16 @@ import {MCP_SERVER_INSTRUCTIONS} from './prompts.mjs';
 import {SCOPES} from './oauth.mjs';
 
 export const PROTOCOL_VERSIONS = ['2026-07-28', '2025-11-25', '2025-06-18', '2025-03-26'];
+/** Key of a tool result holding images ([{mimeType, data}]): sent as MCP image content, not inside the JSON text. */
+export const IMAGES = '__imagens';
 const oauth = scopes => [{type: 'oauth2', scopes}];
 const code = {type: 'string', description: 'Código da tarefa mostrado no NeuroLaudos IA, no formato NL-XXXX-XXXX.'};
 
 export const TOOLS = [
   {
-    name: 'obter_anamnese_pendente',
-    title: 'Obter anamnese pendente',
-    description: 'Use quando a psicóloga informar um código NL-XXXX-XXXX de anamnese pendente. Retorna as anotações da anamnese (com nomes e datas trocados por marcadores), a instrução de redação e o formato esperado. Não use para outros pacientes nem sem código.',
+    name: 'obter_tarefa_pendente',
+    title: 'Obter tarefa pendente',
+    description: 'Use quando a psicóloga informar um código NL-XXXX-XXXX de uma seção do laudo para redigir (anamnese, descrição da demanda, interpretações, conclusão ou recomendações). Retorna a instrução de redação, o formato e só os dados daquela seção (textos e tabelas, com nomes e datas trocados por marcadores) e, se ela pediu, as imagens da seção. Não use sem código.',
     inputSchema: {type: 'object', properties: {codigo: code}, required: ['codigo'], additionalProperties: false},
     annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false},
     securitySchemes: oauth([SCOPES.read]),
@@ -19,14 +21,14 @@ export const TOOLS = [
     scope: SCOPES.read,
   },
   {
-    name: 'salvar_rascunho_anamnese',
-    title: 'Salvar rascunho da anamnese',
-    description: 'Use depois de redigir a anamnese pedida por obter_anamnese_pendente, para salvar o texto final como RASCUNHO no NeuroLaudos IA. Não sobrescreve anamnese já existente sem a confirmação da psicóloga no sistema. Envie só o texto final, com os marcadores ([PACIENTE] etc.) iguais aos recebidos.',
+    name: 'salvar_rascunho',
+    title: 'Salvar rascunho da seção',
+    description: 'Use depois de redigir o texto pedido por obter_tarefa_pendente, para salvá-lo como RASCUNHO da seção no NeuroLaudos IA. Não sobrescreve texto já existente sem a confirmação da psicóloga no sistema. Envie só o texto final, com os marcadores ([PACIENTE] etc.) iguais aos recebidos.',
     inputSchema: {
       type: 'object',
       properties: {
         codigo: code,
-        texto: {type: 'string', description: 'Anamnese final em português: cada tópico com uma linha "## Título" e parágrafos separados por linha em branco.'},
+        texto: {type: 'string', description: 'Texto final da seção em português, no formato pedido pela tarefa (títulos com "## " quando houver tópicos; parágrafos separados por linha em branco).'},
         id_operacao: {type: 'string', description: 'Identificador único desta gravação (8 a 100 caracteres: letras, números, ponto, hífen, dois-pontos). Repetir o mesmo id não grava duas vezes.'},
       },
       required: ['codigo', 'texto', 'id_operacao'], additionalProperties: false,
@@ -37,9 +39,9 @@ export const TOOLS = [
     scope: SCOPES.write,
   },
   {
-    name: 'consultar_status_anamnese',
-    title: 'Consultar status da anamnese',
-    description: 'Use para saber em que situação está uma tarefa de anamnese: pendente, em processamento, rascunho recebido, revisado, erro ou expirada.',
+    name: 'consultar_status_tarefa',
+    title: 'Consultar status da tarefa',
+    description: 'Use para saber em que situação está uma tarefa: pendente, em processamento, rascunho recebido, revisado, erro ou expirada.',
     inputSchema: {type: 'object', properties: {codigo: code}, required: ['codigo'], additionalProperties: false},
     annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false},
     securitySchemes: oauth([SCOPES.read]),
@@ -47,12 +49,18 @@ export const TOOLS = [
     scope: SCOPES.read,
   },
 ];
+/** Names of the first version (anamnesis only), still accepted so a plugin whose tool list was not refreshed keeps working. */
+export const ALIASES = {obter_anamnese_pendente: 'obter_tarefa_pendente', salvar_rascunho_anamnese: 'salvar_rascunho', consultar_status_anamnese: 'consultar_status_tarefa'};
 const publicTool = ({scope, ...t}) => t;
 
 /** A tool failure the model can read (the HTTP request itself succeeded). */
 export class ToolError extends Error {}
 const rpcError = (id, code, message) => ({jsonrpc: '2.0', id: id ?? null, error: {code, message}});
-const textResult = (data, isError = false) => ({content: [{type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data, null, 2)}], ...(isError ? {isError: true} : {structuredContent: data})});
+function textResult(data, isError = false) {
+  if (typeof data === 'string') return {content: [{type: 'text', text: data}], ...(isError ? {isError: true} : {})};
+  const {[IMAGES]: images = [], ...rest} = data;
+  return {content: [{type: 'text', text: JSON.stringify(rest, null, 2)}, ...images.map(i => ({type: 'image', data: i.data, mimeType: i.mimeType}))], structuredContent: rest};
+}
 
 /**
  * Handles one JSON-RPC message. Returns the response object, or null for notifications (HTTP 202).
@@ -76,7 +84,8 @@ export async function handleMessage(msg, {scopes = [], callTool, version = '0.0.
     case 'ping': return {jsonrpc: '2.0', id, result: {}};
     case 'tools/list': return {jsonrpc: '2.0', id, result: {tools: TOOLS.map(publicTool)}};
     case 'tools/call': {
-      const tool = TOOLS.find(t => t.name === params?.name);
+      const name = ALIASES[params?.name] || params?.name;
+      const tool = TOOLS.find(t => t.name === name);
       if (!tool) return rpcError(id, -32602, 'Ferramenta desconhecida');
       if (!scopes.includes(tool.scope)) return {jsonrpc: '2.0', id, result: textResult(`Permissão insuficiente: a conexão do ChatGPT não tem o escopo ${tool.scope}. Reconecte o plugin e autorize leitura e gravação.`, true)};
       const args = params.arguments && typeof params.arguments === 'object' ? params.arguments : {};

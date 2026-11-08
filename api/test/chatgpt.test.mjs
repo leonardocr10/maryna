@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {newTaskCode, normalizeCode, validOpId, anamnesisText, normalizeAnswer, answerProblems, answerShape, pastePackage, taskStatus} from '../src/chatgpt.mjs';
 import {pkceOk, publicBase, validRedirect, grantedScopes, redirectWith, authServerMetadata, protectedResourceMetadata, challenge, SCOPES} from '../src/oauth.mjs';
-import {handleMessage, TOOLS, ToolError} from '../src/mcp.mjs';
+import {handleMessage, TOOLS, ToolError, IMAGES} from '../src/mcp.mjs';
 import {CHATGPT_ANAMNESIS_INSTRUCTION, chatgptCommand} from '../src/prompts.mjs';
 import {chatgptConfig} from '../src/chatgpt-routes.mjs';
 
@@ -103,18 +103,27 @@ test('MCP protocol: initialize, list, scoped calls, readable tool errors', async
   const ctx = {scopes: [SCOPES.read], version: '1', callTool: async (name, args) => { calls.push(name); if (args.codigo === 'x') throw new ToolError('Tarefa não encontrada'); return {ok: true}; }};
   const init = await handleMessage({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18'}}, ctx);
   assert.equal(init.result.protocolVersion, '2025-06-18');
-  assert.match(init.result.instructions.slice(0, 512), /obter_anamnese_pendente[\s\S]*salvar_rascunho_anamnese/);
+  assert.match(init.result.instructions.slice(0, 512), /obter_tarefa_pendente[\s\S]*salvar_rascunho/);
   assert.equal(await handleMessage({jsonrpc: '2.0', method: 'notifications/initialized'}, ctx), null);
   const list = await handleMessage({jsonrpc: '2.0', id: 2, method: 'tools/list'}, ctx);
-  assert.deepEqual(list.result.tools.map(t => t.name), ['obter_anamnese_pendente', 'salvar_rascunho_anamnese', 'consultar_status_anamnese']);
+  assert.deepEqual(list.result.tools.map(t => t.name), ['obter_tarefa_pendente', 'salvar_rascunho', 'consultar_status_tarefa']);
   assert.ok(list.result.tools.every(t => !('scope' in t) && t.annotations.openWorldHint === false));
-  assert.equal(TOOLS.find(t => t.name === 'salvar_rascunho_anamnese').annotations.readOnlyHint, false);
+  assert.equal(TOOLS.find(t => t.name === 'salvar_rascunho').annotations.readOnlyHint, false);
+  // the first version's names still work (a plugin whose tool list was not refreshed)
   const ok = await handleMessage({jsonrpc: '2.0', id: 3, method: 'tools/call', params: {name: 'consultar_status_anamnese', arguments: {codigo: 'NL'}}}, ctx);
   assert.deepEqual(ok.result.structuredContent, {ok: true});
+  assert.equal(calls.at(-1), 'consultar_status_tarefa');
+  // images go as MCP image content, outside the JSON text
+  const withImages = await handleMessage({jsonrpc: '2.0', id: 8, method: 'tools/call', params: {name: 'obter_tarefa_pendente', arguments: {}}},
+    {...ctx, callTool: async () => ({secao: 'Memória', [IMAGES]: [{mimeType: 'image/png', data: 'iVBORw0KGgo='}]})});
+  assert.deepEqual(withImages.result.content.map(c => c.type), ['text', 'image']);
+  assert.equal(withImages.result.content[1].mimeType, 'image/png');
+  assert.ok(!withImages.result.content[0].text.includes('iVBOR'));
+  assert.deepEqual(withImages.result.structuredContent, {secao: 'Memória'});
   const denied = await handleMessage({jsonrpc: '2.0', id: 4, method: 'tools/call', params: {name: 'salvar_rascunho_anamnese', arguments: {}}}, ctx);
   assert.equal(denied.result.isError, true);
   assert.match(denied.result.content[0].text, /anamnese\.salvar/);
-  assert.ok(!calls.includes('salvar_rascunho_anamnese'), 'a read-only token never reaches the save tool');
+  assert.ok(!calls.includes('salvar_rascunho'), 'a read-only token never reaches the save tool');
   const missing = await handleMessage({jsonrpc: '2.0', id: 5, method: 'tools/call', params: {name: 'consultar_status_anamnese', arguments: {codigo: 'x'}}}, ctx);
   assert.equal(missing.result.isError, true);
   assert.equal((await handleMessage({jsonrpc: '2.0', id: 6, method: 'resources/list'}, ctx)).error.code, -32601);

@@ -1,4 +1,5 @@
-// Anamnesis written in ChatGPT, as an alternative to the API generation (which is unchanged):
+// Any report section (anamnesis, interpretations, conclusion...) written in ChatGPT, as an alternative to the API
+// generation (which is unchanged). Hipótese diagnóstica is never offered: the AI does not write diagnoses.
 //  - MCP plugin: ChatGPT reads the pending task and saves the draft through OAuth-protected tools (off by default:
 //    CHATGPT_MCP_ENABLED=true and an HTTPS PUBLIC_BASE_URL).
 //  - Assisted copy and paste: the system prepares the text, the person pastes it in ChatGPT and pastes the answer back.
@@ -7,14 +8,11 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import {randomUUID} from 'node:crypto';
-import {CHATGPT_ANAMNESIS_INSTRUCTION, CHATGPT_ANAMNESIS_FORMAT, chatgptCommand} from './prompts.mjs';
+import {chatgptCommand} from './prompts.mjs';
 import {TASK_MODES, TASK_STATUS, OPEN_STATUSES, newTaskCode, normalizeCode, validOpId, normalizeAnswer, answerProblems, answerShape, pastePackage, taskStatus} from './chatgpt.mjs';
 import {SCOPES, ACCESS_TTL_S, REFRESH_TTL_S, CODE_TTL_S, REQUEST_TTL_S, newSecret, hashSecret, pkceOk, publicBase, mcpResource, protectedResourceMetadata, authServerMetadata, challenge, redirectHosts, validRedirect, grantedScopes, redirectWith} from './oauth.mjs';
-import {handleMessage, ToolError} from './mcp.mjs';
-import {metalanguageTerms} from './wording.mjs';
-import {leftoverPlaceholders} from './privacy.mjs';
+import {handleMessage, ToolError, IMAGES} from './mcp.mjs';
 
-const KEY = 'anamnesis';
 const FROM_FILE = 'from_file';
 const later = seconds => new Date(Date.now() + seconds * 1000).toISOString();
 const past = iso => !iso || Date.parse(iso) <= Date.now();
@@ -32,7 +30,8 @@ export function chatgptConfig(env = process.env) {
 
 /**
  * deps: pool, auth, role, wrap, fail, audit(req,action,evaluationId), evaluation(id), requireAiMode(e, req),
- * anamnesisForChatGpt(e) -> {notes, genderRule, hidden}  (pseudonymised text of the anamnesis DOCX),
+ * sectionForChatGpt(e,key,notes) -> {instruction, format, dataLabel, data, hidden}  (pseudonymised, only the section's data),
+ * sectionImages(e,key) -> [{mimeType,data}], draftWarnings(e,key,text) -> [string], sectionKeys, sectionNames,
  * restoreFor(e) -> async text => text with the placeholders put back, version.
  */
 export function mountChatGpt(app, deps, cfg = chatgptConfig()) {
@@ -42,19 +41,20 @@ export function mountChatGpt(app, deps, cfg = chatgptConfig()) {
   // ---------- tasks ----------
   async function taskByCode(code) { const c = normalizeCode(code); if (!c) return null; const [[t]] = await pool.execute('SELECT * FROM chatgpt_tasks WHERE code=?', [c]); return t || null; }
   async function taskById(id) { const [[t]] = await pool.execute('SELECT * FROM chatgpt_tasks WHERE id=?', [String(id)]); return t || null; }
-  const sectionOf = async evaluationId => { const [[s]] = await pool.execute('SELECT id,content,status,version,source_summary,approved_at FROM sections WHERE evaluation_id=? AND section_key=?', [evaluationId, KEY]); return s || null; };
+  const sectionOf = async (evaluationId, key) => { const [[s]] = await pool.execute('SELECT id,content,status,version,source_summary,approved_at FROM sections WHERE evaluation_id=? AND section_key=?', [evaluationId, key]); return s || null; };
+  const nameOf = key => deps.sectionNames?.[key] || key;
   /** An untouched copy of the anamnesis file (manual-mode prefill) or nothing at all: a draft can go straight in. */
   const replaceable = s => !s || !String(s.content || '').trim() || (s.source_summary === FROM_FILE && Number(s.version) === 1 && s.status !== 'approved');
 
   async function view(t) {
-    const s = await sectionOf(t.evaluation_id);
+    const s = await sectionOf(t.evaluation_id, t.section_key);
     const status = taskStatus(t, s);
     return {
-      id: t.id, code: t.code, mode: t.mode, status, status_label: TASK_STATUS[status], expires_at: t.expires_at, created_at: t.created_at,
+      id: t.id, code: t.code, mode: t.mode, section_key: t.section_key, section_name: nameOf(t.section_key), include_images: !!t.include_images, status, status_label: TASK_STATUS[status], expires_at: t.expires_at, created_at: t.created_at,
       fetched_at: t.fetched_at, received_at: t.received_at, received_via: t.received_via, applied: !!t.applied_at,
       needs_confirmation: t.status === 'draft_received' && !t.applied_at, received_text: t.status === 'draft_received' && !t.applied_at ? t.received_text : null,
       existing_approved: s?.status === 'approved', error: t.error,
-      ...(t.mode === 'mcp' ? {command: chatgptCommand(t.code)} : {}),
+      ...(t.mode === 'mcp' ? {command: chatgptCommand(t.code, t.section_key, nameOf(t.section_key))} : {}),
     };
   }
   /** Same answer whether the task does not exist or belongs to someone else: codes cannot be probed. */
@@ -70,24 +70,19 @@ export function mountChatGpt(app, deps, cfg = chatgptConfig()) {
     return e;
   }
 
-  /** Writes the draft into the Anamnese as AI text to review (the previous text goes to the version history). */
-  async function writeSection(e, text, warnings, actorId) {
-    const prev = await sectionOf(e.id);
+  /** Writes the draft into the section as AI text to review (the previous text goes to the version history). */
+  async function writeSection(e, key, text, actorId) {
+    const warnings = deps.draftWarnings(e, key, text);
+    const prev = await sectionOf(e.id, key);
     if (prev) {
       await pool.execute('INSERT INTO section_history(section_id,version,content,actor_id) VALUES(?,?,?,?)', [prev.id, prev.version, prev.content, actorId]);
       await pool.execute("UPDATE sections SET content=?,content_html=NULL,source_summary=?,ai_text=?,status='generated',approved_by=NULL,approved_at=NULL,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?", [text, JSON.stringify(warnings), text, prev.id]);
     } else {
-      await pool.execute('INSERT INTO sections(id,evaluation_id,section_key,title,content,source_summary,ai_text) VALUES(?,?,?,?,?,?,?)', [randomUUID(), e.id, KEY, KEY, text, JSON.stringify(warnings), text]);
+      await pool.execute('INSERT INTO sections(id,evaluation_id,section_key,title,content,source_summary,ai_text) VALUES(?,?,?,?,?,?,?)', [randomUUID(), e.id, key, key, text, JSON.stringify(warnings), text]);
     }
     await pool.execute("UPDATE evaluations SET status='review' WHERE id=? AND status<>'approved'", [e.id]);
-    return Number((await sectionOf(e.id)).version);
+    return Number((await sectionOf(e.id, key)).version);
   }
-  const warningsOf = text => {
-    const out = [];
-    const left = leftoverPlaceholders(text); if (left.length) out.push('Marcadores não reconhecidos no texto: ' + left.join(', ') + '. Troque pelo dado correto antes de aprovar.');
-    const m = metalanguageTerms(text); if (m.length) out.push('Texto com expressões de transcrição (' + m.join(', ') + '). Reescreva esses trechos antes de aprovar.');
-    return out;
-  };
 
   /**
    * Saves an answer once per task. A retry with the same op id returns the first result; another op id is refused.
@@ -111,26 +106,27 @@ export function mountChatGpt(app, deps, cfg = chatgptConfig()) {
     const [claim] = await pool.execute(`UPDATE chatgpt_tasks SET status='draft_received',op_id=?,received_at=CURRENT_TIMESTAMP,received_via=?,received_text=? WHERE id=? AND op_id IS NULL AND status IN ('pending','processing')`, [opId, via, text, t.id]);
     if (!claim.affectedRows) { const again = await taskById(t.id); if (again?.op_id === opId) return {...await view(again), duplicate: true}; throw new ToolError('Esta tarefa já recebeu um rascunho.'); }
     await audit(req, 'chatgpt_draft_received_' + via, e.id);
-    const s = await sectionOf(e.id);
+    const s = await sectionOf(e.id, t.section_key);
     if (replaceable(s)) {
-      const version = await writeSection(e, text, warningsOf(text), req.user.id);
-      await pool.execute('UPDATE chatgpt_tasks SET applied_at=CURRENT_TIMESTAMP,applied_by=?,applied_version=?,received_text=NULL WHERE id=?', [req.user.id, version, t.id]);
+      const version = await writeSection(e, t.section_key, text, req.user.id);
+      await pool.execute('UPDATE chatgpt_tasks SET applied_at=CURRENT_TIMESTAMP,applied_by=?,applied_version=?,received_text=NULL,notes=NULL WHERE id=?', [req.user.id, version, t.id]);
       await audit(req, 'chatgpt_draft_applied', e.id);
     }
     return {...await view(await taskById(t.id)), shape: answerShape(text)};
   }
 
-  async function createTask(req, e, mode) {
-    // Any open task of this person for this evaluation stops working: one current task at a time.
-    await pool.execute(`UPDATE chatgpt_tasks SET status='expired' WHERE evaluation_id=? AND created_by=? AND status IN ('pending','processing')`, [e.id, req.user.id]);
+  async function createTask(req, e, mode, key, notes, images) {
+    // Any open task of this person for this section stops working: one current task per section at a time.
+    await pool.execute(`UPDATE chatgpt_tasks SET status='expired' WHERE evaluation_id=? AND created_by=? AND section_key=? AND status IN ('pending','processing')`, [e.id, req.user.id, key]);
     let code; for (let i = 0; i < 5 && !code; i++) { const c = newTaskCode(); if (!await taskByCode(c)) code = c; }
     if (!code) throw fail(503, 'Não foi possível criar o código da tarefa. Tente de novo.');
     const id = randomUUID();
-    await pool.execute('INSERT INTO chatgpt_tasks(id,code,evaluation_id,section_key,mode,created_by,expires_at) VALUES(?,?,?,?,?,?,?)', [id, code, e.id, KEY, mode, req.user.id, later(cfg.taskHours * 3600)]);
-    await audit(req, 'chatgpt_task_created_' + mode, e.id);
+    await pool.execute('INSERT INTO chatgpt_tasks(id,code,evaluation_id,section_key,mode,created_by,expires_at,notes,include_images) VALUES(?,?,?,?,?,?,?,?,?)', [id, code, e.id, key, mode, req.user.id, later(cfg.taskHours * 3600), notes || null, images ? 1 : 0]);
+    await audit(req, 'chatgpt_task_created_' + mode + '_' + key, e.id);
     return taskById(id);
   }
-  async function needsAnamnesis(e) { const [[d]] = await pool.execute("SELECT COUNT(*) n FROM documents WHERE evaluation_id=? AND kind='anamnesis'", [e.id]); if (!Number(d.n)) throw fail(409, 'Envie o arquivo de anamnese antes de usar o ChatGPT.'); }
+  async function needsFiles(e) { const [d] = await pool.execute("SELECT DISTINCT kind FROM documents WHERE evaluation_id=? AND kind IN ('base','anamnesis')", [e.id]); if (d.length < 2) throw fail(409, 'Envie o arquivo base e a anamnese antes de usar o ChatGPT.'); }
+  const sectionKey = v => { const k = String(v || 'anamnesis'); if (k === 'hipotese') throw fail(409, 'A hipótese diagnóstica é escrita pela psicóloga; a IA não redige diagnóstico.'); if (!deps.sectionKeys.includes(k)) throw fail(400, 'Seção inválida'); return k; };
 
   // ---------- routes for the NeuroLaudos screen (JWT) ----------
   app.get('/api/chatgpt/config', auth, wrap(async (req, res) => {
@@ -145,16 +141,21 @@ export function mountChatGpt(app, deps, cfg = chatgptConfig()) {
     const mode = String(req.body?.mode || '');
     if (!TASK_MODES.includes(mode)) throw fail(400, 'Método inválido');
     if (mode === 'mcp' && !cfg.mcp) throw fail(409, 'A integração com o plugin do ChatGPT está desligada neste computador. Use a cópia e colagem assistida.');
-    await needsAnamnesis(e);
+    const key = sectionKey(req.body?.section);
+    // Psychologist's guidance (the conclusion is written from it); kept with the task until it is used or expires.
+    const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim().slice(0, 6000) : '';
+    await needsFiles(e);
     // Paste mode: the text is assembled now and handed to the screen only (never stored, never logged).
-    let text = null, hidden = 0;
-    if (mode === 'paste') { const a = await deps.anamnesisForChatGpt(e); hidden = a.hidden; text = pastePackage({instruction: CHATGPT_ANAMNESIS_INSTRUCTION, genderRule: a.genderRule, format: CHATGPT_ANAMNESIS_FORMAT, notes: a.notes}); }
-    const t = await createTask(req, e, mode);
-    res.status(201).json({...await view(t), text, hidden});
+    // Building it also validates the section (e.g. a missing field) before a task exists.
+    const m = await deps.sectionForChatGpt(e, key, notes);
+    const text = mode === 'paste' ? pastePackage({instruction: m.instruction, format: m.format, label: m.dataLabel, notes: m.data}) : null;
+    const t = await createTask(req, e, mode, key, mode === 'mcp' ? notes : null, mode === 'mcp' && req.body?.include_images === true);
+    res.status(201).json({...await view(t), text, hidden: m.hidden});
   }));
   app.get('/api/evaluations/:id/chatgpt-tasks/current', auth, wrap(async (req, res) => {
     const e = await evaluation(req.params.id);
-    const [[t]] = await pool.execute("SELECT * FROM chatgpt_tasks WHERE evaluation_id=? AND created_by=? AND status<>'discarded' ORDER BY created_at DESC, rowid DESC LIMIT 1", [e.id, req.user.id]);
+    const key = sectionKey(req.query.section);
+    const [[t]] = await pool.execute("SELECT * FROM chatgpt_tasks WHERE evaluation_id=? AND created_by=? AND section_key=? AND status<>'discarded' ORDER BY created_at DESC, rowid DESC LIMIT 1", [e.id, req.user.id, key]);
     res.json(t ? await view(t) : null);
   }));
   const screenTask = async req => { const t = await taskById(req.params.task); if (!t || t.created_by !== req.user.id) throw fail(404, 'Tarefa não encontrada'); return t; };
@@ -164,19 +165,19 @@ export function mountChatGpt(app, deps, cfg = chatgptConfig()) {
     const t = await screenTask(req);
     res.json(await asHttp(() => saveAnswer(req, t, req.body?.text, req.body?.op_id, 'paste')));
   }));
-  // The psychologist confirms that the received draft replaces the current Anamnese (kept in the version history).
+  // The psychologist confirms that the received draft replaces the current section text (kept in the version history).
   app.post('/api/chatgpt-tasks/:task/apply', auth, writer, wrap(async (req, res) => {
     const t = await screenTask(req);
     if (t.status !== 'draft_received' || t.applied_at || !t.received_text) throw fail(409, 'Não há rascunho aguardando confirmação nesta tarefa.');
     const e = await asHttp(() => openEvaluation(t));
-    const version = await writeSection(e, t.received_text, warningsOf(t.received_text), req.user.id);
-    await pool.execute("UPDATE chatgpt_tasks SET status='reviewed',applied_at=CURRENT_TIMESTAMP,applied_by=?,applied_version=?,received_text=NULL WHERE id=?", [req.user.id, version, t.id]);
+    const version = await writeSection(e, t.section_key, t.received_text, req.user.id);
+    await pool.execute("UPDATE chatgpt_tasks SET status='reviewed',applied_at=CURRENT_TIMESTAMP,applied_by=?,applied_version=?,received_text=NULL,notes=NULL WHERE id=?", [req.user.id, version, t.id]);
     await audit(req, 'chatgpt_draft_applied', e.id);
     res.json(await view(await taskById(t.id)));
   }));
   app.post('/api/chatgpt-tasks/:task/discard', auth, writer, wrap(async (req, res) => {
     const t = await screenTask(req);
-    await pool.execute("UPDATE chatgpt_tasks SET status='discarded',received_text=NULL WHERE id=?", [t.id]);
+    await pool.execute("UPDATE chatgpt_tasks SET status='discarded',received_text=NULL,notes=NULL WHERE id=?", [t.id]);
     await audit(req, 'chatgpt_task_discarded', t.evaluation_id);
     res.json({ok: true});
   }));
@@ -302,28 +303,31 @@ export function mountChatGpt(app, deps, cfg = chatgptConfig()) {
     async function callTool(req, name, args) {
       const t = ownTask(await taskByCode(args.codigo), req.user);
       if (t.mode !== 'mcp') throw new ToolError('Esta tarefa foi preparada para cópia e colagem, não para o plugin. Prepare uma tarefa do tipo plugin no NeuroLaudos IA.');
-      if (name === 'consultar_status_anamnese') {
+      if (name === 'consultar_status_tarefa') {
         const v = await view(t);
-        return {codigo: v.code, status: v.status, status_texto: v.status_label, rascunho_aplicado: v.applied, aguardando_confirmacao_da_psicologa: v.needs_confirmation, expira_em: v.expires_at};
+        return {codigo: v.code, secao: v.section_name, status: v.status, status_texto: v.status_label, rascunho_aplicado: v.applied, aguardando_confirmacao_da_psicologa: v.needs_confirmation, expira_em: v.expires_at};
       }
-      if (name === 'obter_anamnese_pendente') {
+      if (name === 'obter_tarefa_pendente') {
         usable(t);
         if (t.status === 'draft_received') throw new ToolError('Esta tarefa já recebeu um rascunho. Para refazer, prepare uma nova tarefa no NeuroLaudos IA.');
         const e = await openEvaluation(t);
-        const a = await deps.anamnesisForChatGpt(e);
+        const m = await deps.sectionForChatGpt(e, t.section_key, t.notes || '');
+        const images = t.include_images ? await deps.sectionImages(e, t.section_key) : [];
         await pool.execute("UPDATE chatgpt_tasks SET status='processing',fetched_at=COALESCE(fetched_at,CURRENT_TIMESTAMP) WHERE id=? AND status IN ('pending','processing')", [t.id]);
-        await audit(req, 'chatgpt_task_fetched', e.id);
+        await audit(req, 'chatgpt_task_fetched_' + t.section_key, e.id);
         return {
-          codigo: t.code, secao: 'Anamnese', instrucao_de_redacao: CHATGPT_ANAMNESIS_INSTRUCTION, regra_de_sexo: a.genderRule, formato: CHATGPT_ANAMNESIS_FORMAT,
-          anotacoes_da_anamnese: a.notes, dados_pessoais_trocados_por_marcadores: a.hidden, expira_em: t.expires_at,
-          proximo_passo: 'Redija a anamnese completa e chame salvar_rascunho_anamnese com este código, o texto final e um id_operacao novo.',
+          codigo: t.code, secao: nameOf(t.section_key), instrucao_de_redacao: m.instruction, formato: m.format,
+          rotulo_dos_dados: m.dataLabel, dados_da_secao: m.data, dados_pessoais_trocados_por_marcadores: m.hidden,
+          imagens_anexadas: images.length, expira_em: t.expires_at,
+          proximo_passo: 'Redija o texto completo da seção seguindo a instrução e chame salvar_rascunho com este código, o texto final e um id_operacao novo.',
+          ...(images.length ? {[IMAGES]: images} : {}),
         };
       }
-      if (name === 'salvar_rascunho_anamnese') {
+      if (name === 'salvar_rascunho') {
         const r = await saveAnswer(req, t, args.texto, args.id_operacao, 'mcp');
         return {
-          codigo: r.code, status: r.status, status_texto: r.status_label, gravacao_repetida: !!r.duplicate,
-          mensagem: r.needs_confirmation ? 'Rascunho recebido. A avaliação já tem uma anamnese; a psicóloga precisa confirmar a substituição no NeuroLaudos IA.' : 'Rascunho salvo na Anamnese do NeuroLaudos IA para revisão e aprovação da psicóloga.',
+          codigo: r.code, secao: r.section_name, status: r.status, status_texto: r.status_label, gravacao_repetida: !!r.duplicate,
+          mensagem: r.needs_confirmation ? 'Rascunho recebido. A seção já tem texto; a psicóloga precisa confirmar a substituição no NeuroLaudos IA.' : 'Rascunho salvo no NeuroLaudos IA para revisão e aprovação da psicóloga.',
         };
       }
       throw new ToolError('Ferramenta desconhecida');
@@ -347,7 +351,7 @@ export function mountChatGpt(app, deps, cfg = chatgptConfig()) {
     const now = new Date().toISOString(), old = new Date(Date.now() - cfg.keepDays * 864e5).toISOString();
     await pool.execute("UPDATE chatgpt_tasks SET status='expired' WHERE status IN ('pending','processing') AND expires_at<=?", [now]);
     // A received draft waiting for confirmation is kept keepDays after the task expiry, then only the status remains.
-    await pool.execute('UPDATE chatgpt_tasks SET received_text=NULL WHERE received_text IS NOT NULL AND expires_at<=?', [old]);
+    await pool.execute('UPDATE chatgpt_tasks SET received_text=NULL,notes=NULL WHERE (received_text IS NOT NULL OR notes IS NOT NULL) AND expires_at<=?', [old]);
     await pool.execute('DELETE FROM oauth_requests WHERE expires_at<=?', [now]);
     await pool.execute('DELETE FROM oauth_codes WHERE expires_at<=?', [now]);
     await pool.execute('DELETE FROM oauth_tokens WHERE expires_at<=? OR (revoked_at IS NOT NULL AND revoked_at<=?)', [now, old]);

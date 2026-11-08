@@ -154,18 +154,18 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
 <div *ngIf="api.toast()" class="toast" role="status">{{api.toast()}}</div>
 `,
   styles: [`
-:host{display:block;height:100vh}
+:host{display:block;height:calc(100vh / var(--zoom, 1))}
 nl-icon{--ico-size:16px}
 
 /* ---------- Login ---------- */
-.login{position:relative;display:grid;grid-template-columns:1fr minmax(420px,42%);min-height:100vh;background:var(--sidebar-deep);overflow:hidden}
+.login{position:relative;display:grid;grid-template-columns:1fr minmax(420px,42%);min-height:calc(100vh / var(--zoom, 1));background:var(--sidebar-deep);overflow:hidden}
 .login-waves{position:absolute;inset:0;width:100%;height:100%}
 .login-waves .w1{fill:var(--sidebar-bg)}.login-waves .w2{fill:var(--sidebar-active);opacity:.35}
 .login-theme{position:absolute;top:20px;right:24px;z-index:2;display:flex;align-items:center}
-.pitch{position:relative;z-index:1;color:var(--sidebar-text);padding:clamp(72px,13vh,180px) 64px 48px clamp(40px,7vw,160px);max-width:760px}
+.pitch{position:relative;z-index:1;color:var(--sidebar-text);padding:clamp(72px,calc(13vh / var(--zoom, 1)),180px) 64px 48px clamp(40px,calc(7vw / var(--zoom, 1)),160px);max-width:760px}
 .pitch .bar{width:96px;height:6px;border-radius:var(--radius-pill);background:var(--brand-mint);margin-bottom:36px}
-.pitch h1{font-size:clamp(40px,4.4vw,64px);line-height:1;font-weight:700;letter-spacing:-.01em}
-.pitch h2{margin-top:14px;font-size:clamp(20px,2vw,28px);line-height:1.25;font-weight:400}
+.pitch h1{font-size:clamp(40px,calc(4.4vw / var(--zoom, 1)),64px);line-height:1;font-weight:700;letter-spacing:-.01em}
+.pitch h2{margin-top:14px;font-size:clamp(20px,calc(2vw / var(--zoom, 1)),28px);line-height:1.25;font-weight:400}
 .pitch p{margin:24px 0 32px;font-size:16px;line-height:1.55;color:var(--sidebar-muted);max-width:520px}
 .pitch ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:18px}
 .pitch li{display:flex;gap:16px;align-items:center}
@@ -190,7 +190,7 @@ nl-icon{--ico-size:16px}
 @media(max-width:900px){.login{grid-template-columns:1fr}.pitch{display:none}}
 
 /* ---------- App shell ---------- */
-.app{display:grid;grid-template-columns:248px minmax(0,1fr);height:100vh;background:var(--bg);transition:grid-template-columns .2s ease}
+.app{display:grid;grid-template-columns:248px minmax(0,1fr);height:calc(100vh / var(--zoom, 1));background:var(--bg);transition:grid-template-columns .2s ease}
 .app.nav-collapsed{grid-template-columns:76px minmax(0,1fr)}
 .nav{position:relative;overflow:hidden;background:var(--sidebar-bg);color:var(--sidebar-text);display:flex;flex-direction:column;gap:4px;padding:20px 14px 14px;margin:12px 0 12px 12px;border-radius:var(--radius-xl)}
 .nav-brand{position:relative;z-index:1;display:flex;align-items:center;background:none;border:0;padding:0 8px 18px;cursor:pointer}
@@ -219,7 +219,7 @@ nl-icon{--ico-size:16px}
 .nav-collapsed .nav-user{flex-direction:column;padding:10px 0 2px;gap:6px}
 .nav-collapsed .nav-logout{margin-left:0}
 
-.workspace{display:flex;flex-direction:column;min-width:0;height:100vh}
+.workspace{display:flex;flex-direction:column;min-width:0;height:calc(100vh / var(--zoom, 1))}
 .top{height:64px;flex:none;display:flex;align-items:center;gap:12px;padding:0 24px}
 .top .grow{flex:1}
 .gsearch{position:relative;display:flex;align-items:center;flex:0 1 560px;min-width:200px}

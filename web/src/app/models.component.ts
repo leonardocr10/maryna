@@ -210,7 +210,7 @@ const blankForm = () => ({name: '', description: '', audience: 'geral' as Audien
 .mtabs button{display:inline-flex;align-items:center;gap:8px;padding:16px 14px;border:0;background:none;border-bottom:2.5px solid transparent;font:500 14.5px var(--font);color:var(--text-2);cursor:pointer;white-space:nowrap}
 .mtabs button.on{color:var(--primary-text);border-bottom-color:var(--primary);font-weight:600}
 .mtabs button:focus-visible{outline:2px solid var(--primary);outline-offset:-4px;border-radius:6px}
-.mgrid{display:grid;grid-template-columns:clamp(260px,22vw,330px) minmax(0,1fr) clamp(260px,21vw,320px);gap:16px;align-items:start}
+.mgrid{display:grid;grid-template-columns:clamp(260px,calc(22vw / var(--zoom, 1)),330px) minmax(0,1fr) clamp(260px,calc(21vw / var(--zoom, 1)),320px);gap:16px;align-items:start}
 .mgrid.empty{grid-template-columns:minmax(0,1fr)}
 .mlist{padding:14px;display:flex;flex-direction:column;gap:8px}
 .mlist .search-box{width:100%}
@@ -243,7 +243,7 @@ const blankForm = () => ({name: '', description: '', audience: 'geral' as Audien
 .itabs button{display:inline-flex;align-items:center;gap:8px;padding:11px 12px;border:0;background:none;border-bottom:2.5px solid transparent;font:500 14px var(--font);color:var(--text-2);cursor:pointer}
 .itabs button.on{color:var(--primary-text);border-bottom-color:var(--primary);font-weight:600}
 .itabs button:focus-visible{outline:2px solid var(--primary);outline-offset:-4px;border-radius:6px}
-.pv{padding:14px;background:var(--bg);max-height:calc(100vh - 330px);min-height:360px;overflow:auto;border-bottom:1px solid var(--divider)}
+.pv{padding:14px;background:var(--bg);max-height:calc(calc(100vh / var(--zoom, 1)) - 330px);min-height:360px;overflow:auto;border-bottom:1px solid var(--divider)}
 .pv-doc{min-height:200px}
 .pv-doc ::ng-deep .docx-wrapper{background:transparent;padding:10px 0}
 .pv-doc ::ng-deep .docx-wrapper>section.docx{box-shadow:var(--shadow-card);margin-bottom:16px}
@@ -297,15 +297,15 @@ const blankForm = () => ({name: '', description: '', audience: 'geral' as Audien
 .tbl td.acts{text-align:right;white-space:nowrap}
 .tbl td.acts .btn+.btn{margin-left:6px}
 .pad{padding:0 20px 20px}
-.nmodal{width:min(1100px,calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto;display:flex;flex-direction:column;gap:14px}
+.nmodal{width:min(1100px,calc(calc(100vw / var(--zoom, 1)) - 32px));max-height:calc(calc(100vh / var(--zoom, 1)) - 48px);overflow:auto;display:flex;flex-direction:column;gap:14px}
 .nmodal h2{font-size:20px;font-weight:700}
 .ncols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;align-items:start}
 .ncol{display:flex;flex-direction:column;gap:14px;min-width:0}
-.nrep{max-height:calc(100vh - 230px);overflow:auto;padding-right:4px}
+.nrep{max-height:calc(calc(100vh / var(--zoom, 1)) - 230px);overflow:auto;padding-right:4px}
 .nempty{display:grid;place-items:center;text-align:center;min-height:220px;padding:24px;border:1.5px dashed var(--border-card);border-radius:var(--radius-lg);font-size:13.5px}
 @media(max-width:860px){.ncols{grid-template-columns:minmax(0,1fr)}.nrep{max-height:none;overflow:visible}}
 .mbtns{display:flex;justify-content:flex-end;gap:8px}
-@media(max-width:1280px){.mgrid{grid-template-columns:clamp(240px,28vw,320px) minmax(0,1fr)}.mside{grid-column:1/-1;position:static}}
+@media(max-width:1280px){.mgrid{grid-template-columns:clamp(240px,calc(28vw / var(--zoom, 1)),320px) minmax(0,1fr)}.mside{grid-column:1/-1;position:static}}
 @media(max-width:860px){.mgrid,.vgrid{grid-template-columns:minmax(0,1fr)}.fgrid{grid-template-columns:1fr}}
 `],
 })

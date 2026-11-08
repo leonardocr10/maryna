@@ -54,7 +54,7 @@ svg{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:
 .open .caret{transform:rotate(180deg)}
 .sm .fs-field{height:34px;font-size:13px;font-weight:500;padding:0 10px}
 .sm.open .fs-field,.sm .fs-field:focus-visible{padding:0 9.5px}
-.fs-menu{position:absolute;top:calc(100% + 6px);left:0;min-width:100%;width:max-content;max-width:min(380px,90vw);background:var(--card);border:1px solid var(--border-card);border-radius:var(--radius-lg);box-shadow:var(--shadow-menu);padding:6px;z-index:40}
+.fs-menu{position:absolute;top:calc(100% + 6px);left:0;min-width:100%;width:max-content;max-width:min(380px,calc(90vw / var(--zoom, 1)));background:var(--card);border:1px solid var(--border-card);border-radius:var(--radius-lg);box-shadow:var(--shadow-menu);padding:6px;z-index:40}
 .fs-menu.up{top:auto;bottom:calc(100% + 6px)}
 .fs-menu.right{left:auto;right:0}
 .fs-search{position:relative;display:flex;align-items:center;margin-bottom:6px}

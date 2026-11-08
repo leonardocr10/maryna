@@ -84,7 +84,7 @@ const BLOCK = 'p,h3,li';
     .rte-sep{width:1px;height:20px;background:var(--border);margin:0 4px}
     .rte-color input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
     .rte-color .hl{background:#ff0;color:#000;padding:0 2px;border-radius:2px}
-    .rte-area{min-height:320px;max-height:70vh;overflow:auto;padding:14px 16px;outline:none;line-height:1.6;border:0 !important;border-radius:0 0 var(--radius-sm) var(--radius-sm)}
+    .rte-area{min-height:320px;max-height:calc(70vh / var(--zoom, 1));overflow:auto;padding:14px 16px;outline:none;line-height:1.6;border:0 !important;border-radius:0 0 var(--radius-sm) var(--radius-sm)}
     .rte-area:focus{box-shadow:inset 0 0 0 2px var(--ring)}
     .rte-area p,.rte-area h3{margin:0 0 .6em}
     .rte-area h3{font-size:inherit;font-weight:700}

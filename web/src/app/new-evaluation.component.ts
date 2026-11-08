@@ -77,7 +77,7 @@ import {FilterSelectComponent} from './ui/filter-select.component';
 </div>`,
   styles: [`
 nl-icon{--ico-size:16px}
-.layout{display:grid;grid-template-columns:minmax(0,1fr) clamp(280px,24vw,360px);gap:16px;align-items:start}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) clamp(280px,calc(24vw / var(--zoom, 1)),360px);gap:16px;align-items:start}
 .form{min-width:0;display:flex;flex-direction:column;gap:16px}
 .form>.card{padding:22px 24px}
 .aside{display:flex;flex-direction:column;gap:16px}

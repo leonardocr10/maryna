@@ -25,7 +25,13 @@ export class ThemeService {
     try { localStorage.setItem('nl-zoom', String(z)); } catch {}
   }
   canZoom(dir: -1 | 1) { const list = ThemeService.ZOOMS, i = list.indexOf(this.zoom()); return dir < 0 ? i > 0 : i < list.length - 1; }
-  private applyZoom(z: number) { document.documentElement.style.zoom = z === 100 ? '' : String(z / 100); }
+  /** Zooms the whole page like the browser zoom: CSS zoom on <html>, and --zoom so every vh/vw size in the styles is
+   *  divided by it (written as calc(100vh / var(--zoom, 1))), keeping the screen filled at any size. */
+  private applyZoom(z: number) {
+    const root = document.documentElement.style;
+    root.zoom = z === 100 ? '' : String(z / 100);
+    if (z === 100) root.removeProperty('--zoom'); else root.setProperty('--zoom', String(z / 100));
+  }
 
   private static initial(): Theme {
     try {

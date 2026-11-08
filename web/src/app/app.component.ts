@@ -1,4 +1,4 @@
-import {Component, HostListener, effect, inject, signal} from '@angular/core';
+import {Component, HostListener, effect, inject, signal, NgZone} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {FormsModule} from '@angular/forms';
 import {Api, ROLE_NAMES} from './api.service';
@@ -14,6 +14,7 @@ import {ConfirmDialogComponent} from './ui/confirm-dialog.component';
 import {DashboardComponent} from './dashboard.component';
 import {PatientsComponent} from './patients.component';
 import {ModelsComponent} from './models.component';
+import {DevolutivasComponent} from './devolutivas.component';
 import {ReportsComponent} from './reports.component';
 import {LibraryComponent} from './library.component';
 import {ChatgptConsentComponent} from './ui/chatgpt-consent.component';
@@ -22,13 +23,13 @@ import {TopbarService} from './topbar.service';
 import {installTooltips} from './tooltip';
 import {ReadingModeComponent} from './ui/reading-mode.component';
 
-type Screen = 'home' | 'evaluation' | 'new' | 'settings' | 'patients' | 'models' | 'library' | 'reports';
-const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 'models', 'library', 'reports'];
+type Screen = 'home' | 'evaluation' | 'new' | 'settings' | 'patients' | 'models' | 'library' | 'reports' | 'devolutivas';
+const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 'models', 'library', 'reports', 'devolutivas'];
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule, NewEvaluationComponent, EvaluationComponent, SettingsComponent, IconComponent, ConfirmDialogComponent, DashboardComponent, PatientsComponent, ModelsComponent, ReportsComponent, LibraryComponent, ChatgptConsentComponent, CommandPaletteComponent, ReadingModeComponent],
+  imports: [CommonModule, FormsModule, NewEvaluationComponent, EvaluationComponent, SettingsComponent, IconComponent, ConfirmDialogComponent, DashboardComponent, PatientsComponent, ModelsComponent, DevolutivasComponent, ReportsComponent, LibraryComponent, ChatgptConsentComponent, CommandPaletteComponent, ReadingModeComponent],
   template: `
 <!-- Theme switch, shared by the login screen and the top bar -->
 <ng-template #themeSwitch>
@@ -156,6 +157,7 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
         <nl-evaluation *ngIf="screen()==='evaluation' && selectedId()" [id]="selectedId()" [autoGenerate]="autoGenerate"
           (changed)="load()" (deleted)="onDeleted()" (generatingChange)="generating=$event" (back)="goHome()"></nl-evaluation>
         <nl-models *ngIf="screen()==='models'"></nl-models>
+        <nl-devolutivas *ngIf="screen()==='devolutivas'"></nl-devolutivas>
         <nl-library *ngIf="screen()==='library'"></nl-library>
         <nl-reports *ngIf="screen()==='reports'" [evaluations]="evaluations()"></nl-reports>
       </div>
@@ -301,6 +303,7 @@ export class AppComponent {
   navItems: {id: Screen; label: string; icon: string}[] = [
     {id: 'home', label: 'Avaliações', icon: 'home'}, {id: 'patients', label: 'Pacientes', icon: 'users'},
     {id: 'models', label: 'Modelos de laudo', icon: 'doc'}, {id: 'library', label: 'Biblioteca de testes', icon: 'lib'},
+    {id: 'devolutivas', label: 'Devolutivas', icon: 'calendar'},
     {id: 'reports', label: 'Relatórios', icon: 'chart'}, {id: 'settings', label: 'Configurações', icon: 'gear'}];
   evaluations = signal<any[]>([]);
   navCollapsed = signal((() => { try { return localStorage.getItem('nl_nav_collapsed') === '1'; } catch { return false; } })());
@@ -315,10 +318,11 @@ export class AppComponent {
 
 
   private wheelZoom = inject(WheelZoom);
+  private zone = inject(NgZone);
   constructor() {
     installTooltips();
     // Ctrl + wheel anywhere else: the app's screen size (same as A- / A+), never the browser zoom
-    this.wheelZoom.register(dir => { if (this.theme.canZoom(dir)) this.theme.stepZoom(dir); return true; });
+    this.wheelZoom.register(dir => { this.zone.run(() => { if (this.theme.canZoom(dir)) this.theme.stepZoom(dir); }); this.wheelZoom.hud('Tela ' + this.theme.zoom() + '%'); return true; });
     if (this.api.loggedIn()) this.api.loadMe().then(() => { if (!this.mustChange()) this.load(); });
     effect(() => { try { sessionStorage.setItem('nl_view', JSON.stringify({screen: this.screen(), id: this.selectedId()})); } catch {} });
   }

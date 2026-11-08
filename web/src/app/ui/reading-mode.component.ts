@@ -154,7 +154,14 @@ export class ReadingModeComponent implements AfterViewChecked, OnDestroy {
   private zone = inject(NgZone);
   private reader = inject(Reader);
   /** Ctrl + wheel in the reading mode: font size (the Word preview over it takes the wheel itself). */
-  private unwheel = inject(WheelZoom).register(dir => { if (!this.r.doc() || this.r.covered()) return false; this.set({size: this.prefs().size + dir}); return true; });
+  private wheel = inject(WheelZoom);
+  private unwheel = this.wheel.register(dir => {
+    if (!this.r.doc() || this.r.covered()) return false;
+    // the text scales at once; the new font size (a re-layout of the page) is applied when the wheel stops
+    const el = this.body?.nativeElement, base = this.prefs().size, next = Math.min(28, Math.max(14, this.wheel.current(el, base) + dir));
+    this.wheel.preview(el, base, next, v => this.set({size: v}), 'Letra ' + next);
+    return true;
+  });
   @ViewChild('root') root?: ElementRef<HTMLElement>;
   @ViewChild('scroller') scroller?: ElementRef<HTMLElement>;
   @ViewChild('body') body?: ElementRef<HTMLElement>;

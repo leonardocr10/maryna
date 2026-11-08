@@ -732,10 +732,22 @@ export class EvaluationComponent implements OnDestroy {
   // ---------- Full-window edit mode (index, editor sheet, tools; autosave as above) ----------
   private zone = inject(NgZone);
   /** Ctrl + wheel: the Word preview when it is on screen (alone or in the document view), else the edit mode's text zoom. */
-  private unwheel = inject(WheelZoom).register(dir => {
+  private wheel = inject(WheelZoom);
+  private unwheel = this.wheel.register(dir => {
     if (this.reading.doc() && !this.docOnly) return false;
-    if (this.docOnly || (this.mode === 'documento' && this.step === 3 && !this.editFull)) { this.setZoom(dir * 0.1); return true; }
-    if (this.editFull && this.editing) { this.emZoomStep(dir); return true; }
+    if (this.docOnly || (this.mode === 'documento' && this.step === 3 && !this.editFull)) {
+      // the Word page scales at once; the real zoom (a full re-layout of the document) only when the wheel stops
+      const box = this.previewBox?.nativeElement, cur = this.wheel.current(box, this.zoom);
+      const next = Math.min(2.5, Math.max(0.5, Math.round((cur + dir * 0.1) * 10) / 10));
+      this.wheel.preview(box, this.zoom, next, v => this.setZoom(v - this.zoom), Math.round(next * 100) + '%');
+      return true;
+    }
+    if (this.editFull && this.editing) {
+      const el = this.rte?.element, z = this.EM_ZOOMS, cur = this.wheel.current(el, this.emZoom), i = z.indexOf(cur);
+      const next = z[Math.max(0, Math.min(z.length - 1, (i < 0 ? 2 : i) + dir))];
+      this.wheel.preview(el, this.emZoom, next, v => { this.emZoom = v; }, Math.round(next * 100) + '%');
+      return true;
+    }
     return false;
   });
   editFull = false;

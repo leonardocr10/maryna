@@ -179,6 +179,28 @@ CREATE TABLE IF NOT EXISTS ai_settings(
   enabled INTEGER DEFAULT 0,
   updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
+-- Devolutiva schedule: rows from the clinic's spreadsheet (imported once, source='import') and one row per evaluation
+-- created in the app (source='evaluation'). For evaluation rows, the end of testing and the devolutiva date come live
+-- from the evaluation (end_date, delivered_at); the columns here hold the spreadsheet values.
+CREATE TABLE IF NOT EXISTS devolutiva_agenda(
+  id TEXT PRIMARY KEY,
+  source TEXT NOT NULL CHECK(source IN ('import','evaluation')),
+  evaluation_id TEXT NULL UNIQUE REFERENCES evaluations(id),
+  patient_name TEXT NOT NULL,
+  age_text TEXT NULL,
+  notes TEXT NULL,
+  tests_text TEXT NULL,
+  tests_done_date TEXT NULL,
+  start_text TEXT NULL,
+  readiness TEXT NULL,
+  delivery_text TEXT NULL,
+  delivery_date TEXT NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  updated_by TEXT NULL,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE INDEX IF NOT EXISTS ix_devolutiva_agenda_date ON devolutiva_agenda(delivery_date);
 INSERT OR IGNORE INTO ai_settings(id,model,enabled) VALUES(1,'gpt-4.1',0);
 CREATE TABLE IF NOT EXISTS ai_usage(
   id INTEGER PRIMARY KEY AUTOINCREMENT,

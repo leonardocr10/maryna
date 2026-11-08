@@ -417,18 +417,21 @@
       </div>
     </ng-container>
 
-    <section [hidden]="mode!=='documento'" class="card docview">
+    <section [hidden]="mode!=='documento'" class="card docview" [class.doc-only]="docOnly" [attr.role]="docOnly ? 'dialog' : null" [attr.aria-label]="docOnly ? 'Documento' : null">
       <div class="doctool">
         <span class="pg">{{pageCount ? (pageCount===1 ? '1 página' : 'Página ' + pageAt + ' de ' + pageCount) : 'Prévia do Word'}}</span>
         <span class="legend">Textos atuais, inclusive os ainda não aprovados</span>
         <span class="sp"></span>
         <div class="zoom" aria-label="Zoom"><button type="button" (click)="setZoom(-0.1)" aria-label="Diminuir zoom">−</button><span>{{(zoom*100).toFixed(0)}}%</span><button type="button" (click)="setZoom(0.1)" aria-label="Aumentar zoom">+</button></div>
+        <button *ngIf="docOnly" class="btn btn-primary btn-sm" (click)="closeDocOnly()" title="Volta para onde você estava (Esc)"><nl-icon name="chevl"/> Voltar</button>
+        <ng-container *ngIf="!docOnly">
         <button *ngIf="docFrom" class="btn btn-secondary btn-sm" (click)="backToSection()"><nl-icon name="chevl"/> Voltar a {{sectionName(docFrom)}}</button>
         <button *ngIf="!docFrom" class="btn btn-secondary btn-sm" (click)="setMode('secoes')"><nl-icon name="edit"/> Voltar às seções</button>
+        </ng-container>
       </div>
       <div class="docsplit">
       <!-- Modelo B: section texts on the left (approve or edit here), the Word on the right; a click on a text shows it in the Word -->
-      <aside #side class="docside" [hidden]="docEditing" aria-label="Textos das seções" [style.flex-basis.px]="sideW || null">
+      <aside #side class="docside" [hidden]="docEditing || docOnly" aria-label="Textos das seções" [style.flex-basis.px]="sideW || null">
         <p class="caption">Clique num texto para vê-lo no Word.</p>
         <div *ngFor="let s of docSideRows(); trackBy: bySection" class="dblk" [class.on]="docActive===s.id" [class.editing]="editing===s.id" (click)="editing!==s.id && showInDoc(s.id)">
           <div class="dblk-head"><b>{{s.name}}</b>
@@ -454,7 +457,7 @@
           </div>
         </div>
       </aside>
-      <div class="dsplit" [hidden]="docEditing" role="separator" aria-orientation="vertical" aria-label="Arraste para mudar a largura dos painéis" tabindex="0" title="Arraste para mudar a largura (duplo clique volta ao padrão)" (pointerdown)="startResize($event, side)" (keydown)="resizeKey($event, side)" (dblclick)="resetSide()"><span></span></div>
+      <div class="dsplit" [hidden]="docEditing || docOnly" role="separator" aria-orientation="vertical" aria-label="Arraste para mudar a largura dos painéis" tabindex="0" title="Arraste para mudar a largura (duplo clique volta ao padrão)" (pointerdown)="startResize($event, side)" (keydown)="resizeKey($event, side)" (dblclick)="resetSide()"><span></span></div>
       <div class="docmain">
       <div class="docfind">
         <label *ngIf="!docEditing" class="find" [class.none]="findQuery.trim() && !findHits.length">
@@ -466,7 +469,7 @@
         </label>
         <nl-filter-select *ngIf="docSections().length && !docEditing" size="sm" [searchable]="true" ariaLabel="Ir para a seção" placeholder="Ir para a seção" icon="list"
           [options]="docSections()" value="" (valueChange)="$event && showInDoc($event)"></nl-filter-select>
-        <button *ngIf="!readOnly() && !docEditing" type="button" class="btn btn-secondary btn-sm" (click)="startDocEdit()" title="Editar os textos de todas as seções num documento só; cada mudança vai para a sua seção"><nl-icon name="edit"/> Editar documento</button>
+        <button *ngIf="!readOnly() && !docEditing && !docOnly" type="button" class="btn btn-secondary btn-sm" (click)="startDocEdit()" title="Editar os textos de todas as seções num documento só; cada mudança vai para a sua seção"><nl-icon name="edit"/> Editar documento</button>
         <ng-container *ngIf="docEditing">
           <span class="de-status" aria-live="polite">{{docSaving ? 'Salvando…' : docSavedAt ? 'Salvo às ' + docSavedAt : 'Salva sozinho a cada pausa'}}</span>
           <button type="button" class="btn btn-primary btn-sm" [disabled]="docFinishing" (click)="finishDocEdit()"><nl-icon name="check"/> Concluir edição</button>
@@ -630,7 +633,7 @@
         <p class="grp">Revisão</p>
         <button type="button" class="tool" (click)="emTogglePanel('find')"><nl-icon name="search"/><span><b>Buscar e substituir</b><small>Ctrl+F</small></span></button>
         <button type="button" class="tool" (click)="emTogglePanel('versions')"><nl-icon name="restore"/><span><b>Versões</b></span><span class="cnt">{{(section(editing)?.version || 1) - 1}}</span></button>
-        <button *ngIf="canWrite() && !isMissing(editing) && !isExcluded(editing)" type="button" class="tool" (click)="emSeeInDoc()"><nl-icon name="eye"/><span><b>Ver no documento</b></span></button>
+        <button *ngIf="canWrite()" type="button" class="tool" (click)="openDocOnly(editing)"><nl-icon name="eye"/><span><b>Ver documento</b><small>como o Word está ficando</small></span></button>
         <div class="tool listen">
           <button type="button" class="playb" (click)="emListen()" [attr.aria-label]="emNarr.state()==='playing' || emNarr.state()==='loading' ? 'Pausar leitura' : 'Ouvir texto'"><nl-icon [name]="emNarr.state()==='playing' || emNarr.state()==='loading' ? 'pause' : 'play'"/></button>
           <span><b>Ouvir texto</b><small>{{emNarr.state()==='unavailable' ? 'Voz indisponível agora' : emNarr.count() && emNarr.state()!=='ready' && emNarr.state()!=='done' ? 'frase ' + (emNarr.index() + 1) + ' de ' + emNarr.count() : 'frase por frase'}}</small></span>

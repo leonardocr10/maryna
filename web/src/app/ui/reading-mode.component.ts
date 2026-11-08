@@ -34,6 +34,10 @@ export class ReadingService {
   context = '';
   /** Set by the caller when the texts can be edited: "Editar" in the bar calls it with the key of the text on screen. */
   onEdit: ((key: string) => void) | null = null;
+  /** Set by the caller when the Word preview can be shown: "Ver documento" calls it with the key on screen. */
+  onDocument: ((key: string) => void) | null = null;
+  /** True while a layer of the caller is over the reading mode (e.g. the Word preview): keys are left to it. */
+  readonly covered = signal(false);
   /** Last place read per context (memory only, this session): section title and scroll fraction. */
   private static LAST = 'nl.reading.last';
   /** Last place read per context (evaluation): section title and scroll fraction, kept in this browser. */
@@ -48,8 +52,8 @@ export class ReadingService {
       localStorage.setItem(ReadingService.LAST, JSON.stringify(all));
     } catch {}
   }
-  open(d: ReadingDoc | ReadingDoc[], at = 0, context = '', onEdit: ((key: string) => void) | null = null) {
-    this.onEdit = onEdit;
+  open(d: ReadingDoc | ReadingDoc[], at = 0, context = '', onEdit: ((key: string) => void) | null = null, onDocument: ((key: string) => void) | null = null) {
+    this.onEdit = onEdit; this.onDocument = onDocument;
     const all = (Array.isArray(d) ? d : [d]).filter(x => (x.text || '').trim() || (x.html || '').trim());
     if (!all.length) return;
     const target = Array.isArray(d) ? d[at] : d;
@@ -57,7 +61,7 @@ export class ReadingService {
     this.list.set(all); this.index.set(Math.max(0, all.indexOf(target)));
   }
   go(i: number) { if (i >= 0 && i < this.list().length) this.index.set(i); }
-  close() { this.list.set([]); this.index.set(0); this.onEdit = null; }
+  close() { this.list.set([]); this.index.set(0); this.onEdit = null; this.onDocument = null; }
 }
 
 type Item = {text: string; label?: string};
@@ -234,6 +238,9 @@ export class ReadingModeComponent implements AfterViewChecked, OnDestroy {
   }
   close() { this.saveSpot(); this.r.close(); }
   canEdit() { return !!this.r.onEdit && !!this.r.doc()?.key; }
+  canDocument() { return !!this.r.onDocument && !!this.r.doc()?.key; }
+  /** The Word as it is turning out, over the reading mode (closing it comes back here). */
+  document() { const k = this.r.doc()?.key, go = this.r.onDocument; if (!k || !go) return; this.narrator.pause(); this.pauseAuto(); go(k); }
   /** Leaves the reading mode and opens the edit mode on the text on screen. */
   edit() { const k = this.r.doc()?.key, go = this.r.onEdit; if (!k || !go) return; this.close(); go(k); }
   ngOnDestroy() { this.narrator.destroy(); this.stopAuto(); }
@@ -406,7 +413,7 @@ export class ReadingModeComponent implements AfterViewChecked, OnDestroy {
 
   @HostListener('document:keydown', ['$event'])
   onKey(e: KeyboardEvent) {
-    if (!this.r.doc()) return;
+    if (!this.r.doc() || this.r.covered()) return;
     const typing = /^(INPUT|SELECT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName || '');
     if (e.key === 'Escape') {
       e.preventDefault();

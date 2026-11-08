@@ -791,3 +791,9 @@ button.ps-pill:focus-visible { outline: 2px solid var(--primary); outline-offset
 .mb-spin { width: 20px; height: 20px; border-radius: 50%; border: 2.5px solid var(--primary-border); border-top-color: var(--primary); animation: mbSpin .8s linear infinite; }
 @keyframes mbSpin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .mb-spin { animation-duration: 2.5s; } }
+
+/* "Ver documento" from the reading or edit mode: only the Word preview, whole window, above both modes */
+.docview.doc-only { position: fixed; inset: 0; z-index: 1020; margin: 0; border-radius: 0; display: flex; flex-direction: column; max-width: none; height: auto; }
+.docview.doc-only .docsplit { flex: 1; min-height: 0; }
+.docview.doc-only .docmain { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.docview.doc-only .docscroll { flex: 1; min-height: 0; max-height: none; height: auto; overflow: auto; }

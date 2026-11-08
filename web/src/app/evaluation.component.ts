@@ -858,7 +858,7 @@ export class EvaluationComponent implements OnDestroy {
     const k = this.editing, rows = this.reviewRows().filter(s => s.id === k || this.text(s.id).trim());
     const docs = rows.map(s => ({key: s.id, title: s.name, subtitle: 'Seção ' + this.secNum(s.id), num: this.secNum(s.id), text: s.id === k ? this.editText : this.text(s.id),
       html: (s.id === k ? this.editHtml : this.richOf(s.id)) || undefined, status: {label: this.secLabel(s.id), css: this.secKind(s.id)}}));
-    this.reading.open(docs, Math.max(0, rows.findIndex(s => s.id === k)), this.evaluationId, this.editFromReading());
+    this.reading.open(docs, Math.max(0, rows.findIndex(s => s.id === k)), this.evaluationId, this.editFromReading(), this.canWrite() ? (key: string) => this.openDocOnly(key) : null);
   }
   /** "Editar" in the reading mode: back to (or into) the edit mode on the section being read. Not offered read-only. */
   private editFromReading(): ((k: string) => void) | null {
@@ -933,7 +933,12 @@ export class EvaluationComponent implements OnDestroy {
   @HostListener('window:beforeunload', ['$event']) emBeforeUnload(e: BeforeUnloadEvent) {
     if (this.editing && (this.isDirty() || this.saveState === 'saving' || this.saveState === 'error')) { e.preventDefault(); e.returnValue = ''; }
   }
-  @HostListener('document:keydown', ['$event']) emKey(e: KeyboardEvent) {
+  /** One keydown listener for the whole component: Angular keeps only one host listener per event, so the edit mode
+   *  keys and the document view's Ctrl+F share it (the edit mode first). */
+  @HostListener('document:keydown', ['$event']) onKeydown(e: KeyboardEvent) { this.emKey(e); if (!e.defaultPrevented) this.onDocKey(e); }
+  emKey(e: KeyboardEvent) {
+    if (this.docOnly && e.key === 'Escape' && !this.confirm.current()) { e.preventDefault(); e.stopPropagation(); this.closeDocOnly(); return; }
+    if (this.docOnly) return;
     if (!this.editFull || this.reading.doc()) return;
     const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
     if (e.key === 'Escape') {
@@ -1183,7 +1188,7 @@ export class EvaluationComponent implements OnDestroy {
     else if (e.key === 'Escape') { e.preventDefault(); this.clearFind(); }
   }
   /** Ctrl+F in the document view goes to this search (it ignores accents); a second Ctrl+F opens the browser's. */
-  @HostListener('document:keydown', ['$event']) onDocKey(e: KeyboardEvent) {
+  onDocKey(e: KeyboardEvent) {
     if (this.step !== 3 || this.mode !== 'documento' || !(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'f') return;
     const el = this.findBox?.nativeElement; if (!el || document.activeElement === el) return;
     e.preventDefault(); el.focus(); el.select();
@@ -1230,6 +1235,24 @@ export class EvaluationComponent implements OnDestroy {
     if (!this.canWrite()) return;
     if (this.isMissing(k)) { this.api.notify('Esta seção não entra no Word: o arquivo base não tem o lugar dela.'); return; }
     this.docFrom = k; this.docJump = k; this.docActive = k; this.setMode('documento');
+  }
+  /** "Ver documento" from the reading or edit mode: the Word preview alone, over everything (no section column).
+   *  Closing it goes back to the mode it was opened from; the text being edited is saved first. */
+  docOnly = false; private docOnlyMode: 'secoes' | 'documento' = 'secoes';
+  openDocOnly(k: string) {
+    if (!this.canWrite()) return;
+    return this.busy('Salvando e montando o documento…', async () => {
+      if (this.editing && !await this.emSafe()) return;
+      this.emNarr.pause();
+      this.docOnlyMode = this.mode; this.docOnly = true; this.reading.covered.set(true);
+      this.docFrom = ''; this.docJump = this.isMissing(k) || this.isExcluded(k) ? '' : k; this.docActive = this.docJump;
+      this.mode = 'documento';
+      await new Promise(r => setTimeout(r)); await this.renderPreview();
+    });
+  }
+  closeDocOnly() {
+    this.docOnly = false; this.reading.covered.set(false);
+    this.paint('nl-target', []); this.docActive = ''; this.mode = this.docOnlyMode;
   }
   backToSection() { const k = this.docFrom; this.docFrom = ''; this.paint('nl-target', []); this.setMode('secoes'); if (k) this.select(k); }
   // ---------- ChatGPT (manual mode) ----------
@@ -1290,7 +1313,7 @@ export class EvaluationComponent implements OnDestroy {
     // status only as the system keeps it (approved, to review, pending); reading never changes it
     const docs = rows.map(s => ({key: s.id, title: s.name, subtitle: 'Seção ' + this.secNum(s.id), num: this.secNum(s.id), text: this.text(s.id), html: this.richOf(s.id) || undefined,
       status: {label: this.secLabel(s.id), css: this.secKind(s.id)}}));
-    this.reading.open(docs, Math.max(0, rows.findIndex(s => s.id === k)), this.evaluationId, this.editFromReading());
+    this.reading.open(docs, Math.max(0, rows.findIndex(s => s.id === k)), this.evaluationId, this.editFromReading(), this.canWrite() ? (key: string) => this.openDocOnly(key) : null);
   }
   hasFileText(k: string) { return this.fileShown(k).some(b => b.type === 'p'); }
   readFileText(k: string, name: string) { this.reading.open({title: name, subtitle: 'Texto presente no arquivo base', text: this.fileShown(k).filter(b => b.type === 'p').map(b => b.text).join('\n\n')}); }

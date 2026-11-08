@@ -92,6 +92,7 @@
           </button>
         </li>
       </ol>
+      <button *ngIf="canDocument()" type="button" class="side-doc" (click)="document()" title="Mostra o Word como está ficando, só o documento"><nl-icon name="doc"/><span><b>Ver documento</b><small>como o Word está ficando</small></span></button>
     </nav>
     <div *ngIf="narrow() && sideOpen() && r.list().length > 1" class="scrim" (click)="toggleSide()"></div>
 

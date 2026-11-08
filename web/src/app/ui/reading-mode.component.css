@@ -109,6 +109,11 @@ nl-icon { --ico-size: 16px; }
 .rm-side .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rm-side .st { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--idle-dot); }
 .rm-side .st-ok { background: var(--ok-dot); } .rm-side .st-warn { background: var(--warn-dot); }
+.side-doc { width: 100%; display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--rt-border); border-radius: var(--radius-sm); background: var(--rt-page); color: var(--rt-text); font: inherit; text-align: left; cursor: pointer; --ico-size: 16px; }
+.side-doc:hover { border-color: var(--rt-accent); background: var(--rt-soft); }
+.side-doc > nl-icon { color: var(--rt-accent); }
+.side-doc span { display: flex; flex-direction: column; }
+.side-doc b { font-size: 13.5px; font-weight: 600; } .side-doc small { font-size: 11.5px; color: var(--rt-muted); }
 
 .rm-scroll { flex: 1; min-width: 0; overflow: auto; overscroll-behavior: contain; padding: 24px 20px 40px; scroll-behavior: auto; }
 .rm-page { margin: 0 auto; padding: clamp(22px, 4vh, 40px) clamp(18px, 4vw, 44px); background: var(--rt-page); color: var(--rt-text); border: 1px solid var(--rt-border); border-radius: var(--radius-lg); text-align: left; hyphens: manual; overflow-wrap: break-word; }

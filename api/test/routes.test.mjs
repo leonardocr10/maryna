@@ -294,6 +294,29 @@ test('approval and export: blocked until approved, then the evaluation is locked
   assert.deepEqual(kept.filter(t => t !== 'Paciente: ' + PATIENT), before.filter(t => t !== 'Paciente: ' + PATIENT));
 });
 
+test('a section missing from the base is created in the Word only when the psychologist chooses it', async () => {
+  const id = await withFiles();
+  const ev = `/api/evaluations/${id}`;
+  // the synthetic base has no "Indicações e recomendações" section
+  await api('PUT', ev + '/sections/recomendacoes', {token: tokens.psy, body: {content: 'Recomendação sintética criada.'}});
+  const text = async () => { const r = await api('POST', ev + '/preview', {token: tokens.psy}); const f = path.join(tmp, 'created-' + id + '.docx'); fs.writeFileSync(f, r.data); return docxText(f); };
+  assert.ok(!(await text()).includes('Recomendação sintética criada.'), 'not chosen: stays out of the Word');
+  assert.equal((await api('PUT', ev + '/created-sections', {token: tokens.assistant, body: {key: 'recomendacoes'}})).status, 403);
+  assert.equal((await api('PUT', ev + '/created-sections', {token: tokens.psy, body: {key: 'nada'}})).status, 400);
+  const on = await api('PUT', ev + '/created-sections', {token: tokens.psy, body: {key: 'recomendacoes'}});
+  assert.deepEqual(on.data.created_sections, ['recomendacoes']);
+  const after = await text(), before = docxText(path.join(tmp, 'base.docx'));
+  const i = after.indexOf('INDICAÇÕES E RECOMENDAÇÕES');
+  assert.ok(i >= 0 && after[i + 1] === 'Recomendação sintética criada.');
+  // only insertions: every base paragraph is kept, in order
+  const added = ['INDICAÇÕES E RECOMENDAÇÕES', 'Recomendação sintética criada.', ''];
+  const kept = after.filter((t, j) => !(j >= i && j < i + 3 && added.includes(t)));
+  assert.deepEqual(kept.filter(t => t !== 'Paciente: ' + PATIENT), before.filter(t => t !== 'Paciente: ' + PATIENT));
+  const off = await api('PUT', ev + '/created-sections', {token: tokens.psy, body: {key: 'recomendacoes', create: false}});
+  assert.deepEqual(off.data.created_sections, []);
+  assert.ok(!(await text()).includes('INDICAÇÕES E RECOMENDAÇÕES'));
+});
+
 test('deleting an evaluation removes its encrypted files and drafts', async () => {
   const id = await withFiles();
   await api('PUT', `/api/evaluations/${id}/sections/anamnesis`, {token: tokens.psy, body: {content: 'Texto a apagar.'}});

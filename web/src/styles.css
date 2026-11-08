@@ -4,3 +4,18 @@
 ::highlight(nl-find) { background-color: #ffe58a; color: #000; }
 ::highlight(nl-find-on) { background-color: #ff9d2e; color: #000; }
 ::highlight(nl-target) { background-color: #b9e6d3; color: #000; }
+
+/* While the Documento divider is dragged */
+body.nl-resizing { cursor: col-resize; user-select: none; }
+
+/* Softer scroll bars everywhere: thin, light thumb, no track */
+* { scrollbar-width: thin; scrollbar-color: rgba(120, 132, 130, .32) transparent; }
+*:hover { scrollbar-color: rgba(120, 132, 130, .5) transparent; }
+
+/* App tooltip (replaces the browser's title tooltip; see app/tooltip.ts) */
+#nl-tip { position: fixed; z-index: 1000; max-width: 300px; padding: 6px 10px; border-radius: 8px; background: #17312d; color: #f3f7f6; font: 500 12.5px/1.4 var(--font, system-ui); box-shadow: 0 6px 18px rgba(0, 0, 0, .18); pointer-events: none; opacity: 0; transform: translateY(2px); transition: opacity .12s ease, transform .12s ease; white-space: pre-line; overflow-wrap: anywhere; }
+#nl-tip.on { opacity: 1; transform: none; }
+#nl-tip::after { content: ""; position: absolute; left: var(--arrow, 50%); bottom: -5px; width: 10px; height: 10px; margin-left: -5px; background: inherit; transform: rotate(45deg); border-radius: 2px; }
+#nl-tip.below::after { bottom: auto; top: -5px; }
+[data-theme="dark"] #nl-tip { background: #e8efed; color: #10221f; }
+@media (prefers-reduced-motion: reduce) { #nl-tip { transition: none; } }

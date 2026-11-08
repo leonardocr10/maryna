@@ -4,7 +4,7 @@ import {Api} from './api.service';
 import {ConfirmService} from './confirm.service';
 import {AI_MODE_CONFIRM} from './shared';
 import {DropZoneComponent} from './ui/drop-zone.component';
-import {Identity, IdentityFormComponent, emptyIdentity} from './ui/identity-form.component';
+import {Identity, IdentityFormComponent, emptyIdentity, identityMissing} from './ui/identity-form.component';
 import {IconComponent} from './ui/icon.component';
 import {FilterSelectComponent} from './ui/filter-select.component';
 
@@ -14,22 +14,25 @@ import {FilterSelectComponent} from './ui/filter-select.component';
   standalone: true,
   imports: [CommonModule, DropZoneComponent, IdentityFormComponent, IconComponent, FilterSelectComponent],
   template: `
-<p class="crumbs"><button type="button" (click)="closed.emit()">Avaliações</button><nl-icon name="chevr"/><b>Nova avaliação</b></p>
-<div class="pagehead"><span class="hicon"><nl-icon name="plus"/></span><div><h1>Nova avaliação</h1><p>Só o nome é obrigatório. Campos em branco usam o que estiver no arquivo base.</p></div></div>
+<div class="pagehead nh">
+  <button type="button" class="back" (click)="closed.emit()" title="Voltar às avaliações" aria-label="Voltar às avaliações"><nl-icon name="chevl"/></button>
+  <span class="hicon"><nl-icon name="plus"/></span>
+  <div><h1>Nova avaliação</h1><p>Campos com * são obrigatórios. As datas da avaliação em branco usam as do arquivo base.</p></div>
+</div>
 
 <div class="layout">
   <div class="form">
     <section class="card">
       <div class="sec-title"><span class="num">1</span><h2>Identificação do paciente</h2></div>
-      <nl-identity-form [model]="id" (modelChange)="id=$event" [big]="true" [autofocus]="true"></nl-identity-form>
+      <nl-identity-form [model]="id" (modelChange)="id=$event" [autofocus]="true" [showRequired]="id.name.trim().length >= 2"></nl-identity-form>
     </section>
 
+    <div class="pair">
     <section class="card">
       <div class="sec-title"><span class="num">2</span><h2>Modelo e arquivos</h2><span class="caption">Opcional agora, dá para enviar depois</span></div>
-      <div class="model">
+      <div class="model" title="O arquivo da estagiária é comparado com o modelo, e as instruções da IA do modelo valem nesta avaliação.">
         <span class="mlabel">Modelo do laudo</span>
         <nl-filter-select [options]="models" [value]="modelId" ariaLabel="Modelo do laudo" placeholder="Sem modelo" (valueChange)="modelId=$event"></nl-filter-select>
-        <small>O arquivo da estagiária é comparado com o modelo, e as instruções da IA do modelo valem nesta avaliação.</small>
       </div>
       <div class="files">
         <nl-drop-zone [inline]="true" title="Arquivo base (estagiária)" [filename]="base?.name||''" (file)="pick('base',$event)"></nl-drop-zone>
@@ -44,12 +47,13 @@ import {FilterSelectComponent} from './ui/filter-select.component';
         <button type="button" role="radio" class="opt" [class.on]="aiMode==='ai'" [attr.aria-checked]="aiMode==='ai'" (click)="chooseAi()"><nl-icon name="spark"/><span><b>Com IA</b><small>A IA redige rascunhos das seções a partir dos arquivos; você revisa e aprova.</small></span></button>
       </div>
     </section>
+    </div>
 
     <div class="actions">
       <button class="btn btn-secondary" (click)="closed.emit()" [disabled]="busy">Cancelar</button>
       <span class="spacer"></span>
-      <button class="btn btn-secondary" [disabled]="!valid()||busy" (click)="create(false)">Salvar como rascunho</button>
-      <button class="btn btn-primary" [disabled]="!valid()||busy" (click)="create(willGenerate())">{{busy?'Criando…':willGenerate()?'Criar e gerar com IA':'Criar avaliação'}} <nl-icon name="chevr"/></button>
+      <button class="btn btn-secondary" [disabled]="!valid()||busy" [title]="missingText()" (click)="create(false)">Salvar como rascunho</button>
+      <button class="btn btn-primary" [disabled]="!valid()||busy" [title]="missingText()" (click)="create(willGenerate())">{{busy?'Criando…':willGenerate()?'Criar e gerar com IA':'Criar avaliação'}} <nl-icon name="chevr"/></button>
     </div>
   </div>
 
@@ -57,7 +61,7 @@ import {FilterSelectComponent} from './ui/filter-select.component';
     <section class="card card-pad">
       <p class="label-caps">Antes de criar</p>
       <ul class="check">
-        <li [class.ok]="valid()"><span class="bx"><nl-icon name="check"/></span>Nome do paciente<small>obrigatório</small></li>
+        <li [class.ok]="valid()"><span class="bx"><nl-icon name="check"/></span>Identificação<small>nome, nascimento, sexo e escolaridade</small></li>
         <li [class.ok]="base"><span class="bx"><nl-icon name="check"/></span>Arquivo base</li>
         <li [class.ok]="anamnesis"><span class="bx"><nl-icon name="check"/></span>Anamnese</li>
         <li [class.ok]="modelId"><span class="bx"><nl-icon name="check"/></span>Modelo do laudo<small>opcional</small></li>
@@ -65,12 +69,12 @@ import {FilterSelectComponent} from './ui/filter-select.component';
     </section>
     <section class="card card-pad">
       <p class="label-caps">Depois</p>
-      <p class="after">Com os dois arquivos, a IA redige as seções. Você revisa e aprova cada uma e baixa o Word. O arquivo base original nunca é alterado.</p>
       <ul class="flow">
         <li><span class="fi tone-review"><nl-icon name="spark"/></span>A IA gera um rascunho por seção</li>
         <li><span class="fi tone-warn"><nl-icon name="edit"/></span>Você revisa, edita e aprova</li>
         <li><span class="fi tone-ok"><nl-icon name="download"/></span>Baixa o Word com tudo aprovado</li>
       </ul>
+      <p class="after">O arquivo base original nunca é alterado.</p>
     </section>
     <div class="privacy"><nl-icon name="shield"/><span>Dados de saúde são sensíveis. Nomes e dados pessoais são ocultados antes de qualquer envio à IA, e a geração só acontece quando autorizada nas Configurações.</span></div>
   </aside>
@@ -103,6 +107,41 @@ nl-icon{--ico-size:16px}
 .model .mlabel{font-size:13px;font-weight:600;color:var(--text)}
 .model small{font-size:12.5px;color:var(--text-3)}
 .form>.mode{padding:22px 24px}
+/* compact: the whole form fits on one screen */
+.nh{margin-bottom:10px;gap:10px}
+.nh .back{width:32px;height:32px;border:1px solid var(--border-card);border-radius:8px;background:var(--card);display:grid;place-items:center;cursor:pointer;color:var(--text-2);flex:none}
+.nh .back:hover{border-color:var(--primary);color:var(--text)}
+.nh .hicon{width:36px;height:36px;border-radius:10px;--ico-size:20px}
+.nh h1{font-size:22px;line-height:28px}
+.nh p{margin-top:0;font-size:13px;color:var(--text-3)}
+.layout{gap:12px}
+.form{gap:10px}
+.form>.card,.form>.mode{padding:14px 16px}
+.aside{gap:10px}
+.aside .card-pad{padding:12px 14px}
+.sec-title{margin-bottom:10px;gap:8px}
+.sec-title h2{font-size:15px}
+.num{width:24px;height:24px;font-size:12px}
+:host ::ng-deep nl-identity-form{gap:10px}
+:host ::ng-deep nl-identity-form .grid{gap:10px}
+:host ::ng-deep nl-identity-form .field label{margin-bottom:4px}
+.pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;align-items:stretch}
+.pair>.card{padding:14px 16px;min-width:0}
+.files{grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+.model{margin-bottom:10px;gap:4px}
+.pair .modes{grid-template-columns:minmax(0,1fr)}
+:host ::ng-deep .dz.inline{padding:9px 12px;gap:10px}
+:host ::ng-deep .dz.inline .icon{width:30px;height:30px}
+.modes{gap:10px}
+.opt{padding:9px 12px;gap:10px}
+.opt small{font-size:12px}
+.check{margin-top:8px;gap:7px;font-size:13px}
+.flow{margin-top:8px;gap:7px}
+.flow .fi{width:24px;height:24px;--ico-size:13px}
+.after{margin-top:8px;font-size:12px}
+.privacy{padding:10px 12px;font-size:12px}
+@media(max-width:1000px){.pair{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:560px){.files{grid-template-columns:minmax(0,1fr)}}
 .modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
 .opt{display:flex;gap:12px;align-items:flex-start;text-align:left;padding:14px 16px;border-radius:var(--radius-lg);border:1.5px solid var(--border-card);background:var(--card);color:var(--text);cursor:pointer;font:inherit}
 .opt nl-icon{color:var(--text-3);--ico-size:18px;margin-top:2px}
@@ -135,7 +174,8 @@ export class NewEvaluationComponent {
   }
   willGenerate() { return this.aiMode === 'ai' && this.bothFiles() && this.canGenerate(); }
 
-  valid() { return this.id.name.trim().length >= 2; }
+  valid() { return !identityMissing(this.id).length; }
+  missingText() { const m = identityMissing(this.id); return m.length ? 'Falta preencher: ' + m.join(', ') : ''; }
   bothFiles() { return !!(this.base && this.anamnesis); }
   pick(kind: 'base' | 'anamnesis', f: File) {
     if (!f.name.toLowerCase().endsWith('.docx')) { this.api.notify('Envie um arquivo .docx (Word).'); return; }

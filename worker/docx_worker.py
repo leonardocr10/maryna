@@ -514,7 +514,26 @@ def fieldless_anchors(d):
   last=max([i for i in range(start-1,end) if elements[i]['type']=='table' or elements[i].get('text')],default=start-1)
   out[k]=children[last]
  return out
-def export(base,out,sections,highlight=False,fields=None,rich=None):
+def created_anchors(d,keys,order):
+ """Sections missing from the base document that the psychologist chose to create: {key: element they go before}.
+ That is the title of the next section of the report found in the file; None when there is none (they then go
+ before the closing place/date line, or at the end)."""
+ elements=list(all_elements(d));m=Markers();starts={}
+ children=[ch for ch in d.element.body.iterchildren() if ch.tag.endswith('}p') or ch.tag.endswith('}tbl')]
+ fixed={k for k,_ in FIXED}
+ for i,e in enumerate(elements):
+  t=e['text'] if e['type']=='p' else ' '.join(x for row in e['rows'] for x in row)
+  k=m.key(t)
+  if k in fixed:starts.setdefault(k,i)
+  dom=domain_of(t)
+  if dom:starts.setdefault(dom,i)
+ out={}
+ for k in keys:
+  if k not in order or k in starts:continue
+  nxt=next((n for n in order[order.index(k)+1:] if n in starts),None)
+  out[k]=children[starts[nxt]] if nxt is not None else None
+ return out
+def export(base,out,sections,highlight=False,fields=None,rich=None,created=None):
  rich={k:v for k,v in (rich or {}).items() if k in sections and rich_matches(v,sections[k])}
  if os.path.abspath(base)==os.path.abspath(out):raise SystemExit('out must differ from base')
  before=sha256(base)
@@ -525,6 +544,9 @@ def export(base,out,sections,highlight=False,fields=None,rich=None):
   p=place_date_paragraph(d)
   if p is not None and (clean(p.text)==place or replace_span(p,0,len(p.text),place)):filled.append('__local_data')
  anchors=fieldless_anchors(d);added=[]
+ # computed before any change, while the element order is still the file's
+ created=created or {};made=created_anchors(d,[k for k in created.get('keys',[]) if k in sections and clean(sections[k])],created.get('order',[]))
+ closing=place_date_paragraph(d)
  # fixed parts rewritten by the psychologist: same replacement as a section, under their heading box
  for k,label,ch in fixed_blocks(d):
   if k in sections and clean(sections[k]) and k not in seen:
@@ -551,10 +573,24 @@ def export(base,out,sections,highlight=False,fields=None,rich=None):
    label=new_paragraph(FIELD_LABEL,bold=True);anchor.addnext(label)
    insert_rich_after(label,rich[k],highlight) if k in rich else insert_after(label,sections[k],highlight)
    seen.append(k);added.append(k)
+ # sections the file does not have, created by the psychologist's choice: title (+ field label for an interpretation),
+ # the text, and a blank line, right before the next section of the report
+ made_keys=[]
+ for k,where in made.items():
+  if k in seen:continue
+  if where is None:where=closing._p if closing is not None else d.element.body.sectPr
+  gap=new_paragraph('')
+  if where is None:d.element.body.append(gap)
+  else:where.addprevious(gap)
+  title=new_paragraph(clean(created.get('titles',{}).get(k) or k).upper(),bold=True,red=highlight);gap.addprevious(title)
+  last=title
+  if k in SLOTS:label=new_paragraph(FIELD_LABEL,bold=True,red=highlight);title.addnext(label);last=label
+  insert_rich_after(last,rich[k],highlight) if k in rich else insert_after(last,sections[k],highlight)
+  seen.append(k);made_keys.append(k)
  d.save(out)
  after=sha256(base)
  if before!=after:raise SystemExit('base document changed during export')
- return {'inserted':seen,'missing':[k for k in sections if k not in seen],'fields_filled':filled,'replaced':replaced,'fields_added':added,'formatted':sorted(rich),'base_sha256':before,'out_sha256':sha256(out)}
+ return {'inserted':seen,'missing':[k for k in sections if k not in seen],'fields_filled':filled,'replaced':replaced,'fields_added':added,'created':made_keys,'formatted':sorted(rich),'base_sha256':before,'out_sha256':sha256(out)}
 def letter(out,title,subtitle,content):
  """Standalone document (the devolutiva): title, patient name and the approved text, same body style as the report."""
  if os.path.exists(out):raise SystemExit('output exists')
@@ -590,7 +626,7 @@ def main():
  sys.stdout.reconfigure(encoding='utf-8')
  if op=='inspect': print(json.dumps(inspect(sys.argv[2]),ensure_ascii=False))
  elif op=='export':
-  spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(export(spec['base'],spec['out'],spec['sections'],spec.get('highlight',False),spec.get('fields'),spec.get('rich')),ensure_ascii=False))
+  spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(export(spec['base'],spec['out'],spec['sections'],spec.get('highlight',False),spec.get('fields'),spec.get('rich'),spec.get('created')),ensure_ascii=False))
  elif op=='images': print(json.dumps(images(sys.argv[2])))
  elif op=='letter':
   spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(letter(spec['out'],spec.get('title',''),spec.get('subtitle',''),spec['content']),ensure_ascii=False))

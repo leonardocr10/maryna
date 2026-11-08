@@ -22,7 +22,10 @@ import {DevolutivaComponent} from './ui/devolutiva.component';
 import {PlanComponent} from './ui/plan.component';
 import {DeliveryComponent} from './ui/delivery.component';
 import {ChatgptAnamnesisComponent} from './ui/chatgpt-anamnesis.component';
+import {TopbarService} from './topbar.service';
 import {AI_MODE_CONFIRM, CONCLUSION_GUIDANCE, HAND_ONLY, niceTitle, OPTIONAL_SECTIONS, PERCEPTION_MAX_AGE, SECTIONS, SECTION_STATE, STATUS, SectionState, ageText, ageYears, brDate, brl, int, words} from './shared';
+/** Interpretation sections: written from their own tables in the base document. */
+const INTERPRETATION_SLOTS = ['inteligencia', 'percepcao', 'memoria', 'atencao', 'funcoes_executivas', 'comportamento', 'personalidade', 'comportamento_diva'];
 
 /** Section the AI only writes from the psychologist's own guidance (never in "Gerar laudo"). */
 const MANUAL_KEY = 'conclusao';
@@ -56,6 +59,10 @@ export class EvaluationComponent implements OnDestroy {
   dictation = inject(Dictation);
   private instrSaveTimer: any;
   private confirm = inject(ConfirmService);
+  /** Patient, status and summary go to the top bar (left), so the screen starts with the steps and the work. */
+  private topbar = inject(TopbarService);
+  private readonly topInfo = () => this.current ? {title: this.current.patient_name, badge: this.status(), sub: [this.summary() || 'Complete a identificação', this.current.start_date ? 'início ' + this.brDate(this.current.start_date) : ''].filter(Boolean).join(' · ')} : null;
+  ngOnInit() { this.topbar.info = this.topInfo; }
   @ViewChild('previewBox') previewBox?: ElementRef<HTMLDivElement>;
   @Output() changed = new EventEmitter<void>();
   @Output() deleted = new EventEmitter<void>();
@@ -66,6 +73,10 @@ export class EvaluationComponent implements OnDestroy {
 
   MANUAL_KEY = MANUAL_KEY; DEMAND_KEY = DEMAND_KEY; SECTIONS = SECTIONS; SECTION_STATE = SECTION_STATE; STATUS = STATUS; brDate = brDate; brl = brl; int = int; words = words;
   steps = ['Identificação e arquivos', 'Arquivos', 'Gerar com IA', 'Conferir e baixar'];
+  /** Short step names for the compact indicator under the patient name. */
+  shortStep(i: number) { return ['Identificação', 'Arquivos', 'Gerar com IA', 'Conferir e baixar'][i]; }
+  /** Pending strip: explanation and actions for missing sections, closed by default. */
+  resolveOpen = false;
 
   evaluationId = '';
   loaded = false;
@@ -82,7 +93,7 @@ export class EvaluationComponent implements OnDestroy {
   open = ''; editing = ''; editText = ''; sectionInstr = '';
   mode: 'secoes' | 'documento' = 'secoes'; previewLoading = false;
 
-  ngOnDestroy() { this.paint('nl-find', []); this.paint('nl-find-on', []); this.paint('nl-target', []); clearTimeout(this.idTimer); clearTimeout(this.instrSaveTimer); this.reader.stop(); if (this.autoTimer) { clearTimeout(this.autoTimer); this.autosave(this.editing); } }
+  ngOnDestroy() { for (const k of Object.keys(this.docTimers)) { clearTimeout(this.docTimers[k]); this.saveDocSection(k); } if (this.topbar.info === this.topInfo) this.topbar.info = null; this.paint('nl-find', []); this.paint('nl-find-on', []); this.paint('nl-target', []); clearTimeout(this.idTimer); clearTimeout(this.instrSaveTimer); this.reader.stop(); if (this.autoTimer) { clearTimeout(this.autoTimer); this.autosave(this.editing); } }
 
   // ---------- loading ----------
   async load(first = false) {
@@ -114,6 +125,12 @@ export class EvaluationComponent implements OnDestroy {
     try { this.references = await this.api.req('GET', `/evaluations/${this.evaluationId}/references`); } catch { this.references = {}; }
   }
   refs(k: string) { return k === MANUAL_KEY ? [] : this.references[k] || []; }
+  /** "No arquivo base, nesta seção" without what "Tabelas de referência" already shows (the tables and their captions). */
+  fileShown(k: string): any[] {
+    const refs = this.refs(k); if (!refs.length) return this.fileBlock(k);
+    const caps = new Set(refs.map((t: any) => (t.caption || '').trim()).filter(Boolean));
+    return this.fileBlock(k).filter(b => b.type !== 'table' && !(b.type === 'p' && caps.has((b.text || '').trim())));
+  }
   /** Everything the base document has in this section, in Word order (kept in the Word file as it is). */
   fileBlock(k: string): any[] { return (this.references as any)?._blocks?.[k] || []; }
   /** What the conclusion is built from: the texts of the result sections (no demand, no anamnesis), as the API sends them. */
@@ -135,6 +152,32 @@ export class EvaluationComponent implements OnDestroy {
   canWrite() { const r = this.api.me()?.role; return r === 'admin' || r === 'psychologist'; }
   /** What is still missing before the evaluation can go on: identification, files, sections without a place or table,
    *  plus the consistency checks the server ran on the base document (inspection.checks). */
+  // ---------- Pendências panel: one row per item, with the action that solves it ----------
+  pendOpen = false;
+  /** Review state from the review panel (badge, text, open correction requests). */
+  review: {badge: {label: string; css: string; icon: string}; text: string; notes: any[]} | null = null;
+  byIssue = (_: number, it: {key: string}) => it.key;
+  private static names(list: string[]) { return list.length > 1 ? list.slice(0, -1).join(', ') + ' e ' + list.at(-1) + '.' : (list[0] || '') + '.'; }
+  issues(): {key: string; level: string; title: string; desc: string; action: string; run: () => void}[] {
+    const out: {key: string; level: string; title: string; desc: string; action: string; run: () => void}[] = [], id = this.idModel;
+    const toId = () => { this.pendOpen = false; this.goStep(0); };
+    if (id.name.trim().length < 2) out.push({key: 'name', level: 'danger', title: 'Nome do paciente ausente', desc: 'Obrigatório no laudo.', action: 'Completar dados', run: toId});
+    const gaps = ([['birth_date', 'data de nascimento'], ['sex', 'sexo'], ['schooling', 'escolaridade'], ['start_date', 'data de início'], ['end_date', 'data de finalização']] as const)
+      .filter(([k]) => !String(id[k] || '').trim()).map(([, l]) => l);
+    if (gaps.length) { const d = EvaluationComponent.names(gaps); out.push({key: 'id', level: 'warn', title: 'Identificação incompleta', desc: d[0].toUpperCase() + d.slice(1), action: 'Completar dados', run: toId}); }
+    if (!this.docName('base')) out.push({key: 'base', level: 'danger', title: 'Arquivo base ausente', desc: 'Envie o .docx da estagiária.', action: 'Enviar arquivo', run: toId});
+    if (!this.docName('anamnesis')) out.push({key: 'ana', level: 'danger', title: 'Anamnese ausente', desc: 'Envie o .docx da psicóloga.', action: 'Enviar arquivo', run: toId});
+    if (this.inspection && this.missing().length) out.push({key: 'missing', level: 'warn', title: this.missing().length === 1 ? 'Seção ausente no arquivo base' : 'Seções ausentes no arquivo base',
+      desc: EvaluationComponent.names(this.missing()), action: this.resolveOpen ? 'Recolher' : 'Resolver', run: () => { this.resolveOpen = !this.resolveOpen; }});
+    if (this.inspection && Object.keys(this.references).length) {
+      const noTable = this.available().filter(s => this.references[s.id] !== undefined && s.id !== MANUAL_KEY && s.id !== 'recomendacoes' && !this.refs(s.id).length);
+      if (noTable.length) out.push({key: 'tables', level: 'warn', title: 'Tabelas de resultados não encontradas', desc: EvaluationComponent.names(noTable.map(s => s.name)), action: 'Ver seções',
+        run: () => { this.pendOpen = false; this.goStep(3); this.setMode('secoes'); this.select(noTable[0].id); }});
+    }
+    (this.inspection?.checks || []).forEach((c: any, i: number) => out.push({key: 'check' + i, level: c.level, title: c.text, desc: '', action: 'Ver', run: toId}));
+    return out;
+  }
+  pendCount() { return this.issues().length + (this.review?.notes?.length || 0); }
   pendings(): Pending[] {
     const out: Pending[] = [], id = this.idModel;
     if (id.name.trim().length < 2) out.push({level: 'danger', text: 'Falta o nome do paciente.', step: 0});
@@ -187,7 +230,46 @@ export class EvaluationComponent implements OnDestroy {
   }
   /** Sections the Word file can receive: those with an interpretation field, and titled sections without one
    * (the export creates the field right after their tables). */
-  placeable() { return new Set([...(this.inspection?.markers || []).map((m: any) => m.key), ...Object.keys(this.inspection?.title_ranges || {}), ...this.fixedBlocks().map((b: any) => b.key)]); }
+  placeable() { return new Set([...this.inFile(), ...this.createdKeys()]); }
+  /** Places the base document itself has. */
+  private inFile() { return new Set([...(this.inspection?.markers || []).map((m: any) => m.key), ...Object.keys(this.inspection?.title_ranges || {}), ...this.fixedBlocks().map((b: any) => b.key)]); }
+  // ---------- Sections the base document lacks, created in the Word by the psychologist's choice ----------
+  createdKeys(): string[] { try { const v = JSON.parse(this.current?.created_sections || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } }
+  /** Chosen to be created and not (or no longer) in the base document. */
+  isCreated(k: string) { return !!this.inspection && this.createdKeys().includes(k) && !this.inFile().has(k); }
+  /** A created interpretation has no tables in the file, so the AI has nothing of its own to write from (rule 10). */
+  isInterpretation(k: string) { return INTERPRETATION_SLOTS.includes(k); }
+  private createdWithoutData(k: string) { return this.isCreated(k) && this.isInterpretation(k); }
+  missingKeys() { const ids = new Set(this.available().map(s => s.id)); return this.applicable().filter(s => !ids.has(s.id)); }
+  /** Where the created section goes: before the next section the file has, else above the closing place and date. */
+  createdPlace(k: string) {
+    const i = SECTIONS.findIndex(s => s.id === k), file = this.inFile();
+    const next = SECTIONS.slice(i + 1).find(s => file.has(s.id));
+    return next ? `antes de "${next.name}"` : 'no final, antes do local e data';
+  }
+  creatingSection = '';
+  /** Why the generation buttons are off in this section. */
+  handWhy(k: string) {
+    if (HAND_ONLY.includes(k)) return 'Escrita só pela psicóloga: a IA nunca redige o diagnóstico.';
+    if (this.isFixed(k)) return 'Texto fixo do arquivo: só você edita.';
+    return 'Seção criada no documento, sem tabelas no arquivo: o texto é escrito por você.';
+  }
+  async setCreated(k: string, create: boolean) {
+    if (this.readOnly() || this.locked() || this.creatingSection) return;
+    if (!create) {
+      const name = SECTIONS.find(s => s.id === k)?.name || k;
+      if (!await this.confirm.ask({tone: 'danger', title: `Excluir "${name}" do documento?`, body: 'O título e o texto desta seção deixam de entrar no Word. O arquivo base não muda.', facts: ['O texto continua salvo nesta seção', 'Você pode criar a seção de novo depois'], ok: 'Excluir do documento'})) return;
+    }
+    this.creatingSection = k;
+    try {
+      const r = await this.api.req('PUT', `/evaluations/${this.evaluationId}/created-sections`, {key: k, create});
+      this.current = {...this.current, created_sections: r.created_sections.length ? JSON.stringify(r.created_sections) : null};
+      const name = SECTIONS.find(s => s.id === k)?.name || k;
+      this.api.notify(create ? `"${name}" será criada no Word ${this.createdPlace(k)}. Escreva o texto da seção.` : `"${name}" foi excluída do documento.`);
+      if (create && this.step === 3) { this.mode = 'secoes'; this.select(k); }
+      this.changed.emit();
+    } catch {} finally { this.creatingSection = ''; }
+  }
   /** Title exists but the "Interpretação" field does not: the export adds it. */
   fieldAdded(k: string) { return !!this.inspection?.title_ranges?.[k] && !(this.inspection?.markers || []).some((m: any) => m.key === k); }
   available() { const found = this.placeable(); return this.inspection ? this.applicable().filter(s => found.has(s.id)) : this.applicable(); }
@@ -335,9 +417,9 @@ export class EvaluationComponent implements OnDestroy {
   }
 
   // ---------- step 3: generation ----------
-  autoKeys() { return this.available().map(s => s.id).filter(k => k !== MANUAL_KEY && k !== DEMAND_KEY && !HAND_ONLY.includes(k) && !this.isFixed(k)); }
-  /** Sections the AI never writes (the diagnostic hypothesis). */
-  isHand(k: string) { return HAND_ONLY.includes(k) || this.isFixed(k); }
+  autoKeys() { return this.available().map(s => s.id).filter(k => k !== MANUAL_KEY && k !== DEMAND_KEY && !this.isHand(k)); }
+  /** Sections the AI never writes (the diagnostic hypothesis, fixed parts, interpretations created without tables). */
+  isHand(k: string) { return HAND_ONLY.includes(k) || this.isFixed(k) || this.createdWithoutData(k); }
   autoDrafted() { return this.autoKeys().filter(k => this.state(k) !== 'pend').length; }
   demandInFile() { return (this.inspection?.markers || []).find((m: any) => m.key === DEMAND_KEY)?.existing_text || ''; }
   private same(a: string, b: string) { return (a || '').replace(/\s+/g, ' ').trim() === (b || '').replace(/\s+/g, ' ').trim(); }
@@ -436,7 +518,98 @@ export class EvaluationComponent implements OnDestroy {
   closeRefs() { this.refOpen = ''; }
   /** Section shown in the review editor: the chosen one, or the first in the list. */
   cur() { const rows = this.reviewRows(); return rows.some(s => s.id === this.open) ? this.open : rows[0]?.id || ''; }
-  select(k: string) { if (this.cur() !== k) this.toggle(k); }
+  select(k: string) { if (k && this.cur() !== k) this.toggle(k); }
+  // ---------- Conferir seções: navegação ----------
+  // 'compacta' (padrão): a seção aberta em destaque, anterior/próxima, uma barra fina e o menu "Todas as seções".
+  // 'barra': o modelo anterior, uma barra por seção com o nome embaixo. A escolha fica salva neste navegador.
+  navStyle: 'compacta' | 'barra' = (() => { try { return localStorage.getItem('nl-conf-nav') === 'barra' ? 'barra' : 'compacta'; } catch { return 'compacta'; } })();
+  secMenu = false; secFilter: '' | 'warn' | 'idle' | 'missing' = '';
+  setNavStyle(v: 'compacta' | 'barra') { this.navStyle = v; this.secMenu = false; try { localStorage.setItem('nl-conf-nav', v); } catch {} }
+  secKind(k: string) { return this.isMissing(k) ? 'missing' : SECTION_STATE[this.state(k)].css; }
+  secBadge(k: string) { return 'badge ' + (this.isMissing(k) ? 'danger' : SECTION_STATE[this.state(k)].css); }
+  secLabel(k: string) { return this.isMissing(k) ? 'Falta no documento' : SECTION_STATE[this.state(k)].label; }
+  secNum(k: string) { return (this.reviewRows().findIndex(s => s.id === k) + 1).toString().padStart(2, '0'); }
+  curIndex() { const c = this.cur(); return this.reviewRows().findIndex(s => s.id === c); }
+  curName() { return this.reviewRows()[this.curIndex()]?.name || ''; }
+  neighbor(d: number) { return this.reviewRows()[this.curIndex() + d]; }
+  stepSection(d: number) { const s = this.neighbor(d); if (s) { this.secMenu = false; this.select(s.id); } }
+  pickSection(k: string) { this.secMenu = false; this.select(k); }
+  secCount(kind: string) { return this.reviewRows().filter(s => this.secKind(s.id) === kind).length; }
+  secMenuRows() { return this.secFilter ? this.reviewRows().filter(s => this.secKind(s.id) === this.secFilter) : this.reviewRows(); }
+  // ---------- Documento, modelo B: section texts beside the Word ----------
+  /** Section whose text is open in the side list and marked in the Word. */
+  docActive = '';
+  // ---------- "Editar documento": all section texts in one continuous page ----------
+  // Only the section texts are editable (the approved destinations); each one is saved to its own section, so the
+  // Seções view, versions and the Word all show the change. Nothing of the base file itself becomes editable.
+  docEditing = false; docFinishing = false; docSaving = 0; docSavedAt = '';
+  docInit: Record<string, string> = {};
+  private docDraft: Record<string, {text: string; html: string}> = {};
+  private docTimers: Record<string, any> = {};
+  docEditRows() { return this.reviewRows().filter(s => !this.isMissing(s.id)); }
+  async startDocEdit() {
+    if (this.readOnly() || this.docEditing) return;
+    if (this.editing) await this.closeEdit();
+    this.docInit = {}; this.docDraft = {}; this.docSavedAt = '';
+    for (const s of this.docEditRows()) { const t = this.text(s.id); this.docInit[s.id] = this.richOf(s.id) || htmlFromText(t); this.docDraft[s.id] = {text: t, html: this.docInit[s.id]}; }
+    this.docEditing = true;
+    if (this.docActive) setTimeout(() => document.getElementById('de-' + this.docActive)?.scrollIntoView({block: 'start'}));
+  }
+  onDocText(k: string, t: string) { (this.docDraft[k] ??= {text: '', html: ''}).text = t; this.docLater(k); }
+  onDocHtml(k: string, h: string) { (this.docDraft[k] ??= {text: '', html: ''}).html = h; this.docLater(k); }
+  private docLater(k: string) { clearTimeout(this.docTimers[k]); this.docTimers[k] = setTimeout(() => { delete this.docTimers[k]; this.saveDocSection(k); }, 1200); }
+  private async saveDocSection(k: string) {
+    const d = this.docDraft[k]; if (!d) return;
+    const s = this.section(k);
+    if (!d.text.trim() || (d.text === this.text(k) && (!s || d.html === s.content_html))) return;
+    this.docSaving++;
+    try {
+      await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content: d.text, html: d.html, merge: true});
+      if (s) { s.content = d.text; s.content_html = d.html; s.status = 'edited'; }
+      this.docSavedAt = new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+    } catch {} finally { this.docSaving--; }
+  }
+  /** Saves what is still waiting, leaves the editing page and shows the Word with the new texts. */
+  async finishDocEdit() {
+    if (!this.docEditing || this.docFinishing) return;
+    this.docFinishing = true;
+    try {
+      const waiting = Object.keys(this.docTimers);
+      for (const k of waiting) clearTimeout(this.docTimers[k]);
+      this.docTimers = {};
+      for (const k of waiting) await this.saveDocSection(k);
+      this.docEditing = false;
+      await this.load(); this.changed.emit();
+      if (this.inDocView()) { this.docIndex = null; this.renderPreview(true); }
+    } finally { this.docFinishing = false; }
+  }
+  /** Width of the side panel in the Documento view, dragged by the divider (kept per browser); 0 = default. */
+  sideW = (() => { try { return Number(localStorage.getItem('nl-doc-side')) || 0; } catch { return 0; } })();
+  private saveSideW() { try { if (this.sideW) localStorage.setItem('nl-doc-side', String(Math.round(this.sideW))); else localStorage.removeItem('nl-doc-side'); } catch {} }
+  startResize(e: PointerEvent, side: HTMLElement) {
+    e.preventDefault();
+    const handle = e.currentTarget as HTMLElement, startX = e.clientX, startW = side.getBoundingClientRect().width;
+    const box = side.parentElement!.getBoundingClientRect().width, scale = startW / (side.offsetWidth || startW) || 1;
+    handle.setPointerCapture(e.pointerId); document.body.classList.add('nl-resizing');
+    const move = (ev: PointerEvent) => { this.sideW = Math.min(box - 360, Math.max(280, startW + ev.clientX - startX)) / scale; };
+    const up = () => { handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', up); document.body.classList.remove('nl-resizing'); this.saveSideW(); };
+    handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', up);
+  }
+  resizeKey(e: KeyboardEvent, side: HTMLElement) {
+    const step = e.key === 'ArrowLeft' ? -40 : e.key === 'ArrowRight' ? 40 : 0; if (!step) return;
+    e.preventDefault(); this.sideW = Math.max(280, (this.sideW || side.offsetWidth) + step); this.saveSideW();
+  }
+  resetSide() { this.sideW = 0; this.saveSideW(); }
+  docSideRows() { return this.reviewRows().filter(s => !this.isMissing(s.id) && !this.isFixed(s.id)); }
+  showInDoc(k: string) { this.docActive = k; this.jumpToSection(k); }
+  async approveInDoc(k: string) { await this.approveAndNext(k); this.docActive = k; this.docJump = k; await this.renderPreview(); }
+  /** Edits inside the side card; the Word beside it is rebuilt after each pause in typing. */
+  editFromDoc(k: string) { this.docActive = k; this.startEdit(k); }
+  closeDocCard() { if (this.editing) this.closeEdit(); this.docActive = ''; this.paint('nl-target', []); }
+  private inDocView() { return this.step === 3 && this.mode === 'documento'; }
+  /** Section before (-1) or after (1) this one in the review order. */
+  neighbour(k: string, d: -1 | 1) { const rows = this.reviewRows(), i = rows.findIndex(s => s.id === k); return rows[i + d]?.id || ''; }
+  neighbourName(k: string, d: -1 | 1) { const n = this.neighbour(k, d); return n ? this.sectionName(n) : ''; }
   sourceLabel(k: string) {
     if (k === DEMAND_KEY || k === 'anamnesis') return 'escrita a partir da anamnese';
     if (k === MANUAL_KEY) return 'escrita a partir das seções de resultados';
@@ -460,7 +633,7 @@ export class EvaluationComponent implements OnDestroy {
     const sn = this.snippets.find(x => x.id === id); if (!sn) return;
     this.rte?.insertText(sn.text);
   }
-  autosaveLater(k: string) { clearTimeout(this.autoTimer); this.autoTimer = setTimeout(() => this.autosave(k), 2500); }
+  autosaveLater(k: string) { clearTimeout(this.autoTimer); this.autoTimer = setTimeout(() => this.autosave(k), this.inDocView() ? 1200 : 2500); }
   async autosave(k: string) {
     this.autoTimer = null;
     if (!k || this.editing !== k || !this.editText.trim() || this.readOnly() || (this.editText === this.text(k) && this.editHtml === this.section(k)?.content_html)) return;
@@ -469,16 +642,17 @@ export class EvaluationComponent implements OnDestroy {
       await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content, html, merge: true});
       const s = this.section(k); if (s) { s.content = content; s.content_html = html; s.status = 'edited'; }
       this.autoSaved = new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+      if (this.inDocView()) this.renderPreview(true);
     } catch {} finally { this.autoSaving = false; }
   }
   /** Leaves edit mode; text already saved automatically stays saved. */
-  async closeEdit() { clearTimeout(this.autoTimer); this.autoTimer = null; const saved = !!this.autoSaved; this.editing = ''; this.autoSaved = ''; if (saved) { await this.load(); this.changed.emit(); } }
+  async closeEdit() { clearTimeout(this.autoTimer); this.autoTimer = null; const saved = !!this.autoSaved; this.editing = ''; this.autoSaved = ''; if (saved) { await this.load(); this.changed.emit(); if (this.inDocView()) this.renderPreview(true); } }
   startEdit(k: string) { this.reader.stop(); this.loadSnippets(); this.versionsOpen = ''; this.autoSaved = ''; this.editing = k; this.editText = this.text(k); this.editInitHtml = this.editHtml = this.richOf(k) || htmlFromText(this.editText); this.sectionInstr = ''; setTimeout(() => this.rte?.focus()); }
   async saveEdit(k: string) {
     await this.dictation.stop(); // the last dictated words enter the text before it is saved
     if (!this.editText.trim()) { this.api.notify('O texto não pode ficar vazio.'); return; }
     clearTimeout(this.autoTimer); this.autoTimer = null;
-    try { await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content: this.editText, html: this.editHtml, merge: true}); this.editing = ''; this.autoSaved = ''; await this.load(); this.changed.emit(); this.api.notify('Texto salvo. A seção voltou para revisão.'); } catch {}
+    try { await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content: this.editText, html: this.editHtml, merge: true}); this.editing = ''; this.autoSaved = ''; await this.load(); this.changed.emit(); if (this.inDocView()) this.renderPreview(true); this.api.notify('Texto salvo. A seção voltou para revisão.'); } catch {}
   }
   openInstr(k: string) { this.sectionInstr = this.sectionInstr === k ? '' : k; this.editing = ''; }
   async regenerate(k: string, withInstruction = false, skipConfirm = false) {
@@ -539,6 +713,35 @@ export class EvaluationComponent implements OnDestroy {
       if (!next && this.allApproved()) this.api.notify('Todas as seções aprovadas. Já dá para baixar o Word.');
     } catch {}
   }
+  // ---------- "Aprovar todas": a modal with one check per section, its issues and a final confirmation ----------
+  approveOpen = false; apmSel: Record<string, boolean> = {}; apmReviewed = false; apmBusy = false;
+  approveRows() { return this.available(); }
+  openApproveAll() {
+    this.apmSel = {}; this.apmReviewed = false;
+    for (const s of this.approveRows()) this.apmSel[s.id] = this.state(s.id) !== 'pend';
+    this.approveOpen = true;
+  }
+  apmCanPick(k: string) { return this.state(k) !== 'pend' && this.state(k) !== 'ap'; }
+  apmIssues(k: string) { const name = SECTIONS.find(s => s.id === k)?.name || k; return this.state(k) === 'ap' || this.state(k) === 'pend' ? [] : this.finalCheck([k]).map(t => t.startsWith(name + ': ') ? t.slice(name.length + 2) : t); }
+  apmAll(on: boolean) { for (const s of this.approveRows()) if (this.apmCanPick(s.id)) this.apmSel[s.id] = on; }
+  apmPicked() { return this.approveRows().filter(s => this.apmCanPick(s.id) && this.apmSel[s.id]); }
+  /** Approving every remaining section also approves the evaluation (locked, Word ready); a part approves only those. */
+  apmLocks() { const picked = new Set(this.apmPicked().map(s => s.id)); return this.approveRows().every(s => this.state(s.id) === 'ap' || picked.has(s.id)); }
+  async confirmApproveAll() {
+    const picked = this.apmPicked(); if (!picked.length || !this.apmReviewed || this.apmBusy) return;
+    this.apmBusy = true;
+    try {
+      if (this.apmLocks()) {
+        await this.api.req('POST', `/evaluations/${this.evaluationId}/approve`, {approveSections: true});
+        this.api.notify('Todas as seções aprovadas. Já dá para baixar o Word.');
+      } else {
+        for (const s of picked) await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${s.id}`, {content: this.text(s.id), approve: true});
+        this.api.notify(picked.length === 1 ? '1 seção aprovada.' : `${picked.length} seções aprovadas.`);
+      }
+      this.approveOpen = false; await this.load(); this.changed.emit();
+      if (this.inDocView()) this.renderPreview(true);
+    } catch {} finally { this.apmBusy = false; }
+  }
   async approveAll() {
     const pending = this.available().filter(s => this.state(s.id) === 'pend');
     if (pending.length) { this.api.notify('Gere ou escreva todas as seções antes de aprovar: ' + pending.map(s => s.name).join(', ')); return; }
@@ -576,24 +779,33 @@ export class EvaluationComponent implements OnDestroy {
   /** Approving this one leaves nothing else to review. */
   isLastPending(k: string) { return !this.available().some(s => s.id !== k && this.state(s.id) !== 'ap'); }
   showDocument() { if (!this.canWrite()) return; this.closeRefs(); this.step = 3; this.mode = 'documento'; setTimeout(() => this.renderPreview()); }
-  async renderPreview() {
+  /** quiet: refresh while editing (no "Montando…", same place, the edited section stays highlighted). */
+  async renderPreview(quiet = false) {
     const box = this.previewBox?.nativeElement; if (!box) return;
     if (!this.docName('base')) { box.innerHTML = ''; return; }
-    this.previewLoading = true;
+    if (this.previewBusy) { this.previewAgain = true; return; }
+    this.previewBusy = true; if (!quiet) this.previewLoading = true;
     const keep = this.docScroll?.nativeElement.scrollTop || 0;
     try {
       const data = await this.api.blob(`/evaluations/${this.evaluationId}/preview`);
-      box.innerHTML = ''; this.docIndex = null;
-      await renderAsync(data, box, undefined, {className: 'docx', inWrapper: true, ignoreLastRenderedPageBreak: true});
+      // rendered aside and swapped in at once, so the page does not blink or jump
+      const next = document.createElement('div');
+      await renderAsync(data, next, undefined, {className: 'docx', inWrapper: true, ignoreLastRenderedPageBreak: true});
+      box.replaceChildren(...Array.from(next.childNodes)); this.docIndex = null;
       this.pageCount = box.querySelectorAll('section.docx').length;
+      if (quiet && this.docActive) this.jumpToSection(this.docActive, false);
       // Back at the same place, unless a section asked to be shown; a search still typed runs again on the new text.
       if (this.docScroll) this.docScroll.nativeElement.scrollTop = keep;
       if (this.findQuery.trim()) this.runFind(false);
       if (this.docJump) { const k = this.docJump; this.docJump = ''; setTimeout(() => this.jumpToSection(k)); }
       setTimeout(() => this.onDocScroll());
     }
-    catch {} finally { this.previewLoading = false; }
+    catch {} finally {
+      this.previewLoading = false; this.previewBusy = false;
+      if (this.previewAgain) { this.previewAgain = false; this.renderPreview(true); }
+    }
   }
+  private previewBusy = false; private previewAgain = false;
 
   // ---------- Document view: find, go to a section ----------
   // Search ignores accents, case and extra spaces, and finds words split across pieces of formatting.
@@ -605,7 +817,13 @@ export class EvaluationComponent implements OnDestroy {
   docFrom = ''; private docJump = '';
   private docIndex: {text: string; map: ({node: Text; off: number} | null)[]} | null = null;
 
-  private static fold(c: string) { return /\s/.test(c) ? ' ' : (c.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()[0] ?? c); }
+  private static fold(c: string) {
+    if (/\s/.test(c)) return ' ';
+    if (/[\u2018\u2019\u201A\u2032`´]/.test(c)) return "'";
+    if (/[\u201C\u201D\u201E\u2033]/.test(c)) return '"';
+    if (/[\u2010-\u2015\u2212]/.test(c)) return '-';
+    return c.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()[0] ?? c;
+  }
   private static foldText(s: string) {
     let t = '';
     for (let i = 0; i < s.length; i++) { const f = EvaluationComponent.fold(s[i]); if (f === ' ' && (!t || t.endsWith(' '))) continue; t += f; }
@@ -687,9 +905,10 @@ export class EvaluationComponent implements OnDestroy {
   /** First words of the section text as they go into the Word; the section name as a fallback. */
   private anchorsOf(k: string): string[] {
     const out: string[] = [], ps = this.paragraphs(this.text(k));
-    const p = ps.find(x => !x.title && x.text.trim().split(/\s+/).length >= 4) || ps[0];
-    const cut = (t: string) => t.length > 70 ? t.slice(0, 70).replace(/\s+\S*$/, '') : t;
-    if (p) out.push(cut(p.text.trim()));
+    const cut = (t: string, n = 70) => t.length > n ? t.slice(0, n).replace(/\s+\S*$/, '') : t;
+    const body = ps.filter(x => !x.title && x.text.trim().split(/\s+/).length >= 4).slice(0, 3);
+    for (const p of body.length ? body : ps.slice(0, 1)) out.push(cut(p.text.trim()));
+    for (const p of body) out.push(cut(p.text.trim(), 32));
     // No text yet: what the base document already has in this section (paragraphs and table cells, in order).
     for (const b of this.fileBlock(k)) {
       const ts: string[] = b.type === 'p' ? [b.text] : b.type === 'table' ? (b.grid || []).flat().map((c: any) => c?.text) : [];
@@ -699,22 +918,22 @@ export class EvaluationComponent implements OnDestroy {
     return out;
   }
   /** Goes to the first piece of the section found only once in the document (a table header like "Teste" repeats in every section). */
-  jumpToSection(k: string) {
+  jumpToSection(k: string, scroll = true) {
     let first: Range | null = null;
     for (const a of this.anchorsOf(k)) {
       const hits = this.rangesOf(a, 2);
       if (hits.length === 1) { first = hits[0]; break; }
       first ??= hits[0] || null;
     }
-    if (first) { this.paint('nl-target', [first]); this.show(first); return; }
+    if (first) { this.paint('nl-target', [first]); if (scroll) this.show(first); return; }
     this.paint('nl-target', []);
-    this.api.notify('Não achei o texto desta seção no documento. Confira se ela já tem texto.');
+    if (scroll) this.api.notify('Não achei o texto desta seção no documento. Confira se ela já tem texto.');
   }
   /** From a section: opens the document already at that section's text. */
   viewInDocument(k: string) {
     if (!this.canWrite()) return;
     if (this.isMissing(k)) { this.api.notify('Esta seção não entra no Word: o arquivo base não tem o lugar dela.'); return; }
-    this.docFrom = k; this.docJump = k; this.setMode('documento');
+    this.docFrom = k; this.docJump = k; this.docActive = k; this.setMode('documento');
   }
   backToSection() { const k = this.docFrom; this.docFrom = ''; this.paint('nl-target', []); this.setMode('secoes'); if (k) this.select(k); }
   // ---------- ChatGPT (manual mode) ----------
@@ -722,6 +941,10 @@ export class EvaluationComponent implements OnDestroy {
   gptOpen = ''; gptText = ''; gptHidden = 0; gptLoading = ''; gptCopied = false;
   /** Section whose generation panel is open (API, ChatGPT plugin or copy and paste). */
   cgOpen = '';
+  /** Section whose "other ways to generate" menu is open; any click elsewhere or Esc closes it. */
+  actMenu = '';
+  @HostListener('document:click') closeActMenu() { this.actMenu = ''; this.secMenu = false; }
+  @HostListener('document:keydown.escape') escActMenu() { this.actMenu = ''; this.secMenu = false; }
   sectionImages(k: string): string[] { return this.fileBlock(k).filter(b => b.type === 'img').map(b => b.src); }
   /** "OpenAI API" in the panel: the same generation as the section's own buttons. */
   useApiFor(k: string) { if (k === MANUAL_KEY) this.generateConclusion(); else if (k === DEMAND_KEY) this.generateDemand(); else this.regenerate(k); }
@@ -785,5 +1008,5 @@ export class EvaluationComponent implements OnDestroy {
   /** Identificação and files share the first step; a manual evaluation has no AI step. */
   stepIdx() { return this.aiOn() ? [0, 2, 3] : [0, 3]; }
   goStep(i: number) { if (i === 1) i = 0; if (i === 2 && !this.aiOn()) i = 3; if (i !== 3) this.closeRefs(); this.step = i; if (i === 3 && this.mode === 'documento') setTimeout(() => this.renderPreview()); }
-  setMode(m: 'secoes' | 'documento') { if (m === 'documento' && !this.canWrite()) return; if (m !== 'secoes') this.closeRefs(); this.mode = m; if (m === 'documento') setTimeout(() => this.renderPreview()); }
+  setMode(m: 'secoes' | 'documento') { if (m === 'documento' && !this.canWrite()) return; if (m !== 'documento' && this.docEditing) this.finishDocEdit(); if (m !== 'secoes') this.closeRefs(); this.mode = m; if (m === 'documento') setTimeout(() => this.renderPreview()); }
 }

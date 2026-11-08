@@ -16,6 +16,9 @@ import {ModelsComponent} from './models.component';
 import {ReportsComponent} from './reports.component';
 import {LibraryComponent} from './library.component';
 import {ChatgptConsentComponent} from './ui/chatgpt-consent.component';
+import {CommandPaletteComponent, rememberRecent} from './ui/command-palette.component';
+import {TopbarService} from './topbar.service';
+import {installTooltips} from './tooltip';
 
 type Screen = 'home' | 'evaluation' | 'new' | 'settings' | 'patients' | 'models' | 'library' | 'reports';
 const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 'models', 'library', 'reports'];
@@ -23,7 +26,7 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule, NewEvaluationComponent, EvaluationComponent, SettingsComponent, IconComponent, ConfirmDialogComponent, DashboardComponent, PatientsComponent, ModelsComponent, ReportsComponent, LibraryComponent, ChatgptConsentComponent],
+  imports: [CommonModule, FormsModule, NewEvaluationComponent, EvaluationComponent, SettingsComponent, IconComponent, ConfirmDialogComponent, DashboardComponent, PatientsComponent, ModelsComponent, ReportsComponent, LibraryComponent, ChatgptConsentComponent, CommandPaletteComponent],
   template: `
 <!-- Theme switch, shared by the login screen and the top bar -->
 <ng-template #themeSwitch>
@@ -122,8 +125,17 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
 
   <div class="workspace">
     <header class="top">
-      <div class="gsearch"><nl-icon name="search"/><input class="input" [ngModel]="search" (ngModelChange)="globalSearch($event)" placeholder="Buscar paciente ou avaliação…" aria-label="Buscar paciente ou avaliação"><kbd>Ctrl + K</kbd></div>
-      <span class="grow"></span>
+      <!-- Left: what the open screen puts here (the evaluation: back to the list, patient, status) -->
+      <div *ngIf="screen()==='evaluation' && topbar.info?.() as t; else noTitle" class="top-title">
+        <button type="button" class="top-back" (click)="goHome()" title="Voltar às avaliações" aria-label="Voltar às avaliações"><nl-icon name="chevl"/> Avaliações</button>
+        <span class="top-sep" aria-hidden="true">/</span>
+        <b class="top-name">{{t.title}}</b>
+        <span *ngIf="t.badge" [class]="'badge ' + t.badge.css">{{t.badge.label}}</span>
+        <small *ngIf="t.sub" class="top-sub">{{t.sub}}</small>
+      </div>
+      <ng-template #noTitle><span class="grow"></span></ng-template>
+      <span *ngIf="screen()==='evaluation' && topbar.info?.()" class="grow"></span>
+      <button type="button" class="top-search" (click)="paletteOpen=true" title="Buscar (Ctrl+K)" aria-label="Buscar paciente, avaliação ou tela (Ctrl+K)"><nl-icon name="search"/><kbd>Ctrl K</kbd></button>
       <ng-container *ngTemplateOutlet="themeSwitch"></ng-container>
       <div *ngIf="screen()==='evaluation' && timer.evalId()" class="timer" [class.paused]="timer.state()==='paused'" [class.finished]="timer.state()==='finished'" [title]="timerTitle()">
         <span class="tdot"></span>
@@ -150,6 +162,7 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
   </div>
 </div>
 
+<nl-command-palette *ngIf="paletteOpen && api.loggedIn()" [evaluations]="evaluations()" [screens]="paletteScreens()" (openEvaluation)="open($event)" (goScreen)="goFromPalette($event)" (closed)="paletteOpen=false"></nl-command-palette>
 <nl-confirm-dialog></nl-confirm-dialog>
 <div *ngIf="api.toast()" class="toast" role="status">{{api.toast()}}</div>
 `,
@@ -220,8 +233,18 @@ nl-icon{--ico-size:16px}
 .nav-collapsed .nav-logout{margin-left:0}
 
 .workspace{display:flex;flex-direction:column;min-width:0;height:calc(100vh / var(--zoom, 1))}
-.top{height:64px;flex:none;display:flex;align-items:center;gap:12px;padding:0 24px}
+.top{height:48px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px}
 .top .grow{flex:1}
+.top-title{display:flex;align-items:center;gap:8px;min-width:0;flex:0 1 auto}
+.top-back{display:inline-flex;align-items:center;gap:2px;height:30px;padding:0 8px 0 4px;border:0;border-radius:6px;background:none;color:var(--primary-text);font:600 13px var(--font);cursor:pointer;--ico-size:15px}
+.top-back:hover{background:var(--chip)}
+.top-sep{color:var(--text-3)}
+.top-name{font-size:16px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto;max-width:340px}
+.top-sub{flex:0 100 auto;font-size:12.5px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.top-search{display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 10px;border:1px solid var(--border-card);border-radius:var(--radius-pill);background:var(--card);color:var(--text-2);cursor:pointer;--ico-size:17px}
+.top-search:hover{border-color:var(--primary);color:var(--text)}
+.top-search kbd{white-space:nowrap;font:500 11px var(--mono);color:var(--text-3);background:var(--chip);border:1px solid var(--border-card);border-radius:5px;padding:1px 5px}
+@media(max-width:1100px){.top-sub{display:none}.top-search kbd{display:none}}
 .gsearch{position:relative;display:flex;align-items:center;flex:0 1 560px;min-width:200px}
 .gsearch>nl-icon{position:absolute;left:12px;color:var(--text-3);--ico-size:18px;pointer-events:none}
 .gsearch .input{height:40px;padding-left:40px;border-color:var(--border-card)}
@@ -241,8 +264,8 @@ nl-icon{--ico-size:16px}
 @keyframes blink{50%{opacity:.3}}
 @media(prefers-reduced-motion:reduce){.tdot{animation:none}}
 
-.main{flex:1;min-height:0;overflow:auto;padding:0 24px 24px}
-.content{max-width:1600px;margin:0 auto}
+.main{flex:1;min-height:0;overflow:auto;padding:0 10px 24px}
+.content{margin:0 auto}
 
 @media(max-width:1180px){
   .app,.app.nav-collapsed{grid-template-columns:76px minmax(0,1fr)}
@@ -291,6 +314,7 @@ export class AppComponent {
 
 
   constructor() {
+    installTooltips();
     if (this.api.loggedIn()) this.api.loadMe().then(() => { if (!this.mustChange()) this.load(); });
     effect(() => { try { sessionStorage.setItem('nl_view', JSON.stringify({screen: this.screen(), id: this.selectedId()})); } catch {} });
   }
@@ -343,8 +367,13 @@ export class AppComponent {
   isOn(id: Screen) { return this.screen() === id || (id === 'home' && (this.screen() === 'evaluation' || this.screen() === 'new')); }
   globalSearch(v: string) { this.search = v; if (this.screen() !== 'home' && v.trim()) this.go('home'); }
   @HostListener('document:keydown', ['$event'])
-  onKey(e: KeyboardEvent) { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' && this.api.loggedIn()) { e.preventDefault(); (document.querySelector('.gsearch input') as HTMLInputElement | null)?.focus(); } }
-  open(id: string) { if (this.blocked()) return; this.autoGenerate = false; this.selectedId.set(id); this.screen.set('evaluation'); }
+  onKey(e: KeyboardEvent) { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' && this.api.loggedIn() && this.api.me() && !this.mustChange()) { e.preventDefault(); this.paletteOpen = !this.paletteOpen; } }
+  /** Ctrl+K search (patients, evaluations and screens). */
+  paletteOpen = false;
+  topbar = inject(TopbarService);
+  paletteScreens() { return [{id: 'new', label: 'Nova avaliação', icon: 'plus'}, ...this.navItems]; }
+  goFromPalette(id: string) { this.go(id as Screen); }
+  open(id: string) { if (this.blocked()) return; this.autoGenerate = false; rememberRecent(id); this.selectedId.set(id); this.screen.set('evaluation'); }
   async onCreated(e: {id: string; generate: boolean}) { await this.load(); this.autoGenerate = e.generate; this.selectedId.set(e.id); this.screen.set('evaluation'); }
   async onDeleted() { this.timer.stop(); this.selectedId.set(''); this.screen.set('home'); await this.load(); }
 }

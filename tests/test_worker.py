@@ -253,6 +253,36 @@ class TestWorker(unittest.TestCase):
   self.assertEqual(texts[i+1:i+3],['Interpretação Clínica:','Texto manual sintético.'])
   self.assertEqual(texts.index('MEMÓRIA E APRENDIZAGEM:'),i+4)
 
+ def test_export_creates_missing_section_before_the_next_one(self):
+  d=Document()
+  d.add_table(rows=1,cols=1).cell(0,0).text='HABILIDADES INTELECTUAIS E DE INTELIGÊNCIA'
+  d.add_table(rows=1,cols=1).cell(0,0).text='Interpretação e Observações Clínicas:'
+  d.add_table(rows=1,cols=1).cell(0,0).text='MEMÓRIA E APRENDIZAGEM:'
+  d.add_table(rows=1,cols=1).cell(0,0).text='Interpretação e Observações Clínicas:'
+  d.add_paragraph('HIPÓTESE DIAGNÓSTICA');d.add_paragraph('Cidade Fictícia, 1 de janeiro de 2026.')
+  d.save(self.base);before=sha(self.base)
+  order=['anamnesis','inteligencia','percepcao','memoria','atencao','conclusao','hipotese','recomendacoes']
+  spec={'base':str(self.base),'out':str(self.out),'sections':{'inteligencia':'Inteligência sintética.','percepcao':'Percepção sintética.','memoria':'Memória sintética.','conclusao':'Conclusão sintética.',
+        'recomendacoes':'Recomendações sintéticas.'},
+        'created':{'keys':['percepcao','conclusao','recomendacoes'],'order':order,'titles':{'percepcao':'Percepção','conclusao':'Conclusão','recomendacoes':'Indicações e recomendações'}}}
+  r=run('export',stdin=spec)
+  self.assertEqual((sorted(r['created']),r['missing']),(['conclusao','percepcao','recomendacoes'],[]));self.assertEqual(sha(self.base),before)
+  body=[e for e in Document(self.out).element.body.iterchildren() if e.tag.endswith('}p') or e.tag.endswith('}tbl')]
+  texts=[''.join(t.text or '' for t in e.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t')) for e in body]
+  i=texts.index('PERCEPÇÃO')
+  self.assertEqual(texts[i+1:i+4],['Interpretação Clínica:','Percepção sintética.',''])
+  self.assertEqual(texts[i+4],'MEMÓRIA E APRENDIZAGEM:')
+  self.assertLess(texts.index('Inteligência sintética.'),i)
+  # not an interpretation: no field label; goes before the next section the file has
+  j=texts.index('CONCLUSÃO')
+  self.assertEqual(texts[j+1:j+4],['Conclusão sintética.','','HIPÓTESE DIAGNÓSTICA'])
+  # nothing after it in the file: right above the closing place/date line
+  j=texts.index('INDICAÇÕES E RECOMENDAÇÕES')
+  self.assertEqual(texts[j+1:j+4],['Recomendações sintéticas.','','Cidade Fictícia, 1 de janeiro de 2026.'])
+  # not chosen: still missing, file untouched there
+  spec['created']['keys']=[];r=run('export',stdin=spec)
+  self.assertEqual(sorted(r['missing']),['conclusao','percepcao','recomendacoes'])
+
  def test_bfp_title_gets_its_own_section_before_diva(self):
   d=Document()
   d.add_table(rows=1,cols=1).cell(0,0).text='COMPORTAMENTO:'

@@ -1,41 +1,64 @@
 <ng-container *ngIf="current">
-  <!-- Header -->
-  <p class="crumbs"><button type="button" (click)="back.emit()">Avaliações</button><nl-icon name="chevr"/><b>Paciente</b></p>
-  <div class="evhead">
-    <span class="pav"><nl-icon name="user"/></span>
-    <div class="evtitle">
-      <h1>{{current.patient_name}} <span [class]="'badge '+status().css">{{status().label}}</span></h1>
-      <p>{{summary() || 'Complete a identificação'}}</p>
+  <!-- One line: steps | pending strip | actions as icons (same pill style as the steps) -->
+  <div class="evbar">
+    <nav class="steps-mini" aria-label="Etapas da avaliação">
+      <ng-container *ngFor="let i of stepIdx(); let n=index; let last=last">
+        <button type="button" class="sm-step" [attr.aria-current]="step===i ? 'step' : null" [class.current]="step===i" [class.done]="stepDone(i) && step!==i" (click)="goStep(i)" [title]="steps[i] + ' · ' + stepSub(i)">
+          <span class="sm-n"><nl-icon *ngIf="stepDone(i) && step!==i" name="check"/><ng-container *ngIf="!(stepDone(i) && step!==i)">{{n+1}}</ng-container></span>{{shortStep(i)}}</button>
+        <span *ngIf="!last" class="sm-line" aria-hidden="true"></span>
+      </ng-container>
+    </nav>
+  <!-- Pendências: compact summary here, the list opens below (closed by default) -->
+    <div *ngIf="pendCount()" class="pendsum">
+      <span class="ps-pill"><nl-icon name="alert"/> {{pendCount()===1 ? '1 pendência' : pendCount() + ' pendências'}}</span>
+      <button type="button" class="btn btn-secondary btn-sm" (click)="pendOpen=!pendOpen" [attr.aria-expanded]="pendOpen" aria-controls="pendpanel">{{pendOpen ? 'Ocultar detalhes' : 'Ver detalhes'}} <nl-icon [name]="pendOpen ? 'chevu' : 'chevd'"/></button>
     </div>
-    <span *ngIf="current.start_date" class="date"><nl-icon name="calendar"/> Início: {{brDate(current.start_date)}}</span>
-    <div class="head-actions">
-      <button *ngIf="canWrite()" class="btn btn-secondary" (click)="showDocument()" [disabled]="!docName('base')"><nl-icon name="eye"/> Pré-visualizar</button>
-      <button *ngIf="canWrite()" class="btn btn-secondary" [class.half]="!allApproved()" [disabled]="exporting==='pdf'" (click)="download('pdf')" title="O mesmo laudo do Word, convertido em PDF neste computador"><nl-icon name="pdf"/> {{exporting==='pdf' ? 'Gerando PDF…' : 'Baixar PDF'}}</button>
-      <button *ngIf="canWrite()" class="btn btn-primary" [class.half]="!allApproved()" (click)="download()"><nl-icon name="download"/> Baixar Word</button>
+    <span class="grow"></span>
+    <nl-review-panel #rp [slim]="true" [evaluationId]="evaluationId" [locked]="locked()" [canWrite]="canWrite()" [docsReady]="docsReady()" [pendings]="pendings()"
+      (state)="review=$event" (changed)="changed.emit()" (goStep)="goStep($event)"></nl-review-panel>
+    <div class="iconpill" role="toolbar" aria-label="Ações da avaliação">
+      <button *ngIf="canWrite()" type="button" class="ip danger" [disabled]="generating" (click)="remove()" title="Excluir avaliação (pede confirmação)" aria-label="Excluir avaliação"><nl-icon name="trash"/></button>
+      <button *ngIf="canWrite()" type="button" class="ip" (click)="showDocument()" [disabled]="!docName('base')" title="Pré-visualizar o Word" aria-label="Pré-visualizar o Word"><nl-icon name="eye"/></button>
+      <button *ngIf="canWrite()" type="button" class="ip" [class.half]="!allApproved()" [disabled]="exporting==='pdf'" (click)="download('pdf')" [title]="exporting==='pdf' ? 'Gerando PDF…' : 'Baixar PDF (o mesmo laudo do Word, convertido neste computador)'" aria-label="Baixar PDF"><nl-icon name="pdf"/></button>
+      <button *ngIf="canWrite()" type="button" class="ip primary" [class.half]="!allApproved()" (click)="download()" title="Baixar Word" aria-label="Baixar Word"><nl-icon name="download"/></button>
     </div>
   </div>
 
-  <!-- Stepper -->
-  <nav class="stepper" [style.grid-template-columns]="'repeat(' + stepIdx().length + ', 1fr)'" aria-label="Etapas da avaliação">
-    <button *ngFor="let i of stepIdx(); let n=index" type="button" class="st" [attr.aria-current]="step===i ? 'step' : null" [class.current]="step===i" [class.done]="stepDone(i)" [class.pending]="!stepDone(i) && step!==i" (click)="goStep(i)">
-      <span class="circle"><nl-icon *ngIf="stepDone(i) && step!==i" name="check"/><ng-container *ngIf="!(stepDone(i) && step!==i)">{{n+1}}</ng-container></span>
-      <span class="st-txt"><strong>{{steps[i]}}</strong><span>{{stepSub(i)}}</span></span>
-    </button>
-  </nav>
-
-  <!-- Sections that have no place in the base document -->
-  <section *ngIf="inspection && missing().length" class="alert danger" role="alert">
-    <nl-icon name="alert"/>
-    <div>
-      <strong>Faltam no documento: {{missing().join(', ')}}</strong>
-      <p *ngIf="!locked()">Essas seções não serão geradas e não entrarão no Word. Para incluir, envie o arquivo base de novo com elas.</p>
-      <p *ngIf="locked()">Essas seções não entraram no Word. A avaliação está aprovada; para incluí-las, crie uma nova avaliação com o arquivo corrigido.</p>
+  <section *ngIf="pendOpen && pendCount()" id="pendpanel" class="pendpanel" aria-label="Pendências">
+    <div class="pp-head">
+      <div><h3>Conferir antes de finalizar</h3><p>Revise os itens abaixo para concluir o laudo.</p></div>
+      <span *ngIf="review" class="pp-state"><span [class]="'badge ' + review.badge.css"><nl-icon [name]="review.badge.icon"/> {{review.badge.label}}</span><small>{{review.text}}</small></span>
     </div>
-    <button *ngIf="!locked() && step!==0" class="btn btn-secondary btn-sm" (click)="goStep(0)">Enviar arquivo corrigido</button>
+    <ul class="pp-list">
+      <li *ngFor="let it of issues(); trackBy: byIssue" [class]="it.level">
+        <div class="pp-row">
+          <nl-icon name="alert" class="pp-ico"/>
+          <div class="pp-tx"><b>{{it.title}}</b><small *ngIf="it.desc">{{it.desc}}</small></div>
+          <button *ngIf="it.action" type="button" class="btn btn-secondary btn-sm pp-act" [attr.aria-expanded]="it.key==='missing' ? resolveOpen : null" (click)="it.run()">{{it.action}}</button>
+        </div>
+        <!-- "Resolver" on missing sections: the explanation and the existing actions -->
+        <div *ngIf="it.key==='missing' && resolveOpen" class="pp-sub">
+          <p *ngIf="!locked()">Essas seções não entram no Word. Você pode criá-las no documento (o sistema põe o título e o seu texto no lugar certo, sem mudar o resto do arquivo) ou enviar o arquivo base de novo com elas.</p>
+          <p *ngIf="locked()">Essas seções não entraram no Word. A avaliação está aprovada; para incluí-las, crie uma nova avaliação com o arquivo corrigido.</p>
+          <div *ngIf="!locked()" class="create-row">
+            <ng-container *ngIf="!readOnly()">
+              <button *ngFor="let ms of missingKeys()" type="button" class="btn btn-secondary btn-sm" [disabled]="!!creatingSection" (click)="setCreated(ms.id, true)" [title]="'Cria ' + ms.name + ' no Word, ' + createdPlace(ms.id)"><nl-icon name="plus"/> Criar {{ms.name}} no documento</button>
+            </ng-container>
+            <button *ngIf="step!==0" type="button" class="btn btn-secondary btn-sm" (click)="pendOpen=false; goStep(0)"><nl-icon name="upload"/> Enviar arquivo corrigido</button>
+          </div>
+        </div>
+      </li>
+      <!-- correction requests still open: shown as pendências, resolved here -->
+      <li *ngFor="let n of review?.notes || []" class="warn">
+        <div class="pp-row">
+          <nl-icon name="chat" class="pp-ico"/>
+          <div class="pp-tx"><b>Correção pedida</b><small>{{n.text}}{{n.author_name ? ' — ' + n.author_name : ''}}</small></div>
+          <button *ngIf="!locked()" type="button" class="btn btn-secondary btn-sm pp-act" (click)="rp.resolve(n, true)">Marcar como resolvido</button>
+        </div>
+      </li>
+    </ul>
   </section>
 
-  <nl-review-panel [evaluationId]="evaluationId" [locked]="locked()" [canWrite]="canWrite()" [docsReady]="docsReady()" [pendings]="pendings()"
-    (changed)="changed.emit()" (goStep)="goStep($event)"></nl-review-panel>
 
   <!-- Steps 1–3: card + side column -->
   <div *ngIf="step<3" class="stepwrap">
@@ -45,7 +68,7 @@
       <section *ngIf="step===0" class="card stepcard">
         <div class="card-head"><h2>Identificação</h2><small>{{idSaving ? 'Salvando…' : locked() ? 'Travada (avaliação aprovada)' : !canWrite() ? 'Somente leitura para o seu papel' : 'Salva automaticamente · campos em branco usam o arquivo base'}}</small></div>
         <div class="card-body">
-          <nl-identity-form [model]="idModel" (modelChange)="onIdentity($event)" [disabled]="readOnly()"></nl-identity-form>
+          <nl-identity-form [model]="idModel" (modelChange)="onIdentity($event)" [disabled]="readOnly()" [showRequired]="!readOnly()"></nl-identity-form>
           <div class="place-row">
             <label for="place-date" class="mlabel">Local e data (final do laudo)</label>
             <div class="place-in">
@@ -193,7 +216,6 @@
           <button class="file-line" (click)="goStep(1)"><nl-icon [name]="docName('anamnesis') ? 'checkc' : 'doc'" [class.ok]="docName('anamnesis')"/><span class="mono">{{docName('anamnesis')||'Anamnese'}}</span></button>
         </div>
       </section>
-      <button *ngIf="canWrite()" class="link-danger" (click)="remove()"><nl-icon name="trash"/> Excluir avaliação</button>
     </aside>
   </div>
 
@@ -202,7 +224,8 @@
     <div class="card confbar">
       <h2>Conferir seções</h2>
       <div class="head-tools">
-        <button *ngIf="!readOnly() && mode==='secoes'" class="link" (click)="approveAll()">Aprovar todas</button>
+        <button *ngIf="!readOnly()" class="btn btn-secondary btn-sm" (click)="openApproveAll()" [disabled]="allApproved()" [title]="allApproved() ? 'Todas já estão aprovadas' : 'Escolher as seções e aprovar'"><nl-icon name="check"/> Aprovar todas</button>
+        <button *ngIf="mode==='secoes'" type="button" class="btn btn-secondary btn-sm" (click)="setNavStyle(navStyle==='compacta' ? 'barra' : 'compacta')" [title]="navStyle==='compacta' ? 'Voltar para a barra com o nome de cada seção' : 'Usar a navegação compacta: seção atual, anterior/próxima e menu com todas'" [attr.aria-label]="navStyle==='compacta' ? 'Mostrar barra com nomes das seções' : 'Usar navegação compacta'"><nl-icon [name]="navStyle==='compacta' ? 'bars' : 'list'"/></button>
         <div class="seg" role="tablist" aria-label="Modo de visualização"><button type="button" role="tab" [attr.aria-selected]="mode==='secoes'" [class.on]="mode==='secoes'" (click)="setMode('secoes')"><nl-icon name="layers"/> Seções</button><button *ngIf="canWrite()" type="button" role="tab" [attr.aria-selected]="mode==='documento'" [class.on]="mode==='documento'" (click)="setMode('documento')"><nl-icon name="doc"/> Documento</button></div>
       </div>
     </div>
@@ -210,20 +233,45 @@
     <ng-container *ngIf="mode==='secoes'">
       <section *ngIf="!drafted() && !reviewRows().length" class="card card-pad"><p class="muted">Ainda não há textos. <button *ngIf="aiOn()" class="link" (click)="goStep(2)">Gerar com IA</button><ng-container *ngIf="!aiOn()">Use Escrever em cada seção.</ng-container></p></section>
       <div *ngIf="reviewRows().length" class="work">
-        <nav class="card seclist" aria-label="Seções da avaliação">
-          <h2><nl-icon name="doc"/> Seções da avaliação <span>({{reviewRows().length}})</span></h2>
-          <button *ngFor="let s of reviewRows(); let i=index; trackBy: bySection" type="button" class="sec-item" [class.on]="cur()===s.id" [class.sec-missing]="isMissing(s.id)" (click)="select(s.id)" [attr.aria-current]="cur()===s.id ? 'true' : null">
-            <span class="mono num">{{(i+1).toString().padStart(2,'0')}}</span>
-            <span class="sec-name">{{s.name}}</span>
-            <span *ngIf="isMissing(s.id)" class="badge danger">Falta</span>
-            <span *ngIf="!isMissing(s.id)" [class]="'badge '+SECTION_STATE[state(s.id)].css">{{SECTION_STATE[state(s.id)].label}}</span>
-          </button>
-          <!-- closing "Cidade, data." line, last thing of the report -->
-          <div *ngIf="placeInFile() || placeDate" class="sec-place">
-            <label for="place-date-2" class="mlabel">Local e data (final do laudo)</label>
-            <input id="place-date-2" class="input" [(ngModel)]="placeDate" (blur)="savePlaceDate()" (keyup.enter)="savePlaceDate()" [disabled]="readOnly()" [placeholder]="placeInFile()" maxlength="120">
-            <button *ngIf="!readOnly()" type="button" class="link" (click)="todayPlaceDate()">Usar a data de hoje</button>
+        <!-- Navegação compacta (padrão): seção aberta em destaque, anterior/próxima, barra fina e menu "Todas as seções" -->
+        <nav *ngIf="navStyle==='compacta'" class="card secnav" aria-label="Seções da avaliação" (click)="$event.stopPropagation()">
+          <div class="sn-mid">
+            <div class="sn-head">
+              <span class="label-caps">Seção {{secNum(cur())}} de {{reviewRows().length}}</span>
+              <span class="sn-title">{{curName()}}</span>
+              <span [class]="secBadge(cur())">{{secLabel(cur())}}</span>
+              <button type="button" class="btn btn-secondary btn-sm sn-all" (click)="secMenu=!secMenu" [attr.aria-expanded]="secMenu" aria-controls="sec-menu">Todas as seções <nl-icon [name]="secMenu ? 'chevu' : 'chevd'"/></button>
+            </div>
+            <div class="sn-bars" [style.grid-template-columns]="'repeat(' + reviewRows().length + ', minmax(0, 1fr))'">
+              <button *ngFor="let s of reviewRows(); let i=index; trackBy: bySection" type="button" class="sn-seg" [ngClass]="'st-' + secKind(s.id)" [class.on]="cur()===s.id" (click)="pickSection(s.id)"
+                [attr.aria-current]="cur()===s.id ? 'true' : null" [attr.aria-label]="(i+1) + '. ' + s.name + ' · ' + secLabel(s.id)" [title]="(i+1) + '. ' + s.name + ' · ' + secLabel(s.id)"></button>
+            </div>
           </div>
+
+          <div *ngIf="secMenu" id="sec-menu" class="sn-menu" role="region" aria-label="Todas as seções">
+            <div class="sn-mhead">
+              <span class="label-caps">Todas as seções ({{reviewRows().length}})</span>
+              <div class="sn-filters" role="group" aria-label="Filtrar seções">
+                <button type="button" [class.on]="!secFilter" [attr.aria-pressed]="!secFilter" (click)="secFilter=''">Todas</button>
+                <button *ngIf="secCount('warn')" type="button" [class.on]="secFilter==='warn'" [attr.aria-pressed]="secFilter==='warn'" (click)="secFilter='warn'">Para revisar {{secCount('warn')}}</button>
+                <button *ngIf="secCount('idle')" type="button" [class.on]="secFilter==='idle'" [attr.aria-pressed]="secFilter==='idle'" (click)="secFilter='idle'">Pendentes {{secCount('idle')}}</button>
+                <button *ngIf="secCount('missing')" type="button" [class.on]="secFilter==='missing'" [attr.aria-pressed]="secFilter==='missing'" (click)="secFilter='missing'">Falta {{secCount('missing')}}</button>
+              </div>
+            </div>
+            <ol class="sn-list">
+              <li *ngFor="let s of secMenuRows(); trackBy: bySection"><button type="button" class="sn-row" [class.on]="cur()===s.id" [class.missing]="isMissing(s.id)" (click)="pickSection(s.id)" [attr.aria-current]="cur()===s.id ? 'true' : null"><span class="mono">{{secNum(s.id)}}</span><span class="nm">{{s.name}}</span><span [class]="secBadge(s.id)">{{secLabel(s.id)}}</span></button></li>
+            </ol>
+            <p *ngIf="!secMenuRows().length" class="muted" style="margin:8px 10px">Nenhuma seção neste filtro.</p>
+          </div>
+        </nav>
+
+        <!-- Modelo anterior (para voltar, use o botão ao lado de "Aprovar todas"): uma barra por seção com o nome embaixo -->
+        <nav *ngIf="navStyle==='barra'" class="card secstrip" aria-label="Seções da avaliação" [style.grid-template-columns]="'repeat(' + reviewRows().length + ', minmax(0, 1fr))'">
+          <button *ngFor="let s of reviewRows(); let i=index; trackBy: bySection" type="button" class="strip-item" [class.on]="cur()===s.id"
+            [ngClass]="'st-' + (isMissing(s.id) ? 'missing' : SECTION_STATE[state(s.id)].css)" (click)="select(s.id)" [attr.aria-current]="cur()===s.id ? 'true' : null"
+            [title]="(i+1) + '. ' + s.name + ' · ' + (isMissing(s.id) ? 'Falta no documento' : SECTION_STATE[state(s.id)].label)">
+            <span class="bar"></span><span class="nm">{{s.name}}</span>
+          </button>
         </nav>
 
         <ng-container *ngFor="let s of reviewRows(); let i=index; trackBy: bySection">
@@ -236,7 +284,11 @@
             <span *ngIf="!isMissing(s.id)" [class]="'badge '+SECTION_STATE[state(s.id)].css">{{SECTION_STATE[state(s.id)].label}}</span>
           </div>
 
-          <div *ngIf="isMissing(s.id)" class="alert danger small"><nl-icon name="alert"/><div><p>{{missingWhy(s.id)}} O texto fica salvo aqui, mas não entra no Word. Copie para o documento ou envie o arquivo base de novo com o campo "Interpretação".</p></div></div>
+          <div class="edgrid"><div class="edmain">
+          <div *ngIf="isMissing(s.id)" class="alert danger small"><nl-icon name="alert"/><div><p>{{missingWhy(s.id)}} O texto fica salvo aqui, mas não entra no Word. Crie a seção no documento ou envie o arquivo base de novo com ela.</p>
+            <button *ngIf="!readOnly() && !locked()" class="btn btn-secondary btn-sm" [disabled]="!!creatingSection" (click)="setCreated(s.id, true)"><nl-icon name="plus"/> Criar no documento</button></div></div>
+          <div *ngIf="isCreated(s.id)" class="alert tip small"><nl-icon name="info"/><div><p>Seção criada por você: o arquivo base não tem. Ao baixar o Word, o sistema põe o título "{{s.name.toUpperCase()}}"{{isInterpretation(s.id) ? ', o campo "Interpretação Clínica:"' : ''}} e este texto {{createdPlace(s.id)}}. O resto do arquivo não muda.{{isHand(s.id) && isInterpretation(s.id) ? ' Como não há tabelas desta seção no arquivo, o texto é escrito por você.' : ''}}</p>
+            <button *ngIf="!readOnly() && !locked()" class="link" [disabled]="!!creatingSection" (click)="setCreated(s.id, false)">Excluir do documento</button></div></div>
           <div *ngIf="fieldAdded(s.id)" class="alert tip small"><nl-icon name="info"/><div><p>O arquivo base não tem o campo "Interpretação" desta seção: ao baixar o Word, o sistema cria "Interpretação Clínica:" logo após as tabelas da seção e coloca este texto ali.</p></div></div>
           <div *ngFor="let w of warnings(s.id)" class="alert warn small"><nl-icon name="info"/><div><p>{{w}}</p></div></div>
 
@@ -247,9 +299,7 @@
             <nl-dictate [evaluationId]="evaluationId"><textarea [id]="'guide-'+s.id" class="input" rows="5" [(ngModel)]="instrDraft[s.id]" placeholder="Ex.: Integrar os achados de atenção e funções executivas com as queixas escolares; destacar memória preservada; mencionar que os dados são compatíveis com a hipótese que será descrita na Hipótese Diagnóstica."></textarea></nl-dictate>
             <div class="ed-instr-row">
               <small class="mono">{{words(instrDraft[s.id])}} palavras</small>
-              <!-- If the AI text is not good: write it by hand, or use ChatGPT and paste the answer -->
-              <button class="btn btn-secondary btn-sm" [class.on]="cgOpen===s.id" (click)="toggleCg(s.id)" title="Gerar pela API, pelo plugin do ChatGPT ou por cópia e colagem, com estas orientações"><nl-icon name="external"/> Usar o ChatGPT</button>
-              <button class="btn btn-primary btn-sm" [disabled]="generating" (click)="generateConclusion()"><nl-icon name="spark"/> {{gen[s.id]==='running'?'Gerando…':state(s.id)==='pend'?'Gerar conclusão com a IA':'Gerar de novo com estas orientações'}}</button>
+              <small class="hint">Depois use <b>Gerar com IA</b> abaixo (ou ChatGPT, na setinha ao lado).</small>
             </div>
           </div>
 
@@ -263,8 +313,8 @@
           <p *ngIf="editing!==s.id && ((s.id===DEMAND_KEY && demandIsFromFile()) || (s.id!==DEMAND_KEY && fromFile(s.id)))" class="footnote from-file">Texto do arquivo enviado, sem alteração e sem IA.</p>
           <div *ngIf="editing===s.id" class="ed-editbar">
             <span>{{autoSaving ? 'Salvando…' : autoSaved ? 'Salvo automaticamente às ' + autoSaved + '.' : 'Editando o texto. Salva sozinho a cada pausa.'}}</span>
-            <button class="link" (click)="openGpt(s.id)" title="Copia o pedido e abre o ChatGPT">Abrir no ChatGPT</button>
-            <button class="link" (click)="pasteAnswer()">Colar resposta</button>
+            <button *ngIf="!isHand(s.id)" class="btn btn-secondary btn-sm" [disabled]="gptLoading===s.id" (click)="openGpt(s.id)" title="Copia o pedido desta seção e abre o ChatGPT"><nl-icon name="external"/> Abrir no ChatGPT</button>
+            <button class="btn btn-secondary btn-sm" (click)="pasteAnswer()" title="Troca o texto pelo que está copiado (por exemplo, a resposta do ChatGPT)"><nl-icon name="copy"/> Colar resposta</button>
             <nl-filter-select *ngIf="snippetsFor(s.id).length" size="sm" [searchable]="true" ariaLabel="Inserir texto-padrão" placeholder="Inserir texto-padrão"
               [options]="snippetsFor(s.id)" value="" (valueChange)="insertSnippet($event)"></nl-filter-select>
             <button class="btn btn-secondary btn-sm" (click)="closeEdit()">{{autoSaved ? 'Fechar' : 'Cancelar'}}</button>
@@ -318,27 +368,12 @@
               <button *ngIf="reader.key===s.id" class="speed" (click)="reader.stop()" aria-label="Parar leitura"><nl-icon name="stop"/></button>
             </ng-container>
             <button *ngIf="refCount(s.id)" class="link tlink" (click)="toggleRefs(s.id)">{{refLabel(s.id)}}</button>
-            <div class="edacts">
-              <button *ngIf="s.id===MANUAL_KEY && conclusionSources().length" class="btn btn-secondary btn-sm" (click)="copyAll()" title="Copia os textos de todas as seções usadas na conclusão"><nl-icon [name]="copied==='__all' ? 'check' : 'copy'"/> {{copied==='__all' ? 'Copiado' : 'Copiar tudo'}}</button>
-              <button *ngIf="previous?.sections?.[s.id]" class="btn btn-secondary btn-sm" [class.on]="prevOpen===s.id" (click)="prevOpen = prevOpen===s.id ? '' : s.id" [attr.aria-expanded]="prevOpen===s.id"><nl-icon name="calendar"/> Avaliação anterior</button>
-              <button *ngIf="(section(s.id)?.version || 1) > 1" class="btn btn-secondary btn-sm" [class.on]="versionsOpen===s.id" (click)="versionsOpen = versionsOpen===s.id ? '' : s.id" [attr.aria-expanded]="versionsOpen===s.id"><nl-icon name="restore"/> Versões ({{(section(s.id)?.version || 1) - 1}})</button>
-              <button *ngIf="canWrite() && !isMissing(s.id)" class="btn btn-secondary btn-sm" (click)="viewInDocument(s.id)" title="Abre o documento já no lugar desta seção"><nl-icon name="eye"/> Ver no documento</button>
-              <button *ngIf="text(s.id)" class="btn btn-secondary btn-sm" (click)="copyText(s.id)"><nl-icon [name]="copied===s.id ? 'check' : 'copy'"/> {{copied===s.id ? 'Copiado' : 'Copiar'}}</button>
-              <ng-container *ngIf="!readOnly()">
-                <button *ngIf="s.id!==MANUAL_KEY && !isHand(s.id)" class="btn btn-secondary btn-sm" [class.on]="cgOpen===s.id" [attr.aria-expanded]="cgOpen===s.id" (click)="toggleCg(s.id)" title="Gerar pela API, pelo plugin do ChatGPT ou por cópia e colagem"><nl-icon name="external"/> ChatGPT</button>
-                <button *ngIf="s.id!==MANUAL_KEY && !isHand(s.id)" class="btn btn-secondary btn-sm" [class.on]="sectionInstr===s.id" (click)="openInstr(s.id)" [attr.aria-expanded]="sectionInstr===s.id"><nl-icon name="chat"/> Instrução</button>
-                <button class="btn btn-secondary btn-sm" [class.on]="editing===s.id" [disabled]="editing===s.id" (click)="startEdit(s.id)"><nl-icon name="edit"/> {{text(s.id) ? 'Editar' : 'Escrever'}}</button>
-                <button *ngIf="s.id===DEMAND_KEY && demandInFile() && !demandIsFromFile()" class="btn btn-secondary btn-sm" (click)="useFileDemand()"><nl-icon name="doc"/> Usar o texto do arquivo</button>
-                <button *ngIf="s.id===DEMAND_KEY" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="generateDemand()"><nl-icon name="spark"/> {{gen[s.id]==='running'?'Gerando…':'Gerar com IA'}}</button>
-                <button *ngIf="s.id!==MANUAL_KEY && s.id!==DEMAND_KEY && !isHand(s.id)" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="regenerate(s.id)"><nl-icon [name]="text(s.id) ? 'restore' : 'spark'"/> {{gen[s.id]==='running'?'Gerando…':text(s.id)?'Regenerar':'Gerar com IA'}}</button>
-              </ng-container>
-            </div>
           </div>
 
           <!-- Reference material: read-only, from the base document -->
-          <div *ngIf="fileBlock(s.id).length" class="file-text">
+          <div *ngIf="fileShown(s.id).length" class="file-text">
             <div class="ft-head"><nl-icon name="doc"/><b>No arquivo base, nesta seção</b><small>Tudo o que o Word já tem neste bloco. Fica como está; o texto acima entra no campo de interpretação.</small></div>
-            <ng-container *ngFor="let b of fileBlock(s.id)">
+            <ng-container *ngFor="let b of fileShown(s.id)">
               <p *ngIf="b.type==='p'">{{b.text}}</p>
               <img *ngIf="b.type==='img'" [src]="b.src" class="ft-img" alt="Imagem do arquivo base" loading="lazy">
               <div *ngIf="b.type==='table'" class="ref-scroll"><table class="dt">
@@ -370,9 +405,34 @@
             </div>
           </div>
 
-          <div *ngIf="!readOnly() && state(s.id)==='gen' && !isMissing(s.id) && editing!==s.id" class="ed-approve">
-            <button class="btn btn-primary" (click)="approveAndNext(s.id)"><nl-icon name="check"/> {{isLastPending(s.id) ? 'Aprovar' : 'Aprovar e próxima'}}</button>
-            <span *ngIf="aiOn()" class="ai-note"><nl-icon name="spark"/> Rascunho de IA · só entra no Word depois de aprovado</span>
+          </div>
+          <!-- Actions of the section: one card on the right, each button with its name -->
+          <aside class="actcard" aria-label="Ações da seção">
+            <ng-container *ngIf="!readOnly()">
+              <p class="act-h">Escrever</p>
+              <button class="act" [class.on]="editing===s.id" [disabled]="editing===s.id" (click)="startEdit(s.id)"><nl-icon name="edit"/> {{text(s.id) ? 'Editar' : 'Escrever'}}</button>
+              <button class="act" [disabled]="generating || isHand(s.id)" (click)="useApiFor(s.id)" [title]="isHand(s.id) ? handWhy(s.id) : ''"><nl-icon [name]="text(s.id) && !isHand(s.id) ? 'restore' : 'spark'"/> {{gen[s.id]==='running'?'Gerando…':text(s.id) && !isHand(s.id) && s.id!==DEMAND_KEY?'Regenerar':'Gerar com IA'}}</button>
+              <button *ngIf="s.id!==MANUAL_KEY" class="act" [class.on]="sectionInstr===s.id" [disabled]="isHand(s.id)" (click)="openInstr(s.id)" [attr.aria-expanded]="sectionInstr===s.id"><nl-icon name="chat"/> Regenerar com instrução</button>
+              <button class="act" [class.on]="cgOpen===s.id" [disabled]="isHand(s.id)" (click)="toggleCg(s.id)" [attr.aria-expanded]="cgOpen===s.id"><nl-icon name="external"/> ChatGPT</button>
+              <button *ngIf="s.id===DEMAND_KEY && demandInFile() && !demandIsFromFile()" class="act" (click)="useFileDemand()"><nl-icon name="doc"/> Usar o texto do arquivo</button>
+              <p *ngIf="isHand(s.id)" class="act-why">{{handWhy(s.id)}}</p>
+            </ng-container>
+            <p class="act-h">Ver e copiar</p>
+            <button *ngIf="canWrite() && !isMissing(s.id)" class="act" (click)="viewInDocument(s.id)"><nl-icon name="eye"/> Ver no documento</button>
+            <button *ngIf="text(s.id)" class="act" (click)="copyText(s.id)"><nl-icon [name]="copied===s.id ? 'check' : 'copy'"/> {{copied===s.id ? 'Copiado' : 'Copiar texto'}}</button>
+            <button *ngIf="s.id===MANUAL_KEY && conclusionSources().length" class="act" (click)="copyAll()" title="Copia os textos de todas as seções usadas na conclusão"><nl-icon [name]="copied==='__all' ? 'check' : 'list'"/> {{copied==='__all' ? 'Copiado' : 'Copiar tudo'}}</button>
+            <button *ngIf="(section(s.id)?.version || 1) > 1" class="act" [class.on]="versionsOpen===s.id" (click)="versionsOpen = versionsOpen===s.id ? '' : s.id" [attr.aria-expanded]="versionsOpen===s.id"><nl-icon name="restore"/> Versões <span class="act-n">{{(section(s.id)?.version || 1) - 1}}</span></button>
+            <button *ngIf="previous?.sections?.[s.id]" class="act" [class.on]="prevOpen===s.id" (click)="prevOpen = prevOpen===s.id ? '' : s.id" [attr.aria-expanded]="prevOpen===s.id"><nl-icon name="calendar"/> Avaliação anterior</button>
+            <button *ngIf="isCreated(s.id) && !readOnly() && !locked()" class="act danger" [disabled]="!!creatingSection" (click)="setCreated(s.id, false)"><nl-icon name="trash"/> Excluir do documento</button>
+          </aside>
+          </div>
+
+          <!-- Footer fixed at the bottom: previous, approve and go on, next -->
+          <div class="secfoot">
+            <button class="btn btn-secondary" [disabled]="!neighbour(s.id, -1)" (click)="select(neighbour(s.id, -1))"><nl-icon name="chevl"/> {{neighbourName(s.id, -1) || 'Início'}}</button>
+            <span class="ai-note">{{state(s.id)==='gen' && aiOn() ? 'Rascunho de IA · só entra no Word depois de aprovado' : 'Seção ' + (i+1) + ' de ' + reviewRows().length}}</span>
+            <button *ngIf="neighbour(s.id, 1)" class="btn btn-secondary" (click)="select(neighbour(s.id, 1))">{{state(s.id)==='gen' && !readOnly() ? 'Pular' : neighbourName(s.id, 1)}} <nl-icon name="chevr"/></button>
+            <button *ngIf="!readOnly() && state(s.id)==='gen' && !isMissing(s.id) && editing!==s.id" class="btn btn-primary" (click)="approveAndNext(s.id)"><nl-icon name="check"/> {{isLastPending(s.id) ? 'Aprovar' : 'Aprovar e próxima'}}</button>
           </div>
         </section>
         </ng-container>
@@ -387,30 +447,97 @@
         <div class="zoom" aria-label="Zoom"><button type="button" (click)="setZoom(-0.1)" aria-label="Diminuir zoom">−</button><span>{{(zoom*100).toFixed(0)}}%</span><button type="button" (click)="setZoom(0.1)" aria-label="Aumentar zoom">+</button></div>
         <button *ngIf="docFrom" class="btn btn-secondary btn-sm" (click)="backToSection()"><nl-icon name="chevl"/> Voltar a {{sectionName(docFrom)}}</button>
         <button *ngIf="!docFrom" class="btn btn-secondary btn-sm" (click)="setMode('secoes')"><nl-icon name="edit"/> Voltar às seções</button>
-        <button *ngIf="canWrite()" class="btn btn-secondary btn-sm" [class.half]="!allApproved()" [disabled]="exporting==='pdf'" (click)="download('pdf')"><nl-icon name="pdf"/> {{exporting==='pdf' ? 'Gerando PDF…' : 'Baixar PDF'}}</button>
-        <button *ngIf="canWrite()" class="btn btn-primary btn-sm" [class.half]="!allApproved()" (click)="download()"><nl-icon name="download"/> Baixar Word</button>
       </div>
+      <div class="docsplit">
+      <!-- Modelo B: section texts on the left (approve or edit here), the Word on the right; a click on a text shows it in the Word -->
+      <aside #side class="docside" [hidden]="docEditing" aria-label="Textos das seções" [style.flex-basis.px]="sideW || null">
+        <p class="caption">Clique num texto para vê-lo no Word.</p>
+        <div *ngFor="let s of docSideRows(); trackBy: bySection" class="dblk" [class.on]="docActive===s.id" [class.editing]="editing===s.id" (click)="editing!==s.id && showInDoc(s.id)">
+          <div class="dblk-head"><b>{{s.name}}</b>
+            <ng-container *ngIf="docActive===s.id && !readOnly() && editing!==s.id">
+              <button *ngIf="state(s.id)==='gen'" type="button" class="mini primary" (click)="$event.stopPropagation(); approveInDoc(s.id)"><nl-icon name="check"/> Aprovar</button>
+              <button type="button" class="mini" (click)="$event.stopPropagation(); editFromDoc(s.id)"><nl-icon name="edit"/> {{text(s.id) ? 'Editar' : 'Escrever'}}</button>
+            </ng-container>
+            <span [class]="'badge '+SECTION_STATE[state(s.id)].css">{{SECTION_STATE[state(s.id)].label}}</span>
+            <button *ngIf="docActive===s.id" type="button" class="x" (click)="$event.stopPropagation(); closeDocCard()" aria-label="Fechar" title="Fechar">×</button></div>
+          <ng-container *ngIf="editing!==s.id">
+            <p *ngFor="let p of paragraphs(text(s.id)).slice(0, docActive===s.id ? 99 : 2)" [class.ptitle]="p.title">{{p.text}}</p>
+            <p *ngIf="!text(s.id)" class="muted">Sem texto ainda.</p>
+          </ng-container>
+          <div *ngIf="editing===s.id" class="dblk-edit" (click)="$event.stopPropagation()">
+            <nl-dictate [evaluationId]="evaluationId" (keydown.escape)="closeEdit()"><nl-rich-editor #rte [html]="editInitHtml" label="Texto da seção" (htmlChange)="editHtml=$event" (textChange)="onEditText(s.id, $event)"></nl-rich-editor></nl-dictate>
+            <small class="caption">{{autoSaving ? 'Salvando…' : autoSaved ? 'Salvo às ' + autoSaved + '. O Word ao lado já mostra a mudança.' : 'O Word ao lado se atualiza a cada pausa na digitação.'}}</small>
+          </div>
+          <div *ngIf="docActive===s.id && !readOnly() && editing===s.id" class="dblk-acts" (click)="$event.stopPropagation()">
+            <ng-container>
+              <button class="btn btn-secondary btn-sm" (click)="closeEdit()">Fechar</button>
+              <button class="btn btn-primary btn-sm" (click)="saveEdit(s.id)"><nl-icon name="check"/> Salvar edição</button>
+            </ng-container>
+          </div>
+        </div>
+      </aside>
+      <div class="dsplit" [hidden]="docEditing" role="separator" aria-orientation="vertical" aria-label="Arraste para mudar a largura dos painéis" tabindex="0" title="Arraste para mudar a largura (duplo clique volta ao padrão)" (pointerdown)="startResize($event, side)" (keydown)="resizeKey($event, side)" (dblclick)="resetSide()"><span></span></div>
+      <div class="docmain">
       <div class="docfind">
-        <label class="find" [class.none]="findQuery.trim() && !findHits.length">
+        <label *ngIf="!docEditing" class="find" [class.none]="findQuery.trim() && !findHits.length">
           <nl-icon name="search"/>
           <input #findBox type="search" [(ngModel)]="findQuery" (ngModelChange)="runFind()" (keydown)="onFindKey($event)" placeholder="Pesquisar no documento (Ctrl+F)" aria-label="Pesquisar no documento" autocomplete="off">
           <span class="count" aria-live="polite">{{findQuery.trim() ? (findHits.length ? (findAt+1) + ' de ' + findHits.length : 'Nada encontrado') : ''}}</span>
           <button type="button" [disabled]="!findHits.length" (click)="findStep(-1)" aria-label="Resultado anterior" title="Anterior (Shift+Enter)"><nl-icon name="chevu"/></button>
           <button type="button" [disabled]="!findHits.length" (click)="findStep(1)" aria-label="Próximo resultado" title="Próximo (Enter)"><nl-icon name="chevd"/></button>
         </label>
-        <nl-filter-select *ngIf="docSections().length" size="sm" [searchable]="true" ariaLabel="Ir para a seção" placeholder="Ir para a seção" icon="list"
-          [options]="docSections()" value="" (valueChange)="$event && jumpToSection($event)"></nl-filter-select>
+        <nl-filter-select *ngIf="docSections().length && !docEditing" size="sm" [searchable]="true" ariaLabel="Ir para a seção" placeholder="Ir para a seção" icon="list"
+          [options]="docSections()" value="" (valueChange)="$event && showInDoc($event)"></nl-filter-select>
+        <button *ngIf="!readOnly() && !docEditing" type="button" class="btn btn-secondary btn-sm" (click)="startDocEdit()" title="Editar os textos de todas as seções num documento só; cada mudança vai para a sua seção"><nl-icon name="edit"/> Editar documento</button>
+        <ng-container *ngIf="docEditing">
+          <span class="de-status" aria-live="polite">{{docSaving ? 'Salvando…' : docSavedAt ? 'Salvo às ' + docSavedAt : 'Salva sozinho a cada pausa'}}</span>
+          <button type="button" class="btn btn-primary btn-sm" [disabled]="docFinishing" (click)="finishDocEdit()"><nl-icon name="check"/> Concluir edição</button>
+        </ng-container>
       </div>
-      <div #docScroll class="docscroll" (scroll)="onDocScroll()">
+      <!-- Editing the whole document: every section text in report order, each change saved to its own section.
+           Tables, scores, header and the rest of the base file are not editable here (they never change). -->
+      <div *ngIf="docEditing" class="docedit">
+        <div class="de-page">
+          <p class="de-note"><nl-icon name="info"/> Você edita os textos das seções. Tabelas, escores, cabeçalho e o resto do arquivo base ficam como estão no Word.</p>
+          <section *ngFor="let s of docEditRows(); trackBy: bySection" class="de-sec" [id]="'de-' + s.id">
+            <h3>{{s.name}} <span [class]="'badge '+SECTION_STATE[state(s.id)].css">{{SECTION_STATE[state(s.id)].label}}</span></h3>
+            <nl-rich-editor [html]="docInit[s.id] || ''" [label]="'Texto de ' + s.name" (htmlChange)="onDocHtml(s.id, $event)" (textChange)="onDocText(s.id, $event)"></nl-rich-editor>
+          </section>
+        </div>
+      </div>
+      <div #docScroll class="docscroll" [hidden]="docEditing" (scroll)="onDocScroll()">
         <p *ngIf="previewLoading" class="caption center">Montando o documento…</p>
         <p *ngIf="!docName('base')" class="caption center">Envie o arquivo base para ver o documento.</p>
         <div #previewBox class="doc" [style.zoom]="zoom"></div>
       </div>
+      </div>
+      </div>
     </section>
     <nl-delivery *ngIf="locked() && canWrite()" [evaluationId]="evaluationId" [current]="current" (changed)="load();changed.emit()"></nl-delivery>
     <nl-devolutiva *ngIf="locked() && canWrite()" [evaluationId]="evaluationId" [aiReady]="aiReady && aiOn()" [patientName]="current?.patient_name || ''"></nl-devolutiva>
-    <button *ngIf="canWrite()" class="link-danger self-start" (click)="remove()"><nl-icon name="trash"/> Excluir avaliação</button>
   </div>
 
-  <p class="footnote foot-note">O arquivo base original nunca é alterado. A Hipótese Diagnóstica é escrita pela psicóloga no Word.</p>
+  <!-- "Aprovar todas": choose the sections, see what the final check found, confirm -->
+  <div *ngIf="approveOpen" class="modal-bg" (mousedown)="$event.target===$event.currentTarget && (approveOpen=false)" (keydown.escape)="approveOpen=false">
+    <div class="modal apm" role="dialog" aria-modal="true" aria-labelledby="apm-title">
+      <h2 id="apm-title">Aprovar seções</h2>
+      <p class="caption">Marque as seções que você revisou. {{apmLocks() ? 'Com todas aprovadas, a avaliação fica travada e o Word pode ser baixado.' : 'As que ficarem sem marcar continuam em revisão.'}}</p>
+      <div class="apm-tools"><button type="button" class="link" (click)="apmAll(true)">Marcar todas</button><button type="button" class="link" (click)="apmAll(false)">Desmarcar todas</button></div>
+      <ul class="apm-list">
+        <li *ngFor="let s of approveRows()" [class.off]="!apmCanPick(s.id)">
+          <label>
+            <input type="checkbox" [checked]="state(s.id)==='ap' || apmSel[s.id]" [disabled]="!apmCanPick(s.id)" (change)="apmSel[s.id]=$any($event.target).checked">
+            <span class="nm">{{s.name}}</span>
+            <span [class]="'badge '+SECTION_STATE[state(s.id)].css">{{state(s.id)==='pend' ? 'Sem texto' : SECTION_STATE[state(s.id)].label}}</span>
+          </label>
+          <ul *ngIf="apmIssues(s.id).length" class="apm-issues"><li *ngFor="let t of apmIssues(s.id)"><nl-icon name="alert"/> {{t}}</li></ul>
+        </li>
+      </ul>
+      <label class="apm-confirm"><input type="checkbox" [(ngModel)]="apmReviewed"> Revisei os textos das seções marcadas{{apmLocks() ? ' e confirmo que depois os textos ficam travados' : ''}}.</label>
+      <div class="modal-acts">
+        <button type="button" class="btn btn-secondary" (click)="approveOpen=false">Cancelar</button>
+        <button type="button" class="btn btn-primary" [disabled]="!apmPicked().length || !apmReviewed || apmBusy" (click)="confirmApproveAll()"><nl-icon name="check"/> {{apmBusy ? 'Aprovando…' : apmPicked().length===1 ? 'Aprovar 1 seção' : 'Aprovar ' + apmPicked().length + ' seções'}}</button>
+      </div>
+    </div>
+  </div>
 </ng-container>

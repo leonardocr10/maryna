@@ -1,4 +1,4 @@
-import {Component, EventEmitter, Input, OnChanges, Output, inject} from '@angular/core';
+import {Component, EventEmitter, HostBinding, Input, OnChanges, Output, inject} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {FormsModule} from '@angular/forms';
 import {Api} from '../api.service';
@@ -13,16 +13,21 @@ export interface Pending {text: string; level: 'danger' | 'warn' | 'info'; step?
   standalone: true,
   imports: [CommonModule, FormsModule, IconComponent],
   template: `
-<section class="card rp" [class.attention]="openNotes().length">
+<button *ngIf="slim && canSubmit()" class="btn btn-primary btn-sm" [disabled]="busy || !!openNotes().length" (click)="submit()"
+  [title]="openNotes().length ? 'Resolva os pedidos de correção primeiro' : 'Enviar os arquivos para a psicóloga revisar'"><nl-icon name="upload"/> {{review?.submitted_at ? 'Enviar de novo' : 'Enviar para revisão'}}</button>
+<section *ngIf="!slim" class="rp" [class.card]="!compact" [class.compact]="compact" [class.attention]="openNotes().length">
   <div class="rp-head">
-    <span [class]="'badge ' + stateBadge().css"><nl-icon [name]="stateBadge().icon"/> {{stateBadge().label}}</span>
-    <span class="rp-sub">{{stateText()}}</span>
+    <ng-container *ngIf="!compact || showState || openNotes().length">
+      <span [class]="'badge ' + stateBadge().css"><nl-icon [name]="stateBadge().icon"/> {{stateBadge().label}}</span>
+      <span class="rp-sub">{{stateText()}}</span>
+    </ng-container>
     <span class="grow"></span>
     <button *ngIf="canSubmit()" class="btn btn-primary btn-sm" [disabled]="busy || !!openNotes().length" (click)="submit()"
       [title]="openNotes().length ? 'Resolva os pedidos de correção primeiro' : ''"><nl-icon name="upload"/> {{review?.submitted_at ? 'Enviar de novo' : 'Enviar para revisão'}}</button>
     <button class="link" (click)="expanded=!expanded" [attr.aria-expanded]="expanded">{{expanded ? 'Recolher' : detailsLabel()}}</button>
   </div>
 
+  <p *ngIf="expanded && compact && !(showState || openNotes().length)" class="rp-state"><span [class]="'badge ' + stateBadge().css"><nl-icon [name]="stateBadge().icon"/> {{stateBadge().label}}</span> <span class="rp-sub">{{stateText()}}</span></p>
   <div *ngIf="expanded" class="rp-body">
     <div *ngIf="pendings.length" class="block">
       <p class="label-caps">Conferir antes de seguir</p>
@@ -55,6 +60,9 @@ export interface Pending {text: string; level: 'danger' | 'warn' | 'info'; step?
   styles: [`
 nl-icon{--ico-size:15px}
 .rp{padding:12px 16px;margin-bottom:16px}
+.rp.compact{padding:0;margin:0;border:0;background:none;box-shadow:none}
+.rp.compact .rp-head{justify-content:flex-end}
+.rp-state{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 0}
 .rp.attention{border-color:var(--warn-border, var(--border-card));box-shadow:0 0 0 2px var(--warn-bg) inset}
 .rp-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .rp-sub{font-size:13px;color:var(--text-3)}
@@ -86,6 +94,21 @@ export class ReviewPanelComponent implements OnChanges {
   @Input() canWrite = false;
   @Input() docsReady = false;
   @Input() pendings: Pending[] = [];
+  /** Inside the evaluation's pending strip: no card, only the actions and "Detalhes" on the line. */
+  @Input() compact = false;
+  /** In compact mode, show the review state on the line (when nothing else uses it). */
+  @Input() showState = true;
+  @HostBinding('class.open') get open() { return this.expanded; }
+  /** Only the "Enviar para revisão" button; the state and open requests go out through (state). */
+  @Input() slim = false;
+  @Output() state = new EventEmitter<{badge: {label: string; css: string; icon: string}; text: string; notes: any[]}>();
+  /** Sends the state only when it changed (pendings is a new array on every check, so ngOnChanges runs often). */
+  private lastState = '';
+  private emitState() {
+    const st = {badge: this.stateBadge(), text: this.stateText(), notes: this.openNotes()}, key = JSON.stringify(st);
+    if (key === this.lastState) return;
+    this.lastState = key; queueMicrotask(() => this.state.emit(st));
+  }
   @Output() changed = new EventEmitter<void>();
   @Output() goStep = new EventEmitter<number>();
   review: {submitted_at: string | null; submitted_by_name: string | null; notes: any[]} | null = null;
@@ -99,6 +122,7 @@ export class ReviewPanelComponent implements OnChanges {
       // open by default when something waits for this person
       this.expanded = !!this.openNotes().length || (!this.canWrite && !!this.pendings.some(p => p.level === 'danger'));
     }
+    this.emitState();
   }
   openNotes() { return (this.review?.notes || []).filter(n => !n.resolved_at); }
   /** The assistant sends the files for review; the psychologist reviews instead. */
@@ -120,7 +144,7 @@ export class ReviewPanelComponent implements OnChanges {
 
   private async run(fn: () => Promise<any>, ok: string) {
     this.busy = true;
-    try { this.review = await fn(); this.api.notify(ok); this.changed.emit(); } catch {} finally { this.busy = false; }
+    try { this.review = await fn(); this.api.notify(ok); this.changed.emit(); this.emitState(); } catch {} finally { this.busy = false; }
   }
   submit() { return this.run(() => this.api.req('POST', `/evaluations/${this.evaluationId}/submit`), 'Enviada para revisão.'); }
   ask() { const text = this.text.trim(); return this.run(async () => { const r = await this.api.req('POST', `/evaluations/${this.evaluationId}/notes`, {text}); this.text = ''; return r; }, 'Pedido de correção enviado.'); }

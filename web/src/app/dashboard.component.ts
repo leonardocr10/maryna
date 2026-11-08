@@ -1,4 +1,4 @@
-import {Component, EventEmitter, Input, OnInit, Output, inject} from '@angular/core';
+import {Component, EventEmitter, HostListener, Input, OnInit, Output, inject} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {Api} from './api.service';
 import {EvalStatus, STATUS, brDate, brl, fold, listStatus, todayISO} from './shared';
@@ -9,88 +9,131 @@ import {PagerComponent} from './ui/pager.component';
 type Filter = 'all' | EvalStatus | 'late' | 'soon' | 'queue' | 'fix' | 'deliver';
 const ORDERS = ['Mais recentes', 'Mais antigas', 'Nome (A–Z)', 'Nome (Z–A)', 'Status', 'Progresso'];
 
-/** "Avaliações" home: KPIs, paginated table and the side cards (tarefas, atividade recente). */
+/** "Avaliações" home: compact KPIs, the paginated list in full width, and tarefas / sessões / atividade on demand. */
 @Component({
   selector: 'nl-dashboard',
   standalone: true,
   imports: [CommonModule, IconComponent, FilterSelectComponent, PagerComponent],
   template: `
-<div class="pagehead">
+<div class="pagehead dh">
   <span class="hicon"><nl-icon name="clipboard"/></span>
-  <div><h1>Avaliações</h1><p>Gerencie as avaliações neuropsicológicas, acompanhe o progresso do laudo e a revisão clínica.</p></div>
+  <div><h1>Avaliações</h1><p>Avaliações neuropsicológicas, progresso do laudo e revisão clínica.</p></div>
   <button class="btn btn-primary" (click)="create.emit()"><nl-icon name="plus"/> Nova avaliação</button>
 </div>
 
-<div class="kpis">
-  <div class="card card-raised kpi"><span class="kpi-icon"><nl-icon name="clipboard"/></span><div><div class="kpi-label">Total de avaliações</div><div class="kpi-value">{{evaluations.length}}</div><div class="kpi-sub">{{monthNew()}} criadas neste mês</div></div></div>
-  <div class="card card-raised kpi"><span class="kpi-icon warn"><nl-icon name="clock"/></span><div><div class="kpi-label">Pendentes de revisão</div><div class="kpi-value">{{count('rv')}}</div><div class="kpi-sub">Aguardando revisão clínica</div></div></div>
-  <div class="card card-raised kpi"><span class="kpi-icon ok"><nl-icon name="checkc"/></span><div><div class="kpi-label">Aprovadas no mês</div><div class="kpi-value">{{monthApproved()}}</div><div class="kpi-sub">{{count('ap')}} aprovadas no total</div></div></div>
-  <div class="card card-raised kpi"><span class="kpi-icon review"><nl-icon name="coins"/></span><div><div class="kpi-label">Custo total da IA</div><div class="kpi-value">{{brl(usage?.total?.cost_brl||0)}}</div><div class="kpi-sub">{{brl(usage?.month?.cost_brl||0)}} neste mês</div></div></div>
+<div class="kpis dk">
+  <div class="card kpi" [title]="monthNew() + ' criadas neste mês'"><span class="kpi-icon"><nl-icon name="clipboard"/></span><div><div class="kpi-label">Total de avaliações</div><div class="kpi-value">{{evaluations.length}}</div></div></div>
+  <div class="card kpi" title="Aguardando revisão clínica"><span class="kpi-icon warn"><nl-icon name="clock"/></span><div><div class="kpi-label">Pendentes de revisão</div><div class="kpi-value">{{count('rv')}}</div></div></div>
+  <div class="card kpi" [title]="count('ap') + ' aprovadas no total'"><span class="kpi-icon ok"><nl-icon name="checkc"/></span><div><div class="kpi-label">Aprovadas no mês</div><div class="kpi-value">{{monthApproved()}}</div></div></div>
+  <div class="card kpi" [title]="brl(usage?.month?.cost_brl||0) + ' neste mês'"><span class="kpi-icon review"><nl-icon name="coins"/></span><div><div class="kpi-label">Custo total da IA</div><div class="kpi-value">{{brl(usage?.total?.cost_brl||0)}}</div></div></div>
 </div>
 
-<div class="cols">
-  <section class="card">
-    <div class="listhead"><h2>Lista de avaliações <span>({{filtered().length}})</span></h2>
-      <nl-filter-select size="sm" icon="sort" [searchable]="false" [alignRight]="true" ariaLabel="Ordenar lista" [options]="orders" [value]="order" (valueChange)="order=$event;page=1"></nl-filter-select></div>
-    <div class="filters">
-      <div class="search-box"><nl-icon name="search"/><input class="input" [value]="query" (input)="setQuery($any($event.target).value)" placeholder="Buscar avaliação ou paciente…" aria-label="Buscar avaliação ou paciente"></div>
-      <button *ngFor="let f of chips()" type="button" class="fchip" [class.on]="filter===f.id" [attr.aria-pressed]="filter===f.id" (click)="filter=f.id;page=1">{{f.label}} <b>{{count(f.id)}}</b></button>
-    </div>
-    <div class="tablewrap">
-      <table class="tbl">
-        <thead><tr><th><span class="thi">Paciente <nl-icon name="chevud"/></span></th><th>Idade</th><th class="c">Sexo</th><th><span class="thi"><nl-icon name="calendar"/> Início</span></th><th><span class="thi"><nl-icon name="tag"/> Status</span></th><th><span class="thi"><nl-icon name="layers"/> Progresso</span></th></tr></thead>
-        <tbody>
-          <tr *ngFor="let e of pageRows()" tabindex="0" (click)="open.emit(e.id)" (keydown.enter)="open.emit(e.id)">
-            <td><div class="who"><span class="av"><nl-icon name="userfill"/></span><span><b>{{e.patient_name}}</b><small>{{e.schooling || 'Avaliação neuropsicológica'}}</small></span></div></td>
-            <td>{{e.age || '—'}}</td>
-            <td class="c"><span *ngIf="sexIcon(e.sex) as sx" class="sx" [class]="'sx ' + sx" [title]="e.sex" [attr.aria-label]="e.sex"><nl-icon [name]="sx"/></span><span *ngIf="!sexIcon(e.sex)" class="muted" [title]="e.sex || 'Não informado'">—</span></td>
-            <td><span class="thi"><nl-icon name="calendar"/> {{brDate(e.start_date || e.created_at)}}</span></td>
-            <td><span *ngIf="e.delivered_at" class="badge ok due" [title]="'Entregue a ' + (e.delivered_to || '—')"><nl-icon name="checkc"/> Entregue</span><span *ngIf="fix(e)" class="badge danger due" title="A psicóloga pediu correções"><nl-icon name="chat"/> Correção pedida</span><span *ngIf="queued(e)" class="badge warn due" [title]="'Enviada por ' + (e.submitted_by_name || '—')"><nl-icon name="upload"/> Enviada</span><span *ngIf="late(e)" class="badge danger due" [title]="'Prazo: ' + brDate(e.end_date)"><nl-icon name="alert"/> Atrasada</span><span *ngIf="soon(e)" class="badge warn due" [title]="'Prazo: ' + brDate(e.end_date)"><nl-icon name="calendar"/> Vence {{brDate(e.end_date).slice(0,5)}}</span><span [class]="'badge '+STATUS[st(e)].css"><nl-icon [name]="st(e)==='ap' ? 'checkfill' : st(e)==='rv' ? 'clock' : 'edit'"/> {{STATUS[st(e)].label}}</span></td>
-            <td class="prog"><span class="pm">{{e.approved_count||0}} de {{e.section_total||0}} seções</span><span class="pbar"><span class="progress" [class.full]="pct(e)===100"><span [style.width.%]="pct(e)"></span></span><b>{{pct(e)}}%</b></span></td>
-          </tr>
-        </tbody>
-      </table>
-      <p *ngIf="!filtered().length" class="empty-row">{{evaluations.length ? 'Nenhuma avaliação encontrada.' : 'Nenhuma avaliação ainda. Crie a primeira em Nova avaliação.'}}</p>
-    </div>
-    <nl-pager *ngIf="filtered().length" [total]="filtered().length" [page]="page" [perPage]="per" noun="avaliações" (pageChange)="page=$event" (perPageChange)="per=$event"></nl-pager>
-  </section>
-
-  <div class="stack">
-    <section class="card side-card">
-      <h3><nl-icon name="bolt"/> Tarefas do dia</h3>
-      <p>Acompanhe as próximas ações do seu fluxo de laudos.</p>
-      <button *ngIf="count('queue')" type="button" class="task" (click)="filter='queue';page=1"><span class="ti tone-warn"><nl-icon name="upload"/></span><span><b>{{canWrite() ? 'Aguardando sua revisão' : 'Enviadas para revisão'}} ({{count('queue')}})</b><small>Arquivos enviados pela estagiária</small></span><nl-icon name="chevr"/></button>
-      <button *ngIf="count('fix')" type="button" class="task" (click)="filter='fix';page=1"><span class="ti tone-danger"><nl-icon name="chat"/></span><span><b>Correções pedidas ({{count('fix')}})</b><small>{{canWrite() ? 'Esperando a estagiária corrigir' : 'A psicóloga pediu ajustes'}}</small></span><nl-icon name="chevr"/></button>
-      <button *ngIf="count('deliver')" type="button" class="task" (click)="filter='deliver';page=1"><span class="ti tone-ok"><nl-icon name="checkc"/></span><span><b>Aguardando entrega ({{count('deliver')}})</b><small>Laudos aprovados ainda não entregues</small></span><nl-icon name="chevr"/></button>
-      <button *ngIf="count('late')" type="button" class="task" (click)="filter='late';page=1"><span class="ti tone-danger"><nl-icon name="alert"/></span><span><b>Atrasadas ({{count('late')}})</b><small>Data de finalização já passou</small></span><nl-icon name="chevr"/></button>
-      <button *ngIf="count('soon')" type="button" class="task" (click)="filter='soon';page=1"><span class="ti tone-warn"><nl-icon name="calendar"/></span><span><b>Vencem em 7 dias ({{count('soon')}})</b><small>Pela data de finalização do laudo</small></span><nl-icon name="chevr"/></button>
-      <button type="button" class="task" (click)="filter='rv';page=1"><span class="ti tone-warn"><nl-icon name="clock"/></span><span><b>Revisar {{count('rv')}} {{count('rv')===1?'avaliação':'avaliações'}}</b><small>Seções geradas pela IA</small></span><nl-icon name="chevr"/></button>
-      <button type="button" class="task" (click)="filter='rs';page=1"><span class="ti tone-primary"><nl-icon name="clipboard"/></span><span><b>Concluir rascunhos ({{count('rs')}})</b><small>Enviar arquivos e gerar seções</small></span><nl-icon name="chevr"/></button>
-      <button type="button" class="task" (click)="filter='ap';page=1"><span class="ti tone-ok"><nl-icon name="checkc"/></span><span><b>Aprovadas ({{count('ap')}})</b><small>Laudos prontos para baixar</small></span><nl-icon name="chevr"/></button>
-    </section>
-    <section *ngIf="sessions.length" class="card side-card">
-      <h3><nl-icon name="calendar"/> Sessões dos próximos 7 dias</h3>
-      <div class="feed">
-        <div *ngFor="let s of sessions" class="ev" role="button" tabindex="0" (click)="open.emit(s.evaluation_id)" (keydown.enter)="open.emit(s.evaluation_id)">
-          <span class="ti tone-primary"><nl-icon name="calendar"/></span>
-          <span><b>{{s.patient_name}}</b><small>{{kindName(s.kind)}}{{s.done ? ' · realizada' : ''}}</small></span><time>{{brDate(s.date).slice(0,5)}}{{s.time ? ' ' + s.time : ''}}</time>
+<section class="card dlist">
+  <div class="listhead">
+    <h2>Lista de avaliações <span>({{filtered().length}})</span></h2>
+    <span class="grow"></span>
+    <!-- Tarefas, sessões and atividade open on demand, in a popover -->
+    <div class="pops">
+      <div class="pop-wrap">
+        <button type="button" class="pop-btn" [class.on]="pop==='tasks'" (click)="$event.stopPropagation(); toggle('tasks')" aria-haspopup="dialog" [attr.aria-expanded]="pop==='tasks'"><nl-icon name="bolt"/> Tarefas do dia <b *ngIf="taskCount()" class="pop-n">{{taskCount()}}</b></button>
+        <div *ngIf="pop==='tasks'" class="pop" role="dialog" aria-label="Tarefas do dia" (click)="$event.stopPropagation()">
+          <p class="pop-h">Tarefas do dia</p>
+          <button *ngFor="let t of tasks()" type="button" class="prow" [class.zero]="!t.n" (click)="pick(t.filter)">
+            <span [class]="'ti ' + t.tone"><nl-icon [name]="t.icon"/></span><span class="pt"><b>{{t.label}}</b><small>{{t.hint}}</small></span><span class="pc">{{t.n}}</span></button>
         </div>
       </div>
-    </section>
-    <section class="card side-card">
-      <h3><nl-icon name="bars"/> Atividade recente</h3>
-      <p>Últimas ações registradas.</p>
-      <div class="feed">
-        <p *ngIf="!activity().length" class="caption">Nada por aqui ainda.</p>
-        <div *ngFor="let a of activity()" class="ev" role="button" tabindex="0" (click)="open.emit(a.id)" (keydown.enter)="open.emit(a.id)">
-          <span class="ti" [class]="'ti ' + a.tone"><nl-icon [name]="a.icon"/></span>
-          <span><b>{{a.title}}</b><small>{{a.name}}</small></span><time>{{ago(a.at)}}</time>
+      <div *ngIf="sessions.length" class="pop-wrap">
+        <button type="button" class="pop-btn" [class.on]="pop==='sessions'" (click)="$event.stopPropagation(); toggle('sessions')" aria-haspopup="dialog" [attr.aria-expanded]="pop==='sessions'"><nl-icon name="calendar"/> Sessões <b class="pop-n soft">{{sessions.length}}</b></button>
+        <div *ngIf="pop==='sessions'" class="pop" role="dialog" aria-label="Sessões dos próximos 7 dias" (click)="$event.stopPropagation()">
+          <p class="pop-h">Sessões dos próximos 7 dias</p>
+          <button *ngFor="let ss of sessions" type="button" class="prow" (click)="pop=''; open.emit(ss.evaluation_id)">
+            <span class="ti tone-primary"><nl-icon name="calendar"/></span><span class="pt"><b>{{ss.patient_name}}</b><small>{{kindName(ss.kind)}}{{ss.done ? ' · realizada' : ''}}</small></span><time>{{brDate(ss.date).slice(0,5)}}{{ss.time ? ' ' + ss.time : ''}}</time></button>
         </div>
       </div>
-    </section>
+      <div class="pop-wrap">
+        <button type="button" class="pop-btn" [class.on]="pop==='activity'" (click)="$event.stopPropagation(); toggle('activity')" aria-haspopup="dialog" [attr.aria-expanded]="pop==='activity'"><nl-icon name="bars"/> Atividade recente</button>
+        <div *ngIf="pop==='activity'" class="pop" role="dialog" aria-label="Atividade recente" (click)="$event.stopPropagation()">
+          <p class="pop-h">Atividade recente</p>
+          <p *ngIf="!activity().length" class="caption pop-empty">Nada por aqui ainda.</p>
+          <button *ngFor="let a of activity()" type="button" class="prow" (click)="pop=''; open.emit(a.id)">
+            <span [class]="'ti ' + a.tone"><nl-icon [name]="a.icon"/></span><span class="pt"><b>{{a.title}}</b><small>{{a.name}}</small></span><time>{{ago(a.at)}}</time></button>
+        </div>
+      </div>
+    </div>
+    <nl-filter-select size="sm" icon="sort" [searchable]="false" [alignRight]="true" ariaLabel="Ordenar lista" [options]="orders" [value]="order" (valueChange)="order=$event;page=1"></nl-filter-select>
   </div>
-</div>`,
+  <div class="filters">
+    <div class="search-box"><nl-icon name="search"/><input class="input" [value]="query" (input)="setQuery($any($event.target).value)" placeholder="Buscar avaliação ou paciente…" aria-label="Buscar avaliação ou paciente"></div>
+    <button *ngFor="let f of chips()" type="button" class="fchip" [class.on]="filter===f.id" [attr.aria-pressed]="filter===f.id" (click)="filter=f.id;page=1">{{f.label}} <b>{{count(f.id)}}</b></button>
+  </div>
+  <div class="tablewrap">
+    <table class="tbl">
+      <thead><tr><th><span class="thi">Paciente <nl-icon name="chevud"/></span></th><th>Idade</th><th class="c">Sexo</th><th><span class="thi"><nl-icon name="calendar"/> Início</span></th><th><span class="thi"><nl-icon name="tag"/> Status</span></th><th><span class="thi"><nl-icon name="layers"/> Progresso</span></th></tr></thead>
+      <tbody>
+        <tr *ngFor="let e of pageRows()" tabindex="0" (click)="open.emit(e.id)" (keydown.enter)="open.emit(e.id)">
+          <td><div class="who"><span class="av"><nl-icon name="userfill"/></span><span><b>{{e.patient_name}}</b><small>{{e.schooling || 'Avaliação neuropsicológica'}}</small></span></div></td>
+          <td>{{e.age || '—'}}</td>
+          <td class="c"><span *ngIf="sexIcon(e.sex) as sx" class="sx" [class]="'sx ' + sx" [title]="e.sex" [attr.aria-label]="e.sex"><nl-icon [name]="sx"/></span><span *ngIf="!sexIcon(e.sex)" class="muted" [title]="e.sex || 'Não informado'">—</span></td>
+          <td><span class="thi"><nl-icon name="calendar"/> {{brDate(e.start_date || e.created_at)}}</span></td>
+          <td><span *ngIf="e.delivered_at" class="badge ok due" [title]="'Entregue a ' + (e.delivered_to || '—')"><nl-icon name="checkc"/> Entregue</span><span *ngIf="fix(e)" class="badge danger due" title="A psicóloga pediu correções"><nl-icon name="chat"/> Correção pedida</span><span *ngIf="queued(e)" class="badge warn due" [title]="'Enviada por ' + (e.submitted_by_name || '—')"><nl-icon name="upload"/> Enviada</span><span *ngIf="late(e)" class="badge danger due" [title]="'Prazo: ' + brDate(e.end_date)"><nl-icon name="alert"/> Atrasada</span><span *ngIf="soon(e)" class="badge warn due" [title]="'Prazo: ' + brDate(e.end_date)"><nl-icon name="calendar"/> Vence {{brDate(e.end_date).slice(0,5)}}</span><span [class]="'badge '+STATUS[st(e)].css"><nl-icon [name]="st(e)==='ap' ? 'checkfill' : st(e)==='rv' ? 'clock' : 'edit'"/> {{STATUS[st(e)].label}}</span></td>
+          <td class="prog"><span class="pm">{{e.approved_count||0}} de {{e.section_total||0}} seções</span><span class="pbar"><span class="progress" [class.full]="pct(e)===100"><span [style.width.%]="pct(e)"></span></span><b>{{pct(e)}}%</b></span></td>
+        </tr>
+      </tbody>
+    </table>
+    <p *ngIf="!filtered().length" class="empty-row">{{evaluations.length ? 'Nenhuma avaliação encontrada.' : 'Nenhuma avaliação ainda. Crie a primeira em Nova avaliação.'}}</p>
+  </div>
+  <nl-pager *ngIf="filtered().length" [total]="filtered().length" [page]="page" [perPage]="per" noun="avaliações" (pageChange)="page=$event" (perPageChange)="per=$event"></nl-pager>
+</section>`,
   styles: [`:host{display:block}.ev{cursor:pointer}
+/* compact head */
+.dh{margin-bottom:12px;gap:12px}
+.dh .hicon{width:36px;height:36px;border-radius:10px;--ico-size:20px}
+.dh h1{font-size:24px;line-height:30px}
+.dh p{margin-top:0;font-size:13px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dh .btn{height:38px;padding:0 16px;font-size:14px}
+/* compact indicators (70px) */
+.dk{gap:12px;margin-bottom:12px}
+.dk .kpi{padding:12px;gap:12px;min-height:0;box-shadow:none}
+.dk .kpi-icon{width:32px;height:32px;border-radius:8px;--ico-size:20px}
+.dk .kpi-label{font-size:12.5px;font-weight:500;color:var(--text-2)}
+.dk .kpi-value{font-size:22px;line-height:26px;margin:0}
+/* list: full width, compact */
+.dlist .listhead{padding:12px 14px 8px;gap:8px;flex-wrap:wrap}
+.dlist .listhead h2{font-size:17px}
+.grow{flex:1}
+.dlist .filters{padding:0 14px 10px;gap:8px}
+.dlist .search-box .input{height:34px;font-size:13.5px}
+.dlist .fchip{height:32px;font-size:13px}
+.dlist .tbl thead th{height:36px;padding:0 8px}
+.dlist .tbl td{height:52px;padding:4px 8px}
+.dlist .tbl th:first-child,.dlist .tbl td:first-child{padding-left:14px}
+.dlist .tbl th:last-child,.dlist .tbl td:last-child{padding-right:14px}
+.dlist .tablewrap{padding:0 2px}
+.dlist .who b{white-space:normal}
+/* Tarefas / Sessões / Atividade: buttons with a popover */
+.pops{display:flex;gap:6px;flex-wrap:wrap}
+.pop-wrap{position:relative}
+.pop-btn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;border:1px solid var(--border-card);border-radius:var(--radius-pill);background:var(--card);color:var(--text);font:500 13px var(--font);cursor:pointer;--ico-size:15px}
+.pop-btn nl-icon{color:var(--review)}
+.pop-btn:hover,.pop-btn.on{border-color:var(--primary);background:var(--primary-soft)}
+.pop-btn:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.pop-n{min-width:20px;height:20px;padding:0 6px;border-radius:10px;display:inline-grid;place-items:center;background:var(--warn-dot,#d99a00);color:#fff;font-size:11.5px}
+.pop-n.soft{background:var(--chip);color:var(--text-2)}
+.pop{position:absolute;right:0;top:calc(100% + 6px);z-index:40;width:min(360px,calc(100vw - 32px));max-height:min(440px,70vh);overflow:auto;padding:6px;background:var(--card);border:1px solid var(--border-card);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.16)}
+.pop-h{margin:6px 8px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--caption,var(--text-3))}
+.pop-empty{padding:6px 8px}
+.prow{display:flex;align-items:center;gap:10px;width:100%;padding:7px 8px;border:0;border-radius:8px;background:none;text-align:left;cursor:pointer;color:var(--text)}
+.prow:hover,.prow:focus-visible{background:var(--chip);outline:0}
+.prow .ti{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;flex:none;--ico-size:14px}
+.prow .pt{flex:1;min-width:0;display:flex;flex-direction:column}
+.prow .pt b{font-size:13px;font-weight:600}
+.prow .pt small{font-size:12px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prow .pc{min-width:22px;text-align:right;font:600 13px var(--font)}
+.prow time{font-size:12px;color:var(--text-3);white-space:nowrap}
+.prow.zero{opacity:.55}
+.prow.zero .pc{color:var(--text-3);font-weight:500}
+@media(max-width:1100px){.dk{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.dk .kpi-label{white-space:normal;line-height:1.25}.dk .kpi-value{font-size:20px}.dh p{display:none}.dlist .listhead h2{flex-basis:100%}.pop{right:auto;left:0}}
 .due{margin-right:6px}
 .c{text-align:center}
 .sx{display:inline-grid;place-items:center;--ico-size:20px}
@@ -110,7 +153,29 @@ export class DashboardComponent implements OnInit {
   usage: any = null;
   filter: Filter = 'all';
   order = ORDERS[0]; orders = ORDERS;
-  page = 1; per = 8;
+  page = 1; per = 10;
+  /** Open popover: tarefas, sessões or atividade; a click elsewhere or Esc closes it. */
+  pop: '' | 'tasks' | 'sessions' | 'activity' = '';
+  toggle(p: 'tasks' | 'sessions' | 'activity') { this.pop = this.pop === p ? '' : p; }
+  @HostListener('document:click') closePop() { this.pop = ''; }
+  @HostListener('document:keydown.escape') escPop() { this.pop = ''; }
+  pick(f: Filter) { this.filter = f; this.page = 1; this.pop = ''; }
+  /** The day's tasks: the ones that need someone (zero ones stay listed, muted). */
+  tasks(): {filter: Filter; label: string; hint: string; icon: string; tone: string; n: number}[] {
+    const w = this.canWrite();
+    const list: {filter: Filter; label: string; hint: string; icon: string; tone: string}[] = [
+      {filter: 'queue', label: w ? 'Aguardando sua revisão' : 'Enviadas para revisão', hint: 'Arquivos enviados pela estagiária', icon: 'upload', tone: 'tone-warn'},
+      {filter: 'fix', label: 'Correções pedidas', hint: w ? 'Esperando a estagiária corrigir' : 'A psicóloga pediu ajustes', icon: 'chat', tone: 'tone-danger'},
+      {filter: 'deliver', label: 'Aguardando entrega', hint: 'Laudos aprovados ainda não entregues', icon: 'checkc', tone: 'tone-ok'},
+      {filter: 'late', label: 'Atrasadas', hint: 'Data de finalização já passou', icon: 'alert', tone: 'tone-danger'},
+      {filter: 'soon', label: 'Vencem em 7 dias', hint: 'Pela data de finalização do laudo', icon: 'calendar', tone: 'tone-warn'},
+      {filter: 'rv', label: 'Revisar', hint: 'Seções geradas pela IA', icon: 'clock', tone: 'tone-warn'},
+      {filter: 'rs', label: 'Concluir rascunhos', hint: 'Enviar arquivos e gerar seções', icon: 'clipboard', tone: 'tone-primary'},
+      {filter: 'ap', label: 'Aprovadas', hint: 'Laudos prontos para baixar', icon: 'checkc', tone: 'tone-ok'}];
+    return list.map(t => ({...t, n: this.count(t.filter)})).sort((a, b) => +!a.n - +!b.n);
+  }
+  /** Badge on "Tarefas do dia": what waits for action (queue, corrections, delivery, deadlines, review). */
+  taskCount() { return (['queue', 'fix', 'deliver', 'late', 'soon', 'rv'] as Filter[]).reduce((n, f) => n + this.count(f), 0); }
   filters: {id: Filter; label: string}[] = [{id: 'all', label: 'Todas'}, {id: 'rs', label: 'Rascunho'}, {id: 'rv', label: 'Em revisão'}, {id: 'ap', label: 'Aprovadas'}];
 
   /** Status chips, plus the deadline ones while there is something late or due soon. */

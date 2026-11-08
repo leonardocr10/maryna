@@ -62,7 +62,8 @@ export const DEFAULT_SETTINGS = {
   defaultMode: 'auto',
   existing: 'skip',            // sections that already have text: 'skip' (default) or 'draft' (draft waits for her confirmation)
   onError: 'pause',            // 'pause' (default) or 'next'
-  sendImages: true,            // same default as the app's checkbox (pictures are not pseudonymised)
+  sendImages: true,
+  sameChat: false,             // one ChatGPT conversation for every section (mention only in the first); off: rule 10            // same default as the app's checkbox (pictures are not pseudonymised)
   chatgptMinutes: 15,          // longest wait for one ChatGPT answer (authorization included)
   confirmSeconds: 120,         // longest wait for the draft to show up in NeuroLaudos IA after ChatGPT finished
   retries: 1,                  // automatic retries of a failed section before applying onError (never after a message was sent)

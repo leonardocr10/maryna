@@ -64,10 +64,25 @@
     return !!(await waitFor(() => norm(textOf(c)).includes(want), {timeout: 1500}));
   }
 
+  /** Elements showing the plugin name that appeared outside the field after typing (ChatGPT's suggestion list),
+   *  for when the list has no role="option" markup. */
+  function newSuggestion(name, before, c) {
+    const short = norm(name).split(' ')[0];
+    let best = null;
+    for (const el of document.body.querySelectorAll('*')) {
+      if (before.has(el) || c.contains(el) || el.closest('#nlx-cg-bar') || !visible(el)) continue;
+      const t = norm(el.textContent);
+      if (!t.includes(short) || t.length > 120) continue;
+      if (!best || el.textContent.length < best.textContent.length) best = el;
+    }
+    return best ? (best.closest('[role="option"], [role="menuitem"], button, li, a') || best) : null;
+  }
+  const mentionText = (c, name) => norm(textOf(c)).includes('@' + norm(name).split(' ')[0]);
+
   /**
-   * Starts the message with "@NeuroLaudos IA". When ChatGPT opens its plugin list, the real option is clicked;
-   * when it does not, the mention stays as text (as the person does by hand). Success is still decided only by
-   * NeuroLaudos IA receiving the draft.
+   * Like a person: types "@NeuroLaudos IA", waits for ChatGPT's list and presses Enter to pick the plugin.
+   * Enter is pressed only when the list is showing (otherwise it would send the mention alone): without the list,
+   * the run pauses so the person picks the plugin (and clicks "Já selecionei o plugin").
    */
   async function selectPlugin(name, trustManual) {
     const c = composer();
@@ -75,15 +90,26 @@
     if (chipPresent(name)) return {ok: true, how: 'chip'};
     if (trustManual) return {ok: true, manual: true, how: 'manual'};
     clearEditor(c);
-    if (!await pasteText(c, '@' + name)) return fail('cg_insert', 'a menção @' + name + ' não entrou no campo');
-    const opt = await waitFor(() => pluginOption(name), {timeout: 2500});
-    if (opt) {
-      click(opt);
-      const r = await waitFor(() => chipPresent(name) ? 'chip' : !norm(textOf(c)).includes('@' + norm(name).split(' ')[0]) ? 'picker' : null, {timeout: 2500});
-      if (r) return {ok: true, how: r};
-      return {ok: true, how: 'text'};
+    const before = new Set(document.body.querySelectorAll('*'));
+    placeCaretAtEnd(c);
+    // Typed in pieces (input events like the keyboard), not pasted: the list opens while typing.
+    for (const part of ['@', name.split(' ')[0].slice(0, 5), name.split(' ')[0].slice(5), name.slice(name.indexOf(' '))]) {
+      if (!part) continue;
+      insertText(c, part);
+      await NLX.DOM.sleep(180);
     }
-    return {ok: true, how: 'text'};
+    if (!mentionText(c, name)) return fail('cg_insert', 'a menção @' + name + ' não entrou no campo');
+    const opt = await waitFor(() => pluginOption(name) || newSuggestion(name, before, c), {timeout: 4000});
+    if (!opt) { clearEditor(c); return fail('cg_plugin_select', 'a lista de plugins não apareceu ao digitar @' + name); }
+    const picked = () => chipPresent(name) ? 'chip' : (!mentionText(c, name) || !opt.isConnected) ? 'picker' : null;
+    c.focus(); placeCaretAtEnd(c);
+    NLX.DOM.key(c, 'Enter', {keyCode: 13, which: 13});
+    let how = await waitFor(picked, {timeout: 2000});
+    if (!how && opt.isConnected) { click(opt); how = await waitFor(picked, {timeout: 2000}); }
+    // Enter must not have sent the mention alone
+    if (document.querySelectorAll(CG.userMsg).length && allMsgs().at(-1)?.getAttribute('data-message-author-role') === 'user' && norm(allMsgs().at(-1).textContent) === norm('@' + name)) return fail('cg_send', 'a menção foi enviada sozinha');
+    if (!how) { clearEditor(c); return fail('cg_plugin_select', 'o plugin não ficou selecionado após Enter'); }
+    return {ok: true, how: 'enter'};
   }
 
   // ---------- message ----------
@@ -104,10 +130,14 @@
     const c = composer();
     if (!c) return fail('cg_composer');
     const n = userMsgs();
+    const url = location.href;
+    // Sent when: a new user message shows up, the answer starts, the page moved to the new conversation, or the
+    // field (looked up again: ChatGPT may replace it) no longer holds the command.
     const acked = () => {
       const u = document.querySelectorAll(CG.userMsg);
-      if (u.length > n && (u[u.length - 1].textContent || '').includes(code)) return true;
-      return (streaming() && u.length > n) || (!textOf(c).includes(code) && u.length > n) ? true : null;
+      if (u.length > n || streaming() || location.href !== url) return true;
+      const f = composer();
+      return !f || !textOf(f).includes(code) ? true : null;
     };
     // An open suggestion list would take the Enter: close it first.
     if (pickerOptions().length) { NLX.DOM.key(c, 'Escape', {keyCode: 27, which: 27}); await NLX.DOM.sleep(200); }

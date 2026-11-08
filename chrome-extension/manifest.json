@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "NeuroLaudos IA — Modo automático",
   "short_name": "NeuroLaudos Auto",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Gera rascunhos das seções com o ChatGPT e o plugin NeuroLaudos IA, de forma supervisionada. Nunca aprova textos nem autoriza por você.",
   "minimum_chrome_version": "116",
   "icons": {

@@ -39,7 +39,7 @@ async function rescan() {
 }
 function defaults() {
   const s = settings || {};
-  return {mode: s.defaultMode || 'auto', existing: s.existing || 'skip', onError: s.onError || 'pause', sendImages: s.sendImages ?? true, selected: null};
+  return {mode: s.defaultMode || 'auto', existing: s.existing || 'skip', onError: s.onError || 'pause', sendImages: s.sendImages ?? true, sameChat: !!s.sameChat, selected: null};
 }
 const mineActive = () => run && run.nlTabId === tabId && (run.status === 'running' || run.status === 'paused');
 const otherActive = () => run && run.nlTabId !== tabId && (run.status === 'running' || run.status === 'paused');
@@ -98,6 +98,7 @@ function renderSetup() {
     <label><input type="radio" name="onError" value="pause" ${c.onError === 'pause' ? 'checked' : ''}> <span>Pausar e perguntar (padrão)</span></label>
     <label><input type="radio" name="onError" value="next" ${c.onError === 'next' ? 'checked' : ''}> <span>Registrar o erro e seguir para a próxima</span></label>
   </fieldset>
+  <label><input type="checkbox" id="same" ${c.sameChat ? 'checked' : ''}> <span>Usar uma única conversa do ChatGPT para todas as seções<small>O @NeuroLaudos IA vai só na primeira mensagem. Atenção: as seções anteriores ficam no histórico da conversa e o ChatGPT pode usá-las; desligado, cada seção abre conversa nova só com os próprios dados.</small></span></label>
   <label><input type="checkbox" id="imgs" ${c.sendImages ? 'checked' : ''}> <span>Enviar as imagens das seções (tabelas coladas como figura)<small>Imagens não têm nomes trocados por marcadores: confira se não mostram dados do paciente.</small></span></label>
   <fieldset><legend>Seções desta avaliação (na ordem do documento)</legend>
     <div class="secs">${scan.sections.map(s => { const why = skipReason(s, c.existing, null); return `<label class="${why ? 'off' : ''}"><input type="checkbox" data-k="${esc(s.key)}" ${why ? 'disabled' : c.selected.includes(s.key) ? 'checked' : ''}> <span>${esc(s.name)}${why ? `<small>${esc(why)}</small>` : ''}</span></label>`; }).join('')}</div>
@@ -108,6 +109,7 @@ function renderSetup() {
   body.querySelectorAll('input[name="existing"]').forEach(i => i.onchange = () => { c.existing = i.value; c.selected = null; render(); });
   body.querySelectorAll('input[name="onError"]').forEach(i => i.onchange = () => { c.onError = i.value; });
   $('#imgs').onchange = e => { c.sendImages = e.target.checked; };
+  $('#same').onchange = e => { c.sameChat = e.target.checked; };
   body.querySelectorAll('.secs input[data-k]').forEach(i => i.onchange = () => { const k = i.dataset.k; c.selected = i.checked ? [...new Set([...c.selected, k])] : c.selected.filter(x => x !== k); });
   $('#re').onclick = async () => { await rescan(); render(); };
   $('#start').onclick = start;
@@ -120,12 +122,12 @@ async function start() {
   const names = scan.sections.filter(s => c.selected.includes(s.key)).map(s => s.name).join(', ');
   const lines = c.mode === 'simulation'
     ? [`Simular ${n} ${n === 1 ? 'seção' : 'seções'}?`, 'Nada será preparado, enviado ou salvo.', names]
-    : [`Gerar rascunhos de ${n} ${n === 1 ? 'seção' : 'seções'} com o ChatGPT (modo ${MODES[c.mode].toLowerCase()})?`, names, `Seções com texto: ${c.existing === 'skip' ? 'não mexer' : 'rascunho aguarda sua confirmação'} · Erro: ${c.onError === 'pause' ? 'pausar' : 'seguir'} · Imagens: ${c.sendImages ? 'enviar' : 'não enviar'}`, 'As autorizações do ChatGPT continuam com você.'];
+    : [`Gerar rascunhos de ${n} ${n === 1 ? 'seção' : 'seções'} com o ChatGPT (modo ${MODES[c.mode].toLowerCase()})?`, names, `Seções com texto: ${c.existing === 'skip' ? 'não mexer' : 'rascunho aguarda sua confirmação'} · Erro: ${c.onError === 'pause' ? 'pausar' : 'seguir'} · Imagens: ${c.sendImages ? 'enviar' : 'não enviar'} · Conversa: ${c.sameChat ? 'uma só' : 'nova por seção'}`, 'As autorizações do ChatGPT continuam com você.'];
   confirmBox(lines, 'Iniciar', () => go(c));
 }
 async function go(c) {
   busy = true; flash = null; render();
-  const r = await ask({type: 'run.start', mode: c.mode, existing: c.existing, onError: c.onError, sendImages: c.sendImages, selected: c.selected});
+  const r = await ask({type: 'run.start', mode: c.mode, existing: c.existing, onError: c.onError, sendImages: c.sendImages, sameChat: c.sameChat, selected: c.selected});
   busy = false;
   if (!r?.ok) { flash = {kind: 'err', ...(r?.error || {message: 'Não foi possível iniciar.'})}; render(); }
 }

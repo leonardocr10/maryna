@@ -54,6 +54,7 @@ export class AutomationManager {
       else if (action === 'retry') {
         // Explicit retry by the person: a new conversation and, if the task is no longer open, a new task.
         await state.setItem(idx, {status: 'pending', step: 'navigate', error: null, sentAt: null, attempts: 0, pluginManual: false, authNotified: false});
+        await state.setRun({chatPluginOk: false});   // a retry starts a new conversation
         this.commands.delete(it.key);
       } else await state.setItem(idx, {status: it.status === 'error' || it.status === 'expired' ? 'pending' : it.status, error: null, ...(action === 'plugin_done' ? {pluginManual: true} : {})});
     }
@@ -223,6 +224,15 @@ export class AutomationManager {
   async stepChatNew(s, idx, it) {
     const {state, openChat, activate, send, sleep, now} = this.env;
     let tabId = s.chatTabId && (await this.env.tabExists(s.chatTabId)) ? s.chatTabId : null;
+    // Option "mesma conversa": after the first section, the next ones go on in the conversation already open.
+    const reuse = !!s.policy?.sameChat && !!s.chatPluginOk && !!tabId;
+    if (reuse) {
+      await activate(tabId);
+      const r = await send(tabId, {cmd: 'cg.ping'}, 15000).catch(() => null);
+      if (r?.ready) return;
+      if (r && r.loggedIn === false) throw new AutoError('cg_not_logged', 'chatgpt_new');
+    }
+    if (s.chatPluginOk) await state.setRun({chatPluginOk: false});
     tabId = await openChat(tabId, CHATGPT_URL);
     if (tabId !== s.chatTabId) await state.setRun({chatTabId: tabId});
     await activate(tabId);
@@ -240,7 +250,9 @@ export class AutomationManager {
 
   async stepPlugin(s, idx, it) {
     const s2 = await this.env.state.load();
+    if (s2.policy?.sameChat && s2.chatPluginOk) return;   // "@NeuroLaudos IA" only in the conversation's first message
     const r = await this.cg(s2, {cmd: 'cg.selectPlugin', name: PLUGIN_NAME, trustManual: !!it.pluginManual}, LIMITS.pluginMenu + LIMITS.pluginChip + 8000);
+    if (s2.policy?.sameChat) await this.env.state.setRun({chatPluginOk: true});
     await this.env.state.log(`${it.name}: plugin ${PLUGIN_NAME} ${r.manual ? 'marcado como selecionado por você' : r.how === 'chip' || r.how === 'picker' ? 'escolhido na lista do ChatGPT' : 'mencionado como @' + PLUGIN_NAME}.`);
   }
 
@@ -258,9 +270,27 @@ export class AutomationManager {
   async stepSend(s, idx, it) {
     if (it.sentAt) return;   // never twice: after a restart the run goes on to waiting and checking
     await this.env.state.setItem(idx, {sentAt: new Date(this.env.now()).toISOString(), status: 'waiting_chatgpt'});
-    await this.cg(s, {cmd: 'cg.send', code: it.code}, LIMITS.sendReady + LIMITS.sendAck + 5000);
+    try {
+      await this.cg(s, {cmd: 'cg.send', code: it.code}, LIMITS.sendReady + LIMITS.sendAck + 5000);
+    } catch (err) {
+      // The page did not show the send, but NeuroLaudos IA may already have the task in use: that is the proof.
+      if (!(err instanceof AutoError) || err.code !== 'cg_send' || !(await this.taskMoved(s, it, 30000))) throw err;
+      await this.env.state.log(`${it.name}: envio confirmado pelo NeuroLaudos IA (tarefa em uso pelo plugin).`);
+    }
     this.commands.delete(it.key);
     await this.env.state.log(`${it.name}: comando com ${it.code} enviado ao ChatGPT.`);
+  }
+
+  /** True when NeuroLaudos IA shows the task taken by the plugin (or, with `received`, only when the draft arrived). */
+  async taskMoved(s, it, ms, received = false) {
+    const end = this.env.now() + ms;
+    do {
+      let r;
+      try { r = await this.nl(s, {cmd: 'nl.waitStatus', key: it.key, code: it.code, chunkMs: Math.min(5000, ms)}, Math.min(5000, ms) + 10000); } catch { return false; }
+      const st = r?.modal?.code === it.code ? r.modal.status : null;
+      if (st === 'draft_received' || st === 'reviewed' || (!received && st === 'processing')) return true;
+    } while (this.env.now() < end);
+    return false;
   }
 
   async stepWaitChat(s, idx, it) {
@@ -273,6 +303,8 @@ export class AutomationManager {
       if (!cur || cur.status !== RUN.running) return 'interrupted';
       const r = await this.cg(cur, {cmd: 'cg.wait', chunkMs: LIMITS.chunk}, LIMITS.chunk + 10000);
       if (r.state === 'done') return;
+      // The draft may arrive before ChatGPT's page looks finished: NeuroLaudos IA decides.
+      if (await this.taskMoved(cur, it, 1000, true)) return;
       if (r.state === 'rate_limit') throw new AutoError('cg_rate_limit', 'wait_chatgpt');
       if (r.state === 'error') throw new AutoError('cg_error', 'wait_chatgpt', r.detail);
       if (r.state === 'auth') {

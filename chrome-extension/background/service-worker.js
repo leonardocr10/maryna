@@ -151,7 +151,7 @@ chrome.tabs.onRemoved.addListener(async id => {
   const s = await state.load();
   if (!isActive(s)) return;
   if (id === s.nlTabId) await state.pause({code: 'nl_tab_closed', message: 'A aba do NeuroLaudos IA foi fechada.', hint: 'Abra a avaliação de novo e clique em Continuar no painel.', actions: ['continue', 'skip']});
-  if (id === s.chatTabId) await state.setRun({chatTabId: null});
+  if (id === s.chatTabId) await state.setRun({chatTabId: null, chatPluginOk: false});
 });
 
 // ---------- messages ----------
@@ -186,7 +186,7 @@ async function handle(msg, sender) {
       const tabId = msg.tabId ?? sender.tab?.id;
       const origin = msg.origin || (sender.tab?.url ? new URL(sender.tab.url).origin : null);
       const cfg = await settings();
-      const policy = {existing: msg.existing || cfg.existing, onError: msg.onError || cfg.onError, sendImages: msg.sendImages ?? cfg.sendImages};
+      const policy = {existing: msg.existing || cfg.existing, onError: msg.onError || cfg.onError, sendImages: msg.sendImages ?? cfg.sendImages, sameChat: !!(msg.sameChat ?? cfg.sameChat)};
       return {ok: true, run: await manager.start({nlTabId: tabId, nlOrigin: origin, mode: msg.mode || cfg.defaultMode, policy, selected: msg.selected})};
     }
     case 'run.pause': await manager.pause(); return {ok: true, run: await state.load()};

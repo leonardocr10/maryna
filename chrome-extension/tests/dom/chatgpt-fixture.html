@@ -16,14 +16,14 @@ window.mode = {plugin: true, auth: false, reply: true};
 ed.addEventListener('input', () => {
   const t = ed.innerText;
   send.disabled = !t.trim();
-  const m = t.match(/@(\w*)$/);
+  const m = t.match(/@([\w ]*)$/);
   if (m) {
-    const opts = ['NeuroLaudos IA', 'Outro aplicativo'].filter(o => window.mode.plugin || o !== 'NeuroLaudos IA').filter(o => o.toLowerCase().startsWith(m[1].toLowerCase()));
+    const opts = ['NeuroLaudos IA', 'Outro aplicativo'].filter(o => window.mode.plugin || o !== 'NeuroLaudos IA').filter(o => o.toLowerCase().startsWith(m[1].toLowerCase().trimEnd()) || o.toLowerCase().startsWith(m[1].toLowerCase()));
     pop.innerHTML = `<div role="listbox">${opts.map(o => `<div role="option">${o}</div>`).join('')}</div>`;
-    pop.querySelectorAll('[role=option]').forEach(o => o.onclick = () => { ed.textContent = t.replace(/@\w*$/, ''); document.getElementById('chips').innerHTML = `<span class="chip">${o.textContent}</span>`; pop.innerHTML = ''; ed.dispatchEvent(new Event('input')); });
+    pop.querySelectorAll('[role=option]').forEach(o => o.onclick = () => { ed.textContent = t.replace(/@[\w ]*$/, ''); document.getElementById('chips').innerHTML = `<span class="chip">${o.textContent}</span>`; pop.innerHTML = ''; ed.dispatchEvent(new Event('input')); });
   } else pop.innerHTML = '';
 });
-ed.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && window.mode.enter !== false) { e.preventDefault(); window.sentBy = 'enter'; send.onclick(); } });
+ed.addEventListener('keydown', e => { const o = pop.querySelector('[role=option]'); if (e.key === 'Enter' && o) { e.preventDefault(); o.click(); return; } if (e.key === 'Enter' && !e.shiftKey && window.mode.enter !== false) { e.preventDefault(); window.sentBy = 'enter'; send.onclick(); } });
 send.onclick = () => {
   const text = ed.innerText; ed.textContent = ''; send.disabled = true;
   thread.insertAdjacentHTML('beforeend', `<article data-testid="conversation-turn-1"><div data-message-author-role="user">${text.replace(/</g, '&lt;')}</div></article>`);

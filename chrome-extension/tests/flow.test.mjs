@@ -241,3 +241,33 @@ test('read-only evaluation cannot start', async () => {
   assert.equal(await t.env.state.load(), null);
   void NL_TAB;
 });
+
+test('one conversation for every section: "@NeuroLaudos IA" and a new chat only for the first', async () => {
+  const t = makeEnv({nl: {sections: [section('a', 'A'), section('b', 'B'), section('c', 'C')]}});
+  await start(t, {policy: {existing: 'skip', onError: 'pause', sameChat: true}});
+  const s = await finish(t);
+  assert.equal(s.status, 'done');
+  assert.equal(cmds(t, 'cg.selectPlugin').length, 1);
+  assert.equal(cmds(t, 'cg.send').length, 3);
+});
+
+test('default: a new conversation and the mention for each section', async () => {
+  const t = makeEnv({nl: {sections: [section('a', 'A'), section('b', 'B')]}});
+  await start(t);
+  await finish(t);
+  assert.equal(cmds(t, 'cg.selectPlugin').length, 2);
+});
+
+test('send not seen on the page but the task is in use in NeuroLaudos IA: counts as sent, goes on', async () => {
+  const t = makeEnv({nl: {sections: [section('a', 'A'), section('b', 'B')]}});
+  const orig = t.env.send;
+  t.env.send = async (tabId, msg) => {
+    if (msg.cmd === 'cg.send') { await orig(tabId, msg); const k = Object.keys(t.nl.tasks).find(x => t.nl.tasks[x].code === msg.code); t.nl.tasks[k].status = 'processing'; return {ok: false, code: 'cg_send'}; }
+    if (msg.cmd === 'cg.wait') { const r = await orig(tabId, msg); for (const k of Object.keys(t.nl.tasks)) if (t.nl.tasks[k].status === 'processing') t.nl.tasks[k].status = 'draft_received'; return r; }
+    return orig(tabId, msg);
+  };
+  await start(t);
+  const s = await finish(t);
+  assert.equal(s.status, 'done');
+  assert.deepEqual(s.items.map(i => i.status), ['received', 'received']);
+});

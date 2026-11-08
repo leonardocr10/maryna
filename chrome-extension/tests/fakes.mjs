@@ -43,6 +43,15 @@ export function makeEnv(opts = {}) {
     return {ok: false, code: 'connection'};
   }
 
+  /** The plugin saves the draft on the server once the answer is done (the real success criterion). */
+  function saveDraft() {
+    const key = Object.keys(nl.tasks).find(k => nl.tasks[k].code === lastSent);
+    if (!key || nl.tasks[key].status !== 'pending') return;
+    const out = nl.draftOutcome(key);
+    if (out === 'received') nl.tasks[key].status = 'draft_received';
+    if (out === 'needs_review') Object.assign(nl.tasks[key], {status: 'draft_received', needsConfirmation: true});
+    if (out === 'error') nl.tasks[key].status = 'error';
+  }
   function cgHandle(msg) {
     switch (msg.cmd) {
       case 'cg.ping': return {ok: true, ready: cg.loggedIn, loggedIn: cg.loggedIn, composer: true, hasMessages: false};
@@ -55,17 +64,12 @@ export function makeEnv(opts = {}) {
       case 'cg.send': {
         if (cg.sendFails) throw new Error('Could not establish connection. Receiving end does not exist.');
         lastSent = msg.code; authLeft = cg.auth;
-        // The plugin saves the draft on the server (the real success criterion).
-        const key = Object.keys(nl.tasks).find(k => nl.tasks[k].code === msg.code);
-        const out = nl.draftOutcome(key);
-        if (out === 'received') nl.tasks[key].status = 'draft_received';
-        if (out === 'needs_review') Object.assign(nl.tasks[key], {status: 'draft_received', needsConfirmation: true});
-        if (out === 'error') nl.tasks[key].status = 'error';
         return {ok: true};
       }
       case 'cg.wait': clock += msg.chunkMs || 1000;
         if (cg.rateLimit) return {ok: true, state: 'rate_limit'};
         if (authLeft > 0) { authLeft--; return {ok: true, state: 'auth'}; }
+        saveDraft();
         return {ok: true, state: 'done'};
       case 'cg.probe': return {ok: true, checks: [{name: 'ChatGPT: campo de mensagem', ok: true}]};
     }

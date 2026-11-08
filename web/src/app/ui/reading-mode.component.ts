@@ -5,6 +5,7 @@ import {DomSanitizer, SafeHtml} from '@angular/platform-browser';
 import {IconComponent} from './icon.component';
 import {Api} from '../api.service';
 import {Reader} from '../reader.service';
+import {WheelZoom} from '../wheel-zoom.service';
 import {Narrator, SERVER_VOICE, countIn, findRanges, highlight, segmentsOf} from './reading-narrator';
 
 export interface ReadingDoc {
@@ -152,6 +153,8 @@ export class ReadingModeComponent implements AfterViewChecked, OnDestroy {
   private api = inject(Api);
   private zone = inject(NgZone);
   private reader = inject(Reader);
+  /** Ctrl + wheel in the reading mode: font size (the Word preview over it takes the wheel itself). */
+  private unwheel = inject(WheelZoom).register(dir => { if (!this.r.doc() || this.r.covered()) return false; this.set({size: this.prefs().size + dir}); return true; });
   @ViewChild('root') root?: ElementRef<HTMLElement>;
   @ViewChild('scroller') scroller?: ElementRef<HTMLElement>;
   @ViewChild('body') body?: ElementRef<HTMLElement>;
@@ -243,7 +246,7 @@ export class ReadingModeComponent implements AfterViewChecked, OnDestroy {
   document() { const k = this.r.doc()?.key, go = this.r.onDocument; if (!k || !go) return; this.narrator.pause(); this.pauseAuto(); go(k); }
   /** Leaves the reading mode and opens the edit mode on the text on screen. */
   edit() { const k = this.r.doc()?.key, go = this.r.onEdit; if (!k || !go) return; this.close(); go(k); }
-  ngOnDestroy() { this.narrator.destroy(); this.stopAuto(); }
+  ngOnDestroy() { this.unwheel(); this.narrator.destroy(); this.stopAuto(); }
 
   /** After each render of a new section: speech segments, search marks, scroll position. */
   ngAfterViewChecked() {

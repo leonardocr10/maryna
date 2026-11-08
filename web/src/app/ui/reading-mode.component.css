@@ -176,3 +176,22 @@ nl-icon { --ico-size: 16px; }
 }
 @media (max-width: 480px) { .pl-ico { display: none; } .rm-ico { display: none; } }
 @media (prefers-reduced-motion: reduce) { .rm *, .rm *::after { transition: none !important; } }
+
+/* Section index styled as in the edit mode (app colours, number chips), whatever the reading theme */
+.rm-side { background: var(--card); border-right: 1px solid var(--border-card); padding: 12px 10px; }
+.rm-side .side-h { padding: 2px 6px 10px; gap: 8px; color: var(--primary-text); --ico-size: 16px; }
+.rm-side .side-h b { font-size: 15px; color: var(--text); }
+.rm-side .side-h .ib { color: var(--text-2); }
+.rm-side li button { border-left: 0; border-radius: var(--radius-sm); color: var(--text); padding: 8px 10px; }
+.rm-side li button:hover { background: var(--chip); }
+.rm-side li button.on { background: var(--primary-soft); color: var(--primary-text); font-weight: 600; }
+.rm-side .num { min-width: 26px; height: 22px; display: inline-grid; place-items: center; border-radius: 6px; background: var(--chip); font: 12px var(--mono); color: var(--text-3); }
+.rm-side li button.on .num { background: var(--primary); color: var(--on-primary); }
+.side-doc { border-color: var(--border-card); background: var(--card); color: var(--text); }
+.side-doc:hover { border-color: var(--primary); background: var(--primary-soft); }
+.side-doc > nl-icon { color: var(--primary); }
+.side-doc small { color: var(--text-3); }
+.rm-rail { flex: none; width: 34px; align-self: flex-start; margin: 12px 0; padding: 14px 0 12px; border: 0; border-radius: 0 10px 10px 0; background: var(--sidebar-deep, var(--primary)); color: #fff; cursor: pointer; display: flex; flex-direction: column-reverse; align-items: center; gap: 12px; --ico-size: 15px; }
+.rm-rail .rl { writing-mode: vertical-rl; transform: rotate(180deg); font: 700 11.5px var(--font); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+.rm-rail:hover { filter: brightness(1.15); }
+.rm-rail:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }

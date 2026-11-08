@@ -8,6 +8,7 @@ import {EvaluationComponent} from './evaluation.component';
 import {SettingsComponent} from './settings.component';
 import {WorkTimer, clock, duration} from './work-timer.service';
 import {ThemeService} from './theme.service';
+import {WheelZoom} from './wheel-zoom.service';
 import {IconComponent} from './ui/icon.component';
 import {ConfirmDialogComponent} from './ui/confirm-dialog.component';
 import {DashboardComponent} from './dashboard.component';
@@ -313,8 +314,11 @@ export class AppComponent {
   clearOauthRequest() { this.oauthRequest = ''; try { sessionStorage.removeItem('nl_oauth_request'); } catch {} }
 
 
+  private wheelZoom = inject(WheelZoom);
   constructor() {
     installTooltips();
+    // Ctrl + wheel anywhere else: the app's screen size (same as A- / A+), never the browser zoom
+    this.wheelZoom.register(dir => { if (this.theme.canZoom(dir)) this.theme.stepZoom(dir); return true; });
     if (this.api.loggedIn()) this.api.loadMe().then(() => { if (!this.mustChange()) this.load(); });
     effect(() => { try { sessionStorage.setItem('nl_view', JSON.stringify({screen: this.screen(), id: this.selectedId()})); } catch {} });
   }

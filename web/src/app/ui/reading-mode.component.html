@@ -82,18 +82,18 @@
   <!-- 2. Index + reading area -->
   <div class="rm-mid">
     <nav *ngIf="r.list().length > 1 && sideOpen()" id="rm-side" class="rm-side" [class.over]="narrow()" aria-label="Seções">
-      <div class="side-h"><b>Seções</b><span class="n">{{r.list().length}}</span>
-        <button *ngIf="narrow()" type="button" class="ib" (click)="toggleSide()" aria-label="Fechar índice"><nl-icon name="close"/></button></div>
+      <div class="side-h"><nl-icon name="list"/><b>Seções</b><button type="button" class="ib" (click)="toggleSide()" aria-label="Recolher seções" title="Recolher"><nl-icon name="chevl"/></button></div>
       <ol>
         <li *ngFor="let s of r.list(); let i = index">
           <button type="button" [class.on]="i===r.index()" [attr.aria-current]="i===r.index() ? 'true' : null" (click)="goTo(i)">
             <span class="num">{{s.num || ((i + 1).toString().padStart(2, '0'))}}</span><span class="nm">{{s.title}}</span>
-            <span *ngIf="s.status" class="st" [ngClass]="'st-' + s.status.css" [title]="s.status.label" [attr.aria-label]="s.status.label"></span>
           </button>
         </li>
       </ol>
       <button *ngIf="canDocument()" type="button" class="side-doc" (click)="document()" title="Mostra o Word como está ficando, só o documento"><nl-icon name="doc"/><span><b>Ver documento</b><small>como o Word está ficando</small></span></button>
     </nav>
+    <!-- collapsed: a dark vertical tab with the name and the count, as in the edit mode -->
+    <button *ngIf="r.list().length > 1 && !sideOpen()" type="button" class="rm-rail" (click)="toggleSide()" [attr.aria-label]="'Mostrar seções (' + r.list().length + ')'" title="Mostrar seções"><span class="rl">Seções · {{r.list().length}}</span><nl-icon name="chevr"/></button>
     <div *ngIf="narrow() && sideOpen() && r.list().length > 1" class="scrim" (click)="toggleSide()"></div>
 
     <div #scroller class="rm-scroll" tabindex="0" (scroll)="onScroll()" (wheel)="manualScroll()" (touchmove)="manualScroll()" (pointerdown)="manualScroll()">

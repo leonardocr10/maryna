@@ -422,6 +422,20 @@
         <span class="pg">{{pageCount ? (pageCount===1 ? '1 página' : 'Página ' + pageAt + ' de ' + pageCount) : 'Prévia do Word'}}</span>
         <span class="legend">Textos atuais, inclusive os ainda não aprovados</span>
         <span class="sp"></span>
+        <span class="em-wwrap doc-wwrap">
+          <button type="button" class="btn btn-secondary btn-sm dw-btn" [class.on]="docWidthOpen" [attr.aria-expanded]="docWidthOpen" aria-controls="doc-width" (click)="docWidthOpen=!docWidthOpen; docWidthPreview=''" title="Largura da página na tela"><nl-icon name="layers"/> {{docWidthName()}} <nl-icon [name]="docWidthOpen ? 'chevu' : 'chevd'"/></button>
+          <div *ngIf="docWidthOpen" id="doc-width" class="em-wpop" role="dialog" aria-label="Largura da página">
+            <p class="pop-h">Largura da página</p>
+            <div class="wlist" role="radiogroup" aria-label="Largura da página">
+              <button *ngFor="let w of EM_WIDTHS" type="button" role="radio" class="wopt" [class.on]="docWidth===w.id" [attr.aria-checked]="docWidth===w.id" (click)="pickDocWidth(w.id)"
+                (mouseenter)="docWidthPreview=w.id; fitDocWidth()" (mouseleave)="docWidthPreview=''; docWidth ? fitDocWidth() : null" (focus)="docWidthPreview=w.id; fitDocWidth()">
+                <span class="wprev" aria-hidden="true"><span class="wcol" [style.width.%]="w.pct"><i></i><i></i><i></i><i class="short"></i></span></span>
+                <span class="wtx"><b>{{w.name}}</b><small>{{w.id==='full' ? 'ocupa toda a área' : 'página de ' + w.hint.replace('folha de ', '')}}</small></span>
+                <nl-icon *ngIf="docWidth===w.id" name="check" class="wok"/>
+              </button>
+            </div>
+          </div>
+        </span>
         <div class="zoom" aria-label="Zoom"><button type="button" (click)="setZoom(-0.1)" aria-label="Diminuir zoom">−</button><span>{{(zoom*100).toFixed(0)}}%</span><button type="button" (click)="setZoom(0.1)" aria-label="Aumentar zoom">+</button></div>
         <button *ngIf="docOnly" class="btn btn-primary btn-sm" (click)="closeDocOnly()" title="Volta para onde você estava (Esc)"><nl-icon name="chevl"/> Voltar</button>
         <ng-container *ngIf="!docOnly">
@@ -570,6 +584,7 @@
           </button>
         </li>
       </ol>
+      <button *ngIf="canWrite()" type="button" class="em-side-doc" (click)="openDocOnly(editing)" title="Mostra o Word como está ficando, só o documento"><nl-icon name="doc"/><span><b>Ver documento</b><small>como o Word está ficando</small></span></button>
     </nav>
     <button *ngIf="!emSide" type="button" class="em-rail l" (click)="emSide=true" [attr.aria-label]="'Mostrar seções (' + emIndex().length + ')'" title="Mostrar seções"><span class="rl">Seções · {{emIndex().length}}</span><nl-icon name="chevr"/></button>
     <div *ngIf="emNarrow() && (emSide || emTools)" class="scrim" (click)="emSide=false; emTools=false"></div>
@@ -633,7 +648,6 @@
         <p class="grp">Revisão</p>
         <button type="button" class="tool" (click)="emTogglePanel('find')"><nl-icon name="search"/><span><b>Buscar e substituir</b><small>Ctrl+F</small></span></button>
         <button type="button" class="tool" (click)="emTogglePanel('versions')"><nl-icon name="restore"/><span><b>Versões</b></span><span class="cnt">{{(section(editing)?.version || 1) - 1}}</span></button>
-        <button *ngIf="canWrite()" type="button" class="tool" (click)="openDocOnly(editing)"><nl-icon name="eye"/><span><b>Ver documento</b><small>como o Word está ficando</small></span></button>
         <div class="tool listen">
           <button type="button" class="playb" (click)="emListen()" [attr.aria-label]="emNarr.state()==='playing' || emNarr.state()==='loading' ? 'Pausar leitura' : 'Ouvir texto'"><nl-icon [name]="emNarr.state()==='playing' || emNarr.state()==='loading' ? 'pause' : 'play'"/></button>
           <span><b>Ouvir texto</b><small>{{emNarr.state()==='unavailable' ? 'Voz indisponível agora' : emNarr.count() && emNarr.state()!=='ready' && emNarr.state()!=='done' ? 'frase ' + (emNarr.index() + 1) + ' de ' + emNarr.count() : 'frase por frase'}}</small></span>

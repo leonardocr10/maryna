@@ -24,6 +24,7 @@ import {DeliveryComponent} from './ui/delivery.component';
 import {ChatgptAnamnesisComponent} from './ui/chatgpt-anamnesis.component';
 import {TopbarService} from './topbar.service';
 import {ReadingService} from './ui/reading-mode.component';
+import {WheelZoom} from './wheel-zoom.service';
 import {Narrator, highlight, segmentsOf} from './ui/reading-narrator';
 import {AI_MODE_CONFIRM, CONCLUSION_GUIDANCE, HAND_ONLY, niceTitle, OPTIONAL_SECTIONS, PERCEPTION_MAX_AGE, SECTIONS, SECTION_STATE, STATUS, SectionState, ageText, ageYears, brDate, brl, int, words} from './shared';
 /** Interpretation sections: written from their own tables in the base document. */
@@ -96,7 +97,7 @@ export class EvaluationComponent implements OnDestroy {
   open = ''; editing = ''; editText = ''; sectionInstr = '';
   mode: 'secoes' | 'documento' = 'secoes'; previewLoading = false;
 
-  ngOnDestroy() { for (const k of Object.keys(this.docTimers)) { clearTimeout(this.docTimers[k]); this.saveDocSection(k); } if (this.topbar.info === this.topInfo) this.topbar.info = null; this.paint('nl-find', []); this.paint('nl-find-on', []); this.paint('nl-target', []); clearTimeout(this.idTimer); clearTimeout(this.instrSaveTimer); this.reader.stop(); if (this.autoTimer) { clearTimeout(this.autoTimer); this.autosave(this.editing); } }
+  ngOnDestroy() { this.unwheel(); for (const k of Object.keys(this.docTimers)) { clearTimeout(this.docTimers[k]); this.saveDocSection(k); } if (this.topbar.info === this.topInfo) this.topbar.info = null; this.paint('nl-find', []); this.paint('nl-find-on', []); this.paint('nl-target', []); clearTimeout(this.idTimer); clearTimeout(this.instrSaveTimer); this.reader.stop(); if (this.autoTimer) { clearTimeout(this.autoTimer); this.autosave(this.editing); } }
 
   // ---------- loading ----------
   async load(first = false) {
@@ -713,6 +714,13 @@ export class EvaluationComponent implements OnDestroy {
   }
   // ---------- Full-window edit mode (index, editor sheet, tools; autosave as above) ----------
   private zone = inject(NgZone);
+  /** Ctrl + wheel: the Word preview when it is on screen (alone or in the document view), else the edit mode's text zoom. */
+  private unwheel = inject(WheelZoom).register(dir => {
+    if (this.reading.doc() && !this.docOnly) return false;
+    if (this.docOnly || (this.mode === 'documento' && this.step === 3 && !this.editFull)) { this.setZoom(dir * 0.1); return true; }
+    if (this.editFull && this.editing) { this.emZoomStep(dir); return true; }
+    return false;
+  });
   editFull = false;
   emSide = true; emTools = true; emZoom = 1; emFull = false;
   emPanel: '' | 'find' | 'versions' | 'listen' | 'ai' = '';
@@ -937,7 +945,7 @@ export class EvaluationComponent implements OnDestroy {
    *  keys and the document view's Ctrl+F share it (the edit mode first). */
   @HostListener('document:keydown', ['$event']) onKeydown(e: KeyboardEvent) { this.emKey(e); if (!e.defaultPrevented) this.onDocKey(e); }
   emKey(e: KeyboardEvent) {
-    if (this.docOnly && e.key === 'Escape' && !this.confirm.current()) { e.preventDefault(); e.stopPropagation(); this.closeDocOnly(); return; }
+    if (this.docOnly && e.key === 'Escape' && !this.confirm.current()) { e.preventDefault(); e.stopPropagation(); if (this.docWidthOpen) { this.docWidthOpen = false; this.docWidthPreview = ''; if (this.docWidth) this.fitDocWidth(); return; } this.closeDocOnly(); return; }
     if (this.docOnly) return;
     if (!this.editFull || this.reading.doc()) return;
     const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
@@ -1071,9 +1079,30 @@ export class EvaluationComponent implements OnDestroy {
   }
   // Document preview zoom (50–150%, kept per browser), page count and the page at the top of the view.
   zoom = EvaluationComponent.savedDocZoom(); pageCount = 0; pageAt = 1;
-  private static savedDocZoom() { try { const z = Number(localStorage.getItem('nl-doc-zoom')); if (z >= 0.5 && z <= 1.5) return z; } catch {} return 0.8; }
+  private static savedDocZoom() { try { const z = Number(localStorage.getItem('nl-doc-zoom')); if (z >= 0.5 && z <= 2.5) return z; } catch {} return 0.8; }
+  /** Width of the Word page on screen (same choices as the edit mode); '' = the zoom chosen with − / + or Ctrl + wheel. */
+  docWidth = (() => { try { return localStorage.getItem('nl-doc-width') || ''; } catch { return ''; } })();
+  docWidthOpen = false; docWidthPreview = '';
+  docWidthName() { return this.EM_WIDTHS.find(w => w.id === this.docWidth)?.name || 'Largura'; }
+  pickDocWidth(id: string) {
+    this.docWidth = id; this.docWidthPreview = ''; this.docWidthOpen = false;
+    try { localStorage.setItem('nl-doc-width', id); } catch {}
+    this.fitDocWidth();
+  }
+  /** Zoom that makes the page as wide as the chosen width (never wider than the area). */
+  fitDocWidth(id = this.docWidthPreview || this.docWidth) {
+    const w = this.EM_WIDTHS.find(x => x.id === id); if (!w) return;
+    const page = this.previewBox?.nativeElement.querySelector('section.docx') as HTMLElement | null, sc = this.docScroll?.nativeElement;
+    if (!page || !sc) return;
+    const natural = (page.getBoundingClientRect().width / (this.zoom || 1)) || 794, room = sc.clientWidth - 48;
+    const target = Math.min(w.px || room, room);
+    this.zoom = Math.min(2.5, Math.max(0.5, Math.round(target / natural * 100) / 100));
+    setTimeout(() => this.onDocScroll());
+  }
+  @HostListener('window:resize') onDocResize() { if (this.docWidth && this.mode === 'documento') this.fitDocWidth(); }
   setZoom(d: number) {
-    this.zoom = Math.min(1.5, Math.max(0.5, Math.round((this.zoom + d) * 10) / 10));
+    if (this.docWidth) { this.docWidth = ''; try { localStorage.removeItem('nl-doc-width'); } catch {} }
+    this.zoom = Math.min(2.5, Math.max(0.5, Math.round((this.zoom + d) * 10) / 10));
     try { localStorage.setItem('nl-doc-zoom', String(this.zoom)); } catch {}
     setTimeout(() => this.onDocScroll());
   }
@@ -1094,6 +1123,7 @@ export class EvaluationComponent implements OnDestroy {
       await renderAsync(data, next, undefined, {className: 'docx', inWrapper: true, ignoreLastRenderedPageBreak: true});
       box.replaceChildren(...Array.from(next.childNodes)); this.docIndex = null;
       this.pageCount = box.querySelectorAll('section.docx').length;
+      if (this.docWidth) this.fitDocWidth();
       if (quiet && this.docActive) this.jumpToSection(this.docActive, false);
       // Back at the same place, unless a section asked to be shown; a search still typed runs again on the new text.
       if (this.docScroll) this.docScroll.nativeElement.scrollTop = keep;

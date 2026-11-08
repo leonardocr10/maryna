@@ -1,4 +1,4 @@
-import {AfterContentInit, ChangeDetectionStrategy, Component, ElementRef, EventEmitter, Input, OnDestroy, Output, ViewEncapsulation, computed, inject} from '@angular/core';
+import {AfterContentInit, ChangeDetectionStrategy, Component, ElementRef, EventEmitter, Input, NgZone, OnDestroy, Output, ViewEncapsulation, computed, inject} from '@angular/core';
 import {IconComponent} from './icon.component';
 import {Dictation} from '../dictation/dictation.service';
 import {clock, fitInsertion} from '../dictation/dictation-text';
@@ -98,6 +98,7 @@ type Field = HTMLTextAreaElement | HTMLInputElement;
 })
 export class DictateComponent implements AfterContentInit, OnDestroy {
   readonly dictation = inject(Dictation);
+  private zone = inject(NgZone);
   private host = inject<ElementRef<HTMLElement>>(ElementRef);
   /** Evaluation the text belongs to (only for the audit log). */
   @Input() evaluationId?: string;
@@ -124,7 +125,7 @@ export class DictateComponent implements AfterContentInit, OnDestroy {
   ngAfterContentInit() {
     this.rich = this.host.nativeElement.querySelector('.rte-area') as HTMLElement | undefined;
     this.field = this.rich ? {disabled: false, readOnly: false} as Field : this.host.nativeElement.querySelector('textarea, input') as Field | undefined;
-    if (this.rich) document.addEventListener('selectionchange', this.trackRich);
+    if (this.rich) this.zone.runOutsideAngular(() => document.addEventListener('selectionchange', this.trackRich)); // cursor moves need no screen check
     else for (const e of this.events) this.field?.addEventListener(e, this.track);
     this.dictation.loadStatus();
   }

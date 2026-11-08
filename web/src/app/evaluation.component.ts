@@ -1,4 +1,4 @@
-import {Component, ElementRef, EventEmitter, HostListener, Input, NgZone, OnDestroy, Output, ViewChild, inject} from '@angular/core';
+import {Component, ElementRef, EventEmitter, HostListener, Input, NgZone, OnDestroy, Output, QueryList, ViewChild, ViewChildren, inject} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {FormsModule} from '@angular/forms';
 import {renderAsync} from 'docx-preview';
@@ -97,7 +97,7 @@ export class EvaluationComponent implements OnDestroy {
   open = ''; editing = ''; editText = ''; sectionInstr = '';
   mode: 'secoes' | 'documento' = 'secoes'; previewLoading = false;
 
-  ngOnDestroy() { this.unwheel(); for (const k of Object.keys(this.docTimers)) { clearTimeout(this.docTimers[k]); this.saveDocSection(k); } if (this.topbar.info === this.topInfo) this.topbar.info = null; this.paint('nl-find', []); this.paint('nl-find-on', []); this.paint('nl-target', []); clearTimeout(this.idTimer); clearTimeout(this.instrSaveTimer); this.reader.stop(); if (this.autoTimer) { clearTimeout(this.autoTimer); this.autosave(this.editing); } }
+  ngOnDestroy() { this.unwheel(); clearTimeout(this.previewTimer); this.flushEditors(); for (const k of Object.keys(this.docTimers)) { clearTimeout(this.docTimers[k]); this.saveDocSection(k); } if (this.topbar.info === this.topInfo) this.topbar.info = null; this.paint('nl-find', []); this.paint('nl-find-on', []); this.paint('nl-target', []); clearTimeout(this.idTimer); clearTimeout(this.instrSaveTimer); this.reader.stop(); if (this.autoTimer) { clearTimeout(this.autoTimer); this.autosave(this.editing); } }
 
   // ---------- loading ----------
   async load(first = false) {
@@ -322,8 +322,21 @@ export class EvaluationComponent implements OnDestroy {
   private richCache = new Map<string, any>();
   richView(k: string) { const h = this.richOf(k); let v = this.richCache.get(h); if (!v) { v = this.domSan.bypassSecurityTrustHtml(h); this.richCache.set(h, v); } return v; }
   @ViewChild('rte') rte?: RichEditorComponent;
+  /** Every editor on screen; the editors send typed text after a short pause, so saves call flushEditors() first. */
+  @ViewChildren(RichEditorComponent) editors?: QueryList<RichEditorComponent>;
+  private flushEditors() { this.editors?.forEach(e => e.flush()); }
+  /** The Word preview is rebuilt only after a longer pause in typing (rebuilding it is heavy and froze the typing). */
+  private previewTimer: any = null; private typedAt = 0;
+  private previewLater() {
+    clearTimeout(this.previewTimer);
+    this.previewTimer = setTimeout(() => {
+      this.previewTimer = null;
+      if (Date.now() - this.typedAt < 2500) { this.previewLater(); return; }
+      if (this.inDocView()) this.renderPreview(true);
+    }, 2500);
+  }
   editHtml = ''; editInitHtml = '';
-  onEditText(k: string, t: string) { this.editText = t; this.saveState = this.isDirty() ? 'dirty' : 'saved'; this.emNarr.stop(); this.autosaveLater(k); }
+  onEditText(k: string, t: string) { this.typedAt = Date.now(); this.editText = t; this.saveState = this.isDirty() ? 'dirty' : 'saved'; this.emNarr.stop(); this.autosaveLater(k); }
   /** Replaces the whole text being edited (answer pasted from ChatGPT). */
   private setEditText(t: string) { this.editText = t; this.editInitHtml = this.editHtml = htmlFromText(t); }
   state(k: string): SectionState { const s = this.section(k); if (this.isFixed(k) && !s?.content?.trim()) return 'file'; return !s?.content?.trim() ? 'pend' : s.status === 'approved' ? 'ap' : 'gen'; }
@@ -586,7 +599,7 @@ export class EvaluationComponent implements OnDestroy {
     this.docEditing = true;
     if (this.docActive) setTimeout(() => document.getElementById('de-' + this.docActive)?.scrollIntoView({block: 'start'}));
   }
-  onDocText(k: string, t: string) { (this.docDraft[k] ??= {text: '', html: ''}).text = t; this.docLater(k); }
+  onDocText(k: string, t: string) { this.typedAt = Date.now(); (this.docDraft[k] ??= {text: '', html: ''}).text = t; this.docLater(k); }
   onDocHtml(k: string, h: string) { (this.docDraft[k] ??= {text: '', html: ''}).html = h; this.docLater(k); }
   private docLater(k: string) { clearTimeout(this.docTimers[k]); this.docTimers[k] = setTimeout(() => { delete this.docTimers[k]; this.saveDocSection(k); }, 1200); }
   private async saveDocSection(k: string) {
@@ -605,6 +618,7 @@ export class EvaluationComponent implements OnDestroy {
     if (!this.docEditing || this.docFinishing) return;
     this.docFinishing = true;
     try {
+      this.flushEditors();
       const waiting = Object.keys(this.docTimers);
       for (const k of waiting) clearTimeout(this.docTimers[k]);
       this.docTimers = {};
@@ -691,7 +705,7 @@ export class EvaluationComponent implements OnDestroy {
     this.lastSaved = {content, html};
     const s = this.section(k); if (s) { s.content = content; s.content_html = html; s.status = 'edited'; }
     this.autoSaved = new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
-    if (this.inDocView()) this.renderPreview(true);
+    if (this.inDocView()) this.previewLater();
     this.saveState = this.isDirty() ? 'dirty' : 'saved';
     if (this.isDirty() && this.editing === k) this.autosaveLater(k);
     return true;
@@ -701,13 +715,16 @@ export class EvaluationComponent implements OnDestroy {
     clearTimeout(this.autoTimer); this.autoTimer = null;
     if (!this.editing) return true;
     await this.dictation.stop();
+    this.flushEditors();
+    clearTimeout(this.autoTimer); this.autoTimer = null;
     return this.autosave(this.editing);
   }
   /** Leaves edit mode; text already saved automatically stays saved. */
-  async closeEdit() { clearTimeout(this.autoTimer); this.autoTimer = null; const saved = !!this.autoSaved; this.editing = ''; this.autoSaved = ''; if (saved) { await this.load(); this.changed.emit(); if (this.inDocView()) this.renderPreview(true); } }
+  async closeEdit() { clearTimeout(this.previewTimer); clearTimeout(this.autoTimer); this.autoTimer = null; const saved = !!this.autoSaved; this.editing = ''; this.autoSaved = ''; if (saved) { await this.load(); this.changed.emit(); if (this.inDocView()) this.renderPreview(true); } }
   startEdit(k: string) { this.reader.stop(); this.loadSnippets(); this.versionsOpen = ''; this.autoSaved = ''; this.editing = k; this.editText = this.text(k); this.editInitHtml = this.editHtml = this.richOf(k) || htmlFromText(this.editText); this.lastSaved = {content: this.editText, html: this.editInitHtml}; this.saveState = 'saved'; this.sectionInstr = ''; setTimeout(() => this.rte?.focus()); }
   async saveEdit(k: string) {
     await this.dictation.stop(); // the last dictated words enter the text before it is saved
+    this.flushEditors();
     if (!this.editText.trim()) { this.api.notify('O texto não pode ficar vazio.'); return; }
     clearTimeout(this.autoTimer); this.autoTimer = null;
     try { await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content: this.editText, html: this.editHtml, merge: true}); this.editing = ''; this.autoSaved = ''; await this.load(); this.changed.emit(); if (this.inDocView()) this.renderPreview(true); this.api.notify('Texto salvo. A seção voltou para revisão.'); } catch {}
@@ -833,6 +850,7 @@ export class EvaluationComponent implements OnDestroy {
     if (!this.emCanDiscard()) return;
     if (!await this.confirm.ask({tone: 'danger', title: 'Descartar as alterações desta sessão?', body: 'O texto volta a ser exatamente o que era quando você abriu o modo edição nesta seção. As mudanças feitas desde então saem do texto.',
       facts: ['O texto descartado fica em Versões, se já tinha sido salvo', 'Outras seções não mudam'], ok: 'Descartar alterações'})) return;
+    this.flushEditors(); // nothing typed may arrive after the text is put back
     clearTimeout(this.autoTimer); this.autoTimer = null;
     await this.dictation.stop();
     if (this.inflight) await this.inflight;

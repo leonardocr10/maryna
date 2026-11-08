@@ -1,4 +1,4 @@
-import {AfterViewInit, ChangeDetectionStrategy, ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output, ViewChild, ViewEncapsulation, inject} from '@angular/core';
+import {AfterViewInit, ChangeDetectionStrategy, ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, NgZone, OnChanges, OnDestroy, Output, ViewChild, ViewEncapsulation, inject} from '@angular/core';
 import {DomSanitizer, SafeHtml} from '@angular/platform-browser';
 import {EDITOR_FONTS, sanitizeHtml, textFromHtml} from '../rich-text';
 
@@ -127,7 +127,7 @@ const BLOCK = 'p,h3,li';
         </span>
       </div>
       <div #area class="rte-area draft editing" [style.zoom]="page ? zoom : null" [style.max-width]="page ? sheetMax(0) : null" [attr.contenteditable]="readOnly ? 'false' : 'true'" role="textbox" aria-multiline="true" [attr.aria-label]="label"
-        (beforeinput)="typing()" (input)="changed()" (keydown)="keys($event)" (paste)="paste($event)" (blur)="flush()"></div>
+        (paste)="paste($event)" (blur)="flush()"></div>
     </div>`,
   styles: [`
     nl-rich-editor{display:block}
@@ -233,6 +233,7 @@ export class RichEditorComponent implements AfterViewInit, OnChanges, OnDestroy 
   st: {bold: boolean; italic: boolean; underline: boolean; strike: boolean; ul: boolean; ol: boolean; align: string; block: string; size: string; font: string} =
     {bold: false, italic: false, underline: false, strike: false, ul: false, ol: false, align: '', block: '', size: '', font: ''};
   private cdr = inject(ChangeDetectorRef);
+  private zone = inject(NgZone);
   @Output() htmlChange = new EventEmitter<string>();
   @Output() textChange = new EventEmitter<string>();
   readonly sizes = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24];
@@ -249,9 +250,24 @@ export class RichEditorComponent implements AfterViewInit, OnChanges, OnDestroy 
     return this.icons[n] ??= this.sanitizer.bypassSecurityTrustHtml(`<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`);
   }
 
-  ngAfterViewInit() { this.load(); document.addEventListener('selectionchange', this.track); }
+  /** Typing, cursor moves and key presses are heard outside Angular, so a key press does not re-check the whole screen;
+   *  the text is sent to the page after a short pause (or at once on blur, shortcuts, toolbar actions and flush()). */
+  ngAfterViewInit() {
+    this.load();
+    const el = this.area.nativeElement;
+    this.zone.runOutsideAngular(() => {
+      el.addEventListener('beforeinput', this.onBeforeInput);
+      el.addEventListener('input', this.onInput);
+      el.addEventListener('keydown', this.onKeydown);
+      document.addEventListener('selectionchange', this.track);
+    });
+  }
   ngOnChanges() { if (this.area && this.html !== this.last) this.load(); }
-  ngOnDestroy() { document.removeEventListener('selectionchange', this.track); document.removeEventListener('mousedown', this.outside, true); clearTimeout(this.snapTimer); this.clearFind(); }
+  ngOnDestroy() {
+    const el = this.area?.nativeElement;
+    el?.removeEventListener('beforeinput', this.onBeforeInput); el?.removeEventListener('input', this.onInput); el?.removeEventListener('keydown', this.onKeydown);
+    if (this.emitTimer) this.flush();
+    document.removeEventListener('selectionchange', this.track); document.removeEventListener('mousedown', this.outside, true); clearTimeout(this.snapTimer); this.clearFind(); }
 
   focus() { this.area.nativeElement.focus(); }
 
@@ -345,10 +361,20 @@ export class RichEditorComponent implements AfterViewInit, OnChanges, OnDestroy 
     this.last = this.html; this.history = []; this.future = []; this.cdr?.markForCheck();
   }
 
+  /** Cursor moves (outside Angular): only the toolbar is refreshed, and only when the formatting shown changes. */
   private readonly track = () => {
     const s = document.getSelection();
     if (s && s.rangeCount && this.area.nativeElement.contains(s.anchorNode)) { this.range = s.getRangeAt(0).cloneRange(); this.readState(); }
   };
+  private readonly onBeforeInput = () => { const had = this.history.length; this.typing(); if (!had && this.history.length) this.cdr.detectChanges(); }; // undo button lights up
+  private readonly onInput = () => this.emitLater();
+  /** Only shortcuts enter Angular; plain letters stay outside. */
+  private readonly onKeydown = (e: KeyboardEvent) => {
+    const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+    if (e.key === 'Tab' || (mod && ['z', 'y', 'b', 'i', 'u'].includes(k))) this.zone.run(() => this.keys(e));
+  };
+  private emitTimer: any = null;
+  private emitLater() { clearTimeout(this.emitTimer); this.emitTimer = setTimeout(() => this.zone.run(() => this.flush()), 300); }
   /** Reads the formatting at the cursor so the toolbar shows it (pressed buttons, current size and font). */
   private readState() {
     const s = document.getSelection(); const n = s?.anchorNode; if (!n) return;
@@ -360,7 +386,7 @@ export class RichEditorComponent implements AfterViewInit, OnChanges, OnDestroy 
     const next = {bold: q('bold'), italic: q('italic'), underline: q('underline'), strike: q('strikeThrough'),
       ul: !!el.closest('ul'), ol: !!el.closest('ol'), align: block?.style.textAlign || '', block: block ? block.tagName.toLowerCase() : '',
       size: span ? String(pt) : '', font: fam ? fam.style.fontFamily.split(',')[0].replace(/["']/g, '') : ''};
-    if (JSON.stringify(next) !== JSON.stringify(this.st)) { this.st = next; this.cdr.markForCheck(); }
+    if (JSON.stringify(next) !== JSON.stringify(this.st)) { this.st = next; this.cdr.detectChanges(); }
   }
   private restore() {
     const el = this.area.nativeElement;
@@ -372,10 +398,10 @@ export class RichEditorComponent implements AfterViewInit, OnChanges, OnDestroy 
   /** Buttons keep the text selection; selects and color inputs need focus, so the range is restored before applying. */
   keepSelection(e: MouseEvent) { const t = e.target as HTMLElement; if (t.closest('button')) e.preventDefault(); }
 
-  private snapshot() {
+  private snapshot(check = true) {
     const h = this.area.nativeElement.innerHTML;
     if (this.history[this.history.length - 1] !== h) { this.history.push(h); if (this.history.length > 200) this.history.shift(); }
-    this.future = []; this.cdr.markForCheck();
+    this.future = []; if (check) this.cdr.markForCheck();
   }
 
   cmd(name: string, value?: string) {
@@ -445,8 +471,8 @@ export class RichEditorComponent implements AfterViewInit, OnChanges, OnDestroy 
 
   get canUndo() { return this.history.length > 0; }
   get canRedo() { return this.future.length > 0; }
-  undo() { const el = this.area.nativeElement; const prev = this.history.pop(); if (prev === undefined) return; this.future.push(el.innerHTML); el.innerHTML = prev; this.emit(); this.cdr.markForCheck(); }
-  redo() { const el = this.area.nativeElement; const next = this.future.pop(); if (next === undefined) return; this.history.push(el.innerHTML); el.innerHTML = next; this.emit(); this.cdr.markForCheck(); }
+  undo() { const el = this.area.nativeElement; const prev = this.history.pop(); if (prev === undefined) return; this.future.push(el.innerHTML); el.innerHTML = prev; this.flush(); this.cdr.markForCheck(); }
+  redo() { const el = this.area.nativeElement; const next = this.future.pop(); if (next === undefined) return; this.history.push(el.innerHTML); el.innerHTML = next; this.flush(); this.cdr.markForCheck(); }
 
   keys(e: KeyboardEvent) {
     const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
@@ -466,10 +492,11 @@ export class RichEditorComponent implements AfterViewInit, OnChanges, OnDestroy 
   }
 
   /** Typing: one undo step per burst (snapshot before the first key after a pause). */
-  typing() { if (!this.burst) this.snapshot(); clearTimeout(this.snapTimer); this.burst = true; this.snapTimer = setTimeout(() => this.burst = false, 800); }
+  typing() { if (!this.burst) this.snapshot(false); clearTimeout(this.snapTimer); this.burst = true; this.snapTimer = setTimeout(() => this.burst = false, 800); }
   private burst = false;
-  changed() { this.emit(); }
-  flush() { this.emit(); }
+  changed() { this.flush(); }
+  /** Sends the text now (pending typing included). The page calls it before saving. */
+  flush() { clearTimeout(this.emitTimer); this.emitTimer = null; this.emit(); }
 
   private emit() {
     const el = this.area.nativeElement;

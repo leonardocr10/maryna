@@ -521,7 +521,7 @@
       <ul class="apm-list">
         <li *ngFor="let s of approveRows(); trackBy: bySection" [class.off]="!apmCanPick(s.id)">
           <label>
-            <input type="checkbox" [checked]="state(s.id)==='ap' || apmSel[s.id]" [disabled]="!apmCanPick(s.id)" (change)="apmSel[s.id]=$any($event.target).checked">
+            <input type="checkbox" [checked]="done(s.id) || apmSel[s.id]" [disabled]="!apmCanPick(s.id)" (change)="apmSel[s.id]=$any($event.target).checked">
             <span class="nm">{{s.name}}</span>
             <span [class]="'badge '+SECTION_STATE[state(s.id)].css">{{state(s.id)==='pend' ? 'Sem texto' : SECTION_STATE[state(s.id)].label}}</span>
           </label>

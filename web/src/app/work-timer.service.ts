@@ -1,4 +1,4 @@
-import {Injectable, inject, signal} from '@angular/core';
+import {Injectable, NgZone, inject, signal} from '@angular/core';
 import {Api} from './api.service';
 
 const IDLE_MS = 5 * 60_000;   // pause after 5 minutes without mouse/keyboard
@@ -19,11 +19,15 @@ export class WorkTimer {
   private lastActivity = Date.now();
 
   constructor() {
-    const touch = () => { this.lastActivity = Date.now(); };
-    for (const ev of ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart', 'scroll']) document.addEventListener(ev, touch, {passive: true, capture: true});
-    document.addEventListener('visibilitychange', () => { if (document.hidden) this.flush(); else touch(); });
-    window.addEventListener('pagehide', () => this.flush(true));
-    setInterval(() => this.tick(), 1000);
+    // Outside Angular: a mouse move or scroll must not re-check the whole screen; the signals below
+    // still refresh the clock once a second while it runs.
+    inject(NgZone).runOutsideAngular(() => {
+      const touch = () => { this.lastActivity = Date.now(); };
+      for (const ev of ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart', 'scroll']) document.addEventListener(ev, touch, {passive: true, capture: true});
+      document.addEventListener('visibilitychange', () => { if (document.hidden) this.flush(); else touch(); });
+      window.addEventListener('pagehide', () => this.flush(true));
+      setInterval(() => this.tick(), 1000);
+    });
     this.loadStats();
   }
 

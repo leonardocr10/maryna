@@ -1,7 +1,6 @@
 import {Component, ElementRef, OnInit, ViewChild, inject} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {FormsModule} from '@angular/forms';
-import {renderAsync} from 'docx-preview';
 import {Api} from './api.service';
 import {ConfirmService} from './confirm.service';
 import {CONCLUSION_GUIDANCE, SECTIONS, brDate, fold} from './shared';
@@ -394,6 +393,7 @@ export class ModelsComponent implements OnInit {
     try {
       const data = await this.api.getBlob(`/models/${id}/versions/current/file`);
       if (this.detail?.id !== id) return;
+      const {renderAsync} = await import('docx-preview');
       await renderAsync(data, box, undefined, {className: 'docx', inWrapper: true, ignoreLastRenderedPageBreak: true});
     } catch {} finally { this.previewing = false; }
   }

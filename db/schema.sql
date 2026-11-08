@@ -322,3 +322,10 @@ CREATE TABLE IF NOT EXISTS oauth_tokens(
   revoked_at TEXT NULL,
   created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
+-- Lookups by evaluation/section/patient used on every screen load (keeps the app fast as records grow).
+CREATE INDEX IF NOT EXISTS ix_documents_eval ON documents(evaluation_id);
+CREATE INDEX IF NOT EXISTS ix_section_history_section ON section_history(section_id);
+CREATE INDEX IF NOT EXISTS ix_plan_eval ON evaluation_plan(evaluation_id);
+CREATE INDEX IF NOT EXISTS ix_sessions_eval ON evaluation_sessions(evaluation_id);
+CREATE INDEX IF NOT EXISTS ix_evaluations_patient ON evaluations(patient_id);
+CREATE INDEX IF NOT EXISTS ix_devolutiva_history_eval ON devolutiva_history(evaluation_id);

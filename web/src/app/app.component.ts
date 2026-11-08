@@ -151,6 +151,8 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
       <div class="content">
         <!-- an evaluation screen with no evaluation open (e.g. it was deleted elsewhere) falls back to the list instead of a blank page -->
         <nl-dashboard *ngIf="screen()==='home' || (screen()==='evaluation' && !selectedId())" [evaluations]="evaluations()" [query]="search" (queryChange)="search=$event" (open)="open($event)" (create)="go('new')"></nl-dashboard>
+        <!-- other screens load in their own files once the first screen is up (smaller start) -->
+        @defer (on idle) {
         <nl-patients *ngIf="screen()==='patients'" [evaluations]="evaluations()" (open)="open($event)" (create)="go('new')" (created)="onCreated({id: $event, generate: false})"></nl-patients>
         <nl-new-evaluation *ngIf="screen()==='new'" (closed)="goHome()" (created)="onCreated($event)"></nl-new-evaluation>
         <nl-settings *ngIf="screen()==='settings'" (open)="open($event)"></nl-settings>
@@ -160,6 +162,7 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
         <nl-devolutivas *ngIf="screen()==='devolutivas'"></nl-devolutivas>
         <nl-library *ngIf="screen()==='library'"></nl-library>
         <nl-reports *ngIf="screen()==='reports'" [evaluations]="evaluations()"></nl-reports>
+        } @loading (minimum 0ms) { <p class="muted" style="padding:24px">Carregando…</p> }
       </div>
     </main>
   </div>
@@ -320,7 +323,8 @@ export class AppComponent {
   private wheelZoom = inject(WheelZoom);
   private zone = inject(NgZone);
   constructor() {
-    installTooltips();
+    // tooltip listeners (mouseover, scroll) run outside Angular: hovering never re-checks the screen
+    this.zone.runOutsideAngular(() => installTooltips());
     // Ctrl + wheel anywhere else: the app's screen size (same as A- / A+), never the browser zoom
     this.wheelZoom.register(dir => { this.zone.run(() => { if (this.theme.canZoom(dir)) this.theme.stepZoom(dir); }); this.wheelZoom.hud('Tela ' + this.theme.zoom() + '%'); return true; });
     if (this.api.loggedIn()) this.api.loadMe().then(() => { if (!this.mustChange()) this.load(); });

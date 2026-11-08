@@ -87,7 +87,7 @@ export function listStatus(e: any): EvalStatus {
 }
 
 export type SectionState = 'file' | 'pend' | 'gen' | 'ap';
-export const SECTION_STATE: Record<SectionState, {label: string; css: string}> = {file: {label: 'Do arquivo', css: 'idle'}, pend: {label: 'Pendente', css: 'idle'}, gen: {label: 'Revisar', css: 'warn'}, ap: {label: 'Aprovada', css: 'ok'}};
+export const SECTION_STATE: Record<SectionState, {label: string; css: string}> = {file: {label: 'Aprovado · do arquivo', css: 'ok'}, pend: {label: 'Pendente', css: 'idle'}, gen: {label: 'Revisar', css: 'warn'}, ap: {label: 'Aprovada', css: 'ok'}};
 
 export const words = (t: string) => (t || '').trim().split(/\s+/).filter(Boolean).length;
 export const brl = (v: number) => (v || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: (v || 0) < 1 ? 3 : 2});

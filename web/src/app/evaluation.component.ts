@@ -1,7 +1,6 @@
 import {Component, ElementRef, EventEmitter, HostListener, Input, NgZone, OnDestroy, Output, QueryList, ViewChild, ViewChildren, inject} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {FormsModule} from '@angular/forms';
-import {renderAsync} from 'docx-preview';
 import {tablesToPng} from './table-image';
 import {Api} from './api.service';
 import {WorkTimer} from './work-timer.service';
@@ -275,7 +274,7 @@ export class EvaluationComponent implements OnDestroy {
   /** Why the generation buttons are off in this section. */
   handWhy(k: string) {
     if (HAND_ONLY.includes(k)) return 'Escrita só pela psicóloga: a IA nunca redige o diagnóstico.';
-    if (this.isFixed(k)) return 'Texto fixo do arquivo: só você edita.';
+    if (this.isFixed(k)) return 'Texto fixo do arquivo: já entra aprovado. Se você editar, aprove de novo.';
     return 'Seção criada no documento, sem tabelas no arquivo: o texto é escrito por você.';
   }
   async setCreated(k: string, create: boolean) {
@@ -340,8 +339,10 @@ export class EvaluationComponent implements OnDestroy {
   /** Replaces the whole text being edited (answer pasted from ChatGPT). */
   private setEditText(t: string) { this.editText = t; this.editInitHtml = this.editHtml = htmlFromText(t); }
   state(k: string): SectionState { const s = this.section(k); if (this.isFixed(k) && !s?.content?.trim()) return 'file'; return !s?.content?.trim() ? 'pend' : s.status === 'approved' ? 'ap' : 'gen'; }
+  /** Approved, or a fixed text of the base file left as it is (the Word keeps the original paragraphs: approved by itself). */
+  done(k: string) { const st = this.state(k); return st === 'ap' || st === 'file'; }
   drafted() { return this.available().filter(s => this.state(s.id) !== 'pend').length; }
-  approved() { return this.available().filter(s => this.state(s.id) === 'ap' || this.state(s.id) === 'file' || this.isExcluded(s.id)).length; }
+  approved() { return this.available().filter(s => this.done(s.id) || this.isExcluded(s.id)).length; }
   total() { return this.available().length; }
   allApproved() { return this.locked() || (this.total() > 0 && this.approved() === this.total()); }
   status() { return this.allApproved() ? STATUS.ap : this.autoDrafted() ? STATUS.rv : STATUS.rs; }
@@ -476,7 +477,7 @@ export class EvaluationComponent implements OnDestroy {
   genKeys() { return Object.keys(this.gen); }
   genDone() { return Object.values(this.gen).filter(g => g === 'done' || g === 'error' || g === 'skipped').length; }
   genPct() { const n = this.genKeys().length; return n ? Math.round(this.genDone() / n * 100) : 0; }
-  dotClass(k: string) { const g = this.gen[k]; if (g === 'running') return 'warn pulse'; if (g === 'error') return 'err'; if (g === 'done') return 'ok'; return this.state(k) === 'ap' ? 'ok' : this.state(k) === 'gen' ? 'warn' : ''; }
+  dotClass(k: string) { const g = this.gen[k]; if (g === 'running') return 'warn pulse'; if (g === 'error') return 'err'; if (g === 'done') return 'ok'; return this.done(k) ? 'ok' : this.state(k) === 'gen' ? 'warn' : ''; }
   rowLabel(k: string) { if (k === DEMAND_KEY && !this.gen[k]) return this.state(k) === 'pend' ? 'Sem texto no arquivo' : this.demandIsFromFile() ? 'Do arquivo enviado' : SECTION_STATE[this.state(k)].label; if (k === MANUAL_KEY && !this.gen[k] && this.state(k) === 'pend') return 'Você gera na etapa 4'; const g = this.gen[k]; if (g === 'running') return 'Gerando…'; if (g === 'pending') return 'Na fila'; if (g === 'error') return 'Erro'; if (g === 'skipped') return 'Não gerada'; return SECTION_STATE[this.state(k)].label; }
 
   async generateAll(skipConfirm = false, only?: string[]) {
@@ -1035,7 +1036,7 @@ export class EvaluationComponent implements OnDestroy {
       const marks = [...new Set(t.match(/\[[A-ZÇÃÉ_]+(?:_\d+)?\]/g) || [])];
       if (marks.length) out.push(`${name}: marcador não trocado (${marks.join(', ')}).`);
       if (limit && words(t) > limit * 1.5) out.push(`${name}: ${words(t)} palavras, bem acima das ${limit} sugeridas.`);
-      if (this.state(k) !== 'ap') for (const w of this.warnings(k)) out.push(`${name}: ${w}`);
+      if (!this.done(k)) for (const w of this.warnings(k)) out.push(`${name}: ${w}`);
     }
     return out;
   }
@@ -1046,7 +1047,7 @@ export class EvaluationComponent implements OnDestroy {
       await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content: this.text(k), approve: true});
       await this.load(); this.changed.emit();
       const list = this.available(), i = list.findIndex(s => s.id === k);
-      const next = [...list.slice(i + 1), ...list.slice(0, i)].find(s => this.state(s.id) !== 'ap');
+      const next = [...list.slice(i + 1), ...list.slice(0, i)].find(s => !this.done(s.id) && !this.isExcluded(s.id));
       if (this.refOpen) { if (next && this.refCount(next.id)) this.refOpen = next.id; else this.closeRefs(); }
       this.open = next?.id || ''; this.editing = ''; this.sectionInstr = '';
       if (!next && this.allApproved()) this.api.notify('Todas as seções aprovadas. Já dá para baixar o Word.');
@@ -1060,12 +1061,12 @@ export class EvaluationComponent implements OnDestroy {
     for (const s of this.approveRows()) this.apmSel[s.id] = this.state(s.id) !== 'pend';
     this.approveOpen = true;
   }
-  apmCanPick(k: string) { return this.state(k) !== 'pend' && this.state(k) !== 'ap'; }
-  apmIssues(k: string) { const name = SECTIONS.find(s => s.id === k)?.name || k; return this.state(k) === 'ap' || this.state(k) === 'pend' ? [] : this.finalCheck([k]).map(t => t.startsWith(name + ': ') ? t.slice(name.length + 2) : t); }
+  apmCanPick(k: string) { return this.state(k) !== 'pend' && !this.done(k); }
+  apmIssues(k: string) { const name = SECTIONS.find(s => s.id === k)?.name || k; return this.done(k) || this.state(k) === 'pend' ? [] : this.finalCheck([k]).map(t => t.startsWith(name + ': ') ? t.slice(name.length + 2) : t); }
   apmAll(on: boolean) { for (const s of this.approveRows()) if (this.apmCanPick(s.id)) this.apmSel[s.id] = on; }
   apmPicked() { return this.approveRows().filter(s => this.apmCanPick(s.id) && this.apmSel[s.id]); }
   /** Approving every remaining section also approves the evaluation (locked, Word ready); a part approves only those. */
-  apmLocks() { const picked = new Set(this.apmPicked().map(s => s.id)); return this.approveRows().every(s => this.state(s.id) === 'ap' || picked.has(s.id)); }
+  apmLocks() { const picked = new Set(this.apmPicked().map(s => s.id)); return this.approveRows().every(s => this.done(s.id) || picked.has(s.id)); }
   async confirmApproveAll() {
     const picked = this.apmPicked(); if (!picked.length || !this.apmReviewed || this.apmBusy) return;
     this.apmBusy = true;
@@ -1137,7 +1138,7 @@ export class EvaluationComponent implements OnDestroy {
     setTimeout(() => this.onDocScroll());
   }
   /** Approving this one leaves nothing else to review. */
-  isLastPending(k: string) { return !this.available().some(s => s.id !== k && this.state(s.id) !== 'ap' && !this.isExcluded(s.id)); }
+  isLastPending(k: string) { return !this.available().some(s => s.id !== k && !this.done(s.id) && !this.isExcluded(s.id)); }
   showDocument() { if (!this.canWrite()) return; this.closeRefs(); this.step = 3; this.mode = 'documento'; setTimeout(() => this.renderPreview()); }
   /** quiet: refresh while editing (no "Montando…", same place, the edited section stays highlighted). */
   async renderPreview(quiet = false) {
@@ -1150,6 +1151,7 @@ export class EvaluationComponent implements OnDestroy {
       const data = await this.api.blob(`/evaluations/${this.evaluationId}/preview`);
       // rendered aside and swapped in at once, so the page does not blink or jump
       const next = document.createElement('div');
+      const {renderAsync} = await import('docx-preview');
       await renderAsync(data, next, undefined, {className: 'docx', inWrapper: true, ignoreLastRenderedPageBreak: true});
       box.replaceChildren(...Array.from(next.childNodes)); this.docIndex = null;
       this.pageCount = box.querySelectorAll('section.docx').length;

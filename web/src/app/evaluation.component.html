@@ -456,7 +456,9 @@
             <span [class]="'badge '+SECTION_STATE[state(s.id)].css">{{SECTION_STATE[state(s.id)].label}}</span>
             <button *ngIf="docActive===s.id" type="button" class="x" (click)="$event.stopPropagation(); closeDocCard()" aria-label="Fechar" title="Fechar">×</button></div>
           <ng-container *ngIf="editing!==s.id">
-            <p *ngFor="let p of paragraphs(text(s.id)).slice(0, docActive===s.id ? 99 : 2)" [class.ptitle]="p.title">{{p.text}}</p>
+            <!-- open card: the text as the Word shows it (same drawing as the section screen); closed: a short plain preview -->
+            <div *ngIf="docActive===s.id && richOf(s.id); else docPlain" class="rich-view doc-rich" [innerHTML]="richView(s.id)"></div>
+            <ng-template #docPlain><p *ngFor="let p of paragraphs(text(s.id)).slice(0, docActive===s.id ? 99 : 2)" [class.ptitle]="p.title">{{p.text}}</p></ng-template>
             <p *ngIf="!text(s.id)" class="muted">Sem texto ainda.</p>
           </ng-container>
           <div *ngIf="editing===s.id && !editFull" class="dblk-edit" (click)="$event.stopPropagation()">

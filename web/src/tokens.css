@@ -57,6 +57,8 @@
 
 :root {
   --font: 'IBM Plex Sans', system-ui, 'Segoe UI', Arial, sans-serif;
+  /* Section text as the Word export writes it (Arial, worker/docx_worker.py REPORT_FONT); see DOC_PT in rich-text.ts */
+  --doc-font: Arial, 'Helvetica Neue', Helvetica, 'Liberation Sans', sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, Consolas, monospace;
 
   --space-1: 4px; --space-2: 6px; --space-3: 8px; --space-4: 12px; --space-5: 16px;

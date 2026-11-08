@@ -132,6 +132,9 @@ nl-icon { --ico-size: 16px; }
 .rm-page b, .rm-page strong { font-weight: 650; }
 .rm-html table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: .85em; margin: 0 0 1em; }
 .rm-html :is(td, th) { border: 1px solid var(--rt-border); padding: 4px 8px; }
+/* formatted section text: paragraphs apart, topic titles at the text size (sizes chosen in the editor come as em) */
+.rm-html ::ng-deep :is(p, h3, li) { margin: 0 0 .8em; }
+.rm-html ::ng-deep h3 { font-size: inherit; font-weight: 700; }
 
 .chip { display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 12px; border: 1px solid var(--rt-border); border-radius: var(--radius-pill); background: var(--rt-page); font-size: 13px; box-shadow: 0 4px 14px rgba(0,0,0,.08); }
 .chip.resume { max-width: 70ch; margin: 0 auto 12px; width: fit-content; }

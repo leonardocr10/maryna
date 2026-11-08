@@ -1,6 +1,6 @@
 import {AfterViewInit, ChangeDetectionStrategy, ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, NgZone, OnChanges, OnDestroy, Output, ViewChild, ViewEncapsulation, inject} from '@angular/core';
 import {DomSanitizer, SafeHtml} from '@angular/platform-browser';
-import {EDITOR_FONTS, sanitizeHtml, textFromHtml} from '../rich-text';
+import {DOC_PT, EDITOR_FONTS, displayHtml, sanitizeHtml, textFromHtml} from '../rich-text';
 
 /** Toolbar icons (24px grid, currentColor). Static strings, never user content. */
 const ICONS: Record<string, string> = {
@@ -54,7 +54,7 @@ const BLOCK = 'p,h3,li';
           @if (menu==='align') {
             <div class="rte-pop rte-pop-sm" role="menu" aria-label="Alinhamento" (keydown)="menuKeys($event)">
               @for (a of aligns; track a.id) {
-                <button type="button" role="menuitemradio" [attr.aria-checked]="(st.align || 'left')===a.id" [class.on]="(st.align || 'left')===a.id" (click)="align(a.id); closeMenu()"><span [innerHTML]="icon(a.icon)"></span>{{a.name}}</button>
+                <button type="button" role="menuitemradio" [attr.aria-checked]="(st.align || 'justify')===a.id" [class.on]="(st.align || 'justify')===a.id" (click)="align(a.id); closeMenu()"><span [innerHTML]="icon(a.icon)"></span>{{a.name}}</button>
               }
             </div>
           }
@@ -98,7 +98,7 @@ const BLOCK = 'p,h3,li';
                       <div class="rte-chips">@for (z of sizes; track z) { <button type="button" [class.on]="st.size===''+z" (click)="fontSize(''+z); closeMenu()">{{z}}</button> }</div>
                     }
                     @case ('align') {
-                      @for (a of aligns; track a.id) { <button type="button" role="menuitemradio" [attr.aria-checked]="(st.align || 'left')===a.id" [class.on]="(st.align || 'left')===a.id" (click)="align(a.id); closeMenu()"><span [innerHTML]="icon(a.icon)"></span>{{a.name}}</button> }
+                      @for (a of aligns; track a.id) { <button type="button" role="menuitemradio" [attr.aria-checked]="(st.align || 'justify')===a.id" [class.on]="(st.align || 'justify')===a.id" (click)="align(a.id); closeMenu()"><span [innerHTML]="icon(a.icon)"></span>{{a.name}}</button> }
                     }
                     @case ('color') {
                       <div class="rte-sw">@for (c of colors; track c) { <button type="button" [style.background]="c" [attr.aria-label]="'Cor ' + c" [title]="c" (click)="cmd('foreColor', c); closeMenu()"></button> }</div>
@@ -170,7 +170,7 @@ const BLOCK = 'p,h3,li';
     .rte-custom input{width:40px;height:28px;border:1px solid var(--border-card);border-radius:6px;padding:0;background:none;cursor:pointer}
     .rte-row2{display:grid;grid-template-columns:1fr 1fr;gap:4px}
     .rte-narrow,.rte-narrow2{display:none !important}
-    .rte-area{min-height:320px;max-height:calc(70vh / var(--zoom, 1));overflow:auto;padding:14px 16px;outline:none;line-height:1.6;border:0 !important;border-radius:0 0 var(--radius-sm) var(--radius-sm)}
+    .rte-area{font-family:var(--doc-font);text-align:justify;min-height:320px;max-height:calc(70vh / var(--zoom, 1));overflow:auto;padding:14px 16px;outline:none;line-height:1.6;border:0 !important;border-radius:0 0 var(--radius-sm) var(--radius-sm)}
     .rte-area:focus{box-shadow:inset 0 0 0 2px var(--ring)}
     .rte-area p,.rte-area h3{margin:0 0 .6em}
     .rte-area h3{font-size:inherit;font-weight:700}
@@ -179,7 +179,7 @@ const BLOCK = 'p,h3,li';
     /* page layout (edit mode): toolbar fixed above, the text as a sheet that grows; the page scrolls, not the area */
     .rte.page{border:0;background:none}
     .rte.page .rte-bar{position:sticky;top:0;z-index:4;border:1px solid var(--border-card);border-radius:var(--radius-lg);margin:0 auto 12px;max-width:900px;background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.04)}
-    .rte.page .rte-area{max-height:none;min-height:60vh;max-width:900px;margin:0 auto;padding:36px 48px 56px;background:var(--card);border:1px solid var(--border-card) !important;border-radius:var(--radius-lg);font-size:17px;line-height:1.7;hyphens:manual;text-align:left}
+    .rte.page .rte-area{max-height:none;min-height:60vh;max-width:900px;margin:0 auto;padding:36px 48px 56px;background:var(--card);border:1px solid var(--border-card) !important;border-radius:var(--radius-lg);font-size:17px;line-height:1.7;hyphens:manual}
     .rte.page .rte-area:focus{box-shadow:0 0 0 3px var(--ring)}
     /* small screens: one row; size, alignment and bullets move into "Mais opções" */
     @media (max-width:700px){.rte.page .rte-area{padding:20px 16px 40px;font-size:16px}}
@@ -212,8 +212,9 @@ export class RichEditorComponent implements AfterViewInit, OnChanges, OnDestroy 
   @ViewChild('moreBtn') moreBtn?: ElementRef<HTMLButtonElement>;
   @ViewChild('alignBtn') alignBtn?: ElementRef<HTMLButtonElement>;
   private host = inject<ElementRef<HTMLElement>>(ElementRef);
-  alignIcon() { return this.aligns.find(a => a.id === this.st.align)?.icon || 'left'; }
-  alignName(id: string) { return this.aligns.find(a => a.id === (id || 'left'))?.name || ''; }
+  alignIcon() { return this.aligns.find(a => a.id === (this.st.align || 'justify'))?.icon || 'justify'; }
+  /** Without a chosen alignment the paragraph is justified, as in the Word export. */
+  alignName(id: string) { return this.aligns.find(a => a.id === (id || 'justify'))?.name || ''; }
   subName() { return ({font: 'Fonte', size: 'Tamanho da fonte', align: 'Alinhamento', color: 'Cor do texto', mark: 'Marca-texto', lines: 'Espaçamento entre linhas', indent: 'Recuos e espaçamento'} as Record<string, string>)[this.sub] || ''; }
   /** Opening a menu never touches the text; the selection is kept and restored when an option is applied. */
   toggleMenu(m: 'align' | 'more') { this.menu = this.menu === m ? '' : m; this.sub = ''; if (this.menu) document.addEventListener('mousedown', this.outside, true); this.cdr.markForCheck(); }
@@ -262,7 +263,7 @@ export class RichEditorComponent implements AfterViewInit, OnChanges, OnDestroy 
       document.addEventListener('selectionchange', this.track);
     });
   }
-  ngOnChanges() { if (this.area && this.html !== this.last) this.load(); }
+  ngOnChanges() { this.basePx = 0; if (this.area && this.html !== this.last) this.load(); }
   ngOnDestroy() {
     const el = this.area?.nativeElement;
     el?.removeEventListener('beforeinput', this.onBeforeInput); el?.removeEventListener('input', this.onInput); el?.removeEventListener('keydown', this.onKeydown);
@@ -356,7 +357,7 @@ export class RichEditorComponent implements AfterViewInit, OnChanges, OnDestroy 
   }
 
   private load() {
-    const clean = sanitizeHtml(this.html || '');
+    const clean = displayHtml(this.html || '');
     this.area.nativeElement.innerHTML = clean || '<p><br></p>';
     this.last = this.html; this.history = []; this.future = []; this.cdr?.markForCheck();
   }
@@ -380,12 +381,13 @@ export class RichEditorComponent implements AfterViewInit, OnChanges, OnDestroy 
     const s = document.getSelection(); const n = s?.anchorNode; if (!n) return;
     const el = (n.nodeType === 1 ? n : n.parentElement) as HTMLElement | null; if (!el) return;
     const q = (c: string) => { try { return document.queryCommandState(c); } catch { return false; } };
-    const block = el.closest('p,h3,li') as HTMLElement | null, cs = getComputedStyle(el);
-    const pt = Math.round(parseFloat(cs.fontSize) * 0.75 / (this.page ? this.zoom || 1 : 1));
-    const span = el.closest('[style*="font-size"]') as HTMLElement | null, fam = el.closest('[style*="font-family"]') as HTMLElement | null;
+    const block = el.closest('p,h3,li') as HTMLElement | null;
+    // size relative to the editor's own text, which stands for the report default (11 pt): same as the Word file, at any zoom
+    const pt = Math.round(this.px(el) / this.base() * DOC_PT * 2) / 2;
+    const fam = el.closest('[style*="font-family"]') as HTMLElement | null;
     const next = {bold: q('bold'), italic: q('italic'), underline: q('underline'), strike: q('strikeThrough'),
       ul: !!el.closest('ul'), ol: !!el.closest('ol'), align: block?.style.textAlign || '', block: block ? block.tagName.toLowerCase() : '',
-      size: span ? String(pt) : '', font: fam ? fam.style.fontFamily.split(',')[0].replace(/["']/g, '') : ''};
+      size: String(pt), font: fam ? fam.style.fontFamily.split(',')[0].replace(/["']/g, '') : ''};
     if (JSON.stringify(next) !== JSON.stringify(this.st)) { this.st = next; this.cdr.detectChanges(); }
   }
   private restore() {
@@ -421,7 +423,11 @@ export class RichEditorComponent implements AfterViewInit, OnChanges, OnDestroy 
     document.execCommand('styleWithCSS', false, 'false');
     document.execCommand('fontSize', false, '7');
     for (const f of Array.from(this.area.nativeElement.querySelectorAll('font[size="7"]')) as HTMLElement[]) {
-      const s = document.createElement('span'); s.style.fontSize = pt + 'pt'; s.append(...Array.from(f.childNodes)); f.replaceWith(s);
+      // em of the size around it (the editor's text is the 11 pt default); sizes inside the selection give way to the new one
+      const s = document.createElement('span'); s.append(...Array.from(f.childNodes)); f.replaceWith(s);
+      for (const d of Array.from(s.querySelectorAll<HTMLElement>('[style*="font-size"]'))) { d.style.removeProperty('font-size'); if (!d.getAttribute('style')) d.removeAttribute('style'); }
+      const em = (+pt / DOC_PT) * this.base() / this.px(s.parentElement || this.area.nativeElement);
+      s.style.fontSize = Math.round(em * 1000) / 1000 + 'em';
     }
     this.changed();
   }
@@ -498,10 +504,16 @@ export class RichEditorComponent implements AfterViewInit, OnChanges, OnDestroy 
   /** Sends the text now (pending typing included). The page calls it before saving. */
   flush() { clearTimeout(this.emitTimer); this.emitTimer = null; this.emit(); }
 
+  /** Font size in px as drawn (zoom left out, as it applies to the whole editor). */
+  private px(el: Element) { return parseFloat(getComputedStyle(el).fontSize) || 16; }
+  /** The editor's own text size (the 11 pt default), read once and again only when the inputs (zoom, page) change. */
+  private basePx = 0;
+  private base() { return this.basePx ||= this.px(this.area.nativeElement); }
+
   private emit() {
     const el = this.area.nativeElement;
     if (!el.querySelector(BLOCK + ',ul,ol') && !el.textContent?.trim()) el.innerHTML = '<p><br></p>';
-    const html = sanitizeHtml(el.innerHTML);
+    const html = sanitizeHtml(el.innerHTML, {baseColor: getComputedStyle(el).color});
     this.last = html;
     this.htmlChange.emit(html);
     this.textChange.emit(textFromHtml(html));

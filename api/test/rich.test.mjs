@@ -43,3 +43,39 @@ print(json.dumps({'title_bold':ps[0].find('.//'+qn('w:b')) is not None,'jc':val(
   assert.deepEqual(r, {title_bold: true, jc: 'center', line: '480', before: '240', after: '120', left: '720', bold: true, size: '28', color: 'C00000',
     fill: 'FFFF00', italic: true, u: 'single', strike: true, items: ['•um', '1.dois']});
 });
+
+// One formatting model all the way to the Word file: what the psychologist chose (alignment, font, size, color, bold,
+// italic, underline) reaches the exported report; sizes and colors the browser writes by itself (px, the app's own text
+// color) do not, so text without a chosen size stays the report default (Arial 11 pt, justified).
+const CHOSEN = '<p style="text-align: justify;"><b>Motivo fictício:</b> <span style="font-size: 13pt; font-family: Georgia; color: rgb(31, 78, 121);">'
+  + '<i>texto</i> <u>sintético</u></span></p>'
+  + '<p><span style="font-size: 17px; color: rgb(28, 43, 41);">Continuação sem tamanho escolhido.</span></p>'
+  + '<p style="text-align: center;"><span style="font-size: 12pt;">Externo <span style="font-size: 1.5em;">relativo</span></span></p>'
+  + '<p style="text-align: left;">À esquerda.</p>';
+const CHOSEN_PLAIN = 'Motivo fictício: texto sintético\n\nContinuação sem tamanho escolhido.\n\nExterno relativo\n\nÀ esquerda.';
+
+test('chosen formatting reaches the exported Word file; browser leftovers do not', () => {
+  const r = run(`
+import tempfile,os
+from docx import Document
+from docx.oxml.ns import qn
+tmp=tempfile.mkdtemp();base=os.path.join(tmp,'base.docx');out=os.path.join(tmp,'out.docx')
+d=Document();d.add_paragraph('Paciente: Fulano Fictício');d.add_paragraph('ANAMNESE');d.add_paragraph('CONCLUSÃO/RESULTADOS');d.save(base)
+before=w.sha256(base)
+w.export(base,out,{'anamnesis':${JSON.stringify(CHOSEN_PLAIN)}},rich={'anamnesis':${JSON.stringify(CHOSEN)}})
+ps=Document(out).paragraphs;i=[p.text for p in ps].index('ANAMNESE')
+def run_info(r):
+ rpr=r._r.find(qn('w:rPr'));g=lambda t,a='w:val':(lambda e:None if e is None else e.get(qn(a)))(rpr.find(qn(t)))
+ return [r.text,g('w:sz'),g('w:rFonts','w:ascii'),g('w:color'),rpr.find(qn('w:b')) is not None,rpr.find(qn('w:i')) is not None,g('w:u')]
+def jc(p):
+ e=p._p.find(qn('w:pPr')).find(qn('w:jc'));return e.get(qn('w:val'))
+print(json.dumps({'same_base':w.sha256(base)==before,'paras':[[jc(p),[run_info(r) for r in p.runs]] for p in ps[i+1:i+5]]}))`);
+  assert.equal(r.same_base, true);
+  assert.deepEqual(r.paras, [
+    ['both', [['Motivo fictício:', '22', 'Arial', null, true, false, null], [' ', '22', 'Arial', null, false, false, null],
+      ['texto', '26', 'Georgia', '1F4E79', false, true, null], [' ', '26', 'Georgia', '1F4E79', false, false, null], ['sintético', '26', 'Georgia', '1F4E79', false, false, 'single']]],
+    ['both', [['Continuação sem tamanho escolhido.', '22', 'Arial', null, false, false, null]]],
+    ['center', [['Externo ', '24', 'Arial', null, false, false, null], ['relativo', '36', 'Arial', null, false, false, null]]],
+    ['left', [['À esquerda.', '22', 'Arial', null, false, false, null]]],
+  ]);
+});

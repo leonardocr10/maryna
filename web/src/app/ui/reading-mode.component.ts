@@ -6,6 +6,7 @@ import {IconComponent} from './icon.component';
 import {Api} from '../api.service';
 import {Reader} from '../reader.service';
 import {WheelZoom} from '../wheel-zoom.service';
+import {scaleSizes} from '../rich-text';
 import {Narrator, SERVER_VOICE, countIn, findRanges, highlight, segmentsOf} from './reading-narrator';
 
 export interface ReadingDoc {
@@ -195,7 +196,7 @@ export class ReadingModeComponent implements AfterViewChecked, OnDestroy {
 
   readonly blocks = computed(() => organise(this.r.doc()?.text || ''));
   readonly plain = computed(() => (this.r.doc()?.text || '').split(/\n\s*\n/).map(p => p.trim()).filter(Boolean));
-  readonly safeHtml = computed((): SafeHtml => this.san.bypassSecurityTrustHtml(this.r.doc()?.html || ''));
+  readonly safeHtml = computed((): SafeHtml => this.san.bypassSecurityTrustHtml(scaleSizes(this.r.doc()?.html || '')));
   private readonly count = computed(() => { const d = this.r.doc(); return d ? (plainOf(d).match(/\S+/g) || []).length : 0; });
 
   constructor() {

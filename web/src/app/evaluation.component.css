@@ -137,6 +137,9 @@ nl-icon { --ico-size: 16px; }
 
 .draft { display: block; width: 100%; border: 1px solid var(--border-card); border-radius: var(--radius-sm); padding: 18px 20px; font: 14.5px/1.65 var(--font); color: var(--text); background: var(--card); }
 .draft p { margin: 0 0 12px; white-space: pre-line; }
+/* section text drawn like the Word file: Arial, justified unless the psychologist chose otherwise; sizes in em of the 11 pt default */
+.draft:not(textarea) { font-family: var(--doc-font); text-align: justify; }
+.draft p.muted { font-family: var(--font); text-align: left; }
 .draft p:last-child { margin: 0; }
 .draft p.ptitle { font-weight: 700; margin: 14px 0 4px; }
 .draft.is-loading { opacity: .45; }
@@ -252,10 +255,12 @@ textarea.draft.editing { resize: vertical; min-height: 180px; field-sizing: cont
 .prev-head b { display: flex; gap: 6px; align-items: center; color: var(--text); }
 .prev-head .link { margin-left: auto; }
 .prev-box .ptitle { font-weight: 600; color: var(--text); }
-.rich-view :is(p, h3, li) { white-space: normal; }
-.rich-view h3 { font-size: inherit; font-weight: 700; margin: 14px 0 4px; }
-.rich-view :is(ul, ol) { margin: 0 0 12px; padding-left: 1.6em; }
-nl-rich-editor .rte-area { font: 14.5px/1.65 var(--font); color: var(--text); }
+/* saved formatting comes in as inner HTML: ::ng-deep reaches it; spacing as in the editor (.rte-area) */
+.rich-view ::ng-deep :is(p, h3, li) { white-space: normal; margin: 0 0 .6em; }
+.rich-view ::ng-deep h3 { font-size: inherit; font-weight: 700; }
+.rich-view ::ng-deep :is(ul, ol) { margin: 0 0 .6em; padding-left: 1.6em; }
+.rich-view ::ng-deep :last-child { margin-bottom: 0; }
+nl-rich-editor .rte-area { font: 14.5px/1.65 var(--doc-font); color: var(--text); }
 
 /* Mode of the evaluation (with AI / manual), in Identificação */
 .mode-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid var(--border-card)}
@@ -351,6 +356,7 @@ nl-rich-editor .rte-area { font: 14.5px/1.65 var(--font); color: var(--text); }
 .dblk-head .badge { margin-left: auto; }
 .dblk p { margin: 0 0 6px; font-size: 13.5px; line-height: 1.55; color: var(--text-2); }
 .dblk p.ptitle { font-weight: 600; color: var(--text); }
+.dblk .doc-rich { font-family: var(--doc-font); text-align: justify; color: var(--text); }
 .dblk.on p { color: var(--text); }
 .dblk-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 

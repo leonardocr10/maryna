@@ -9,7 +9,7 @@ import {ConfirmService} from './confirm.service';
 import {IconComponent} from './ui/icon.component';
 import {DictateComponent} from './ui/dictate.component';
 import {RichEditorComponent} from './ui/rich-editor.component';
-import {htmlFromText, sanitizeHtml, textFromHtml} from './rich-text';
+import {displayHtml, htmlFromText, sanitizeHtml, textFromHtml} from './rich-text';
 import {DomSanitizer} from '@angular/platform-browser';
 import {Dictation} from './dictation/dictation.service';
 import {FilterSelectComponent} from './ui/filter-select.component';
@@ -319,7 +319,7 @@ export class EvaluationComponent implements OnDestroy {
     return n(textFromHtml(h)) === n(s.content) ? sanitizeHtml(h) : '';
   }
   private richCache = new Map<string, any>();
-  richView(k: string) { const h = this.richOf(k); let v = this.richCache.get(h); if (!v) { v = this.domSan.bypassSecurityTrustHtml(h); this.richCache.set(h, v); } return v; }
+  richView(k: string) { const h = this.richOf(k); let v = this.richCache.get(h); if (!v) { v = this.domSan.bypassSecurityTrustHtml(displayHtml(h)); this.richCache.set(h, v); } return v; }
   @ViewChild('rte') rte?: RichEditorComponent;
   /** Every editor on screen; the editors send typed text after a short pause, so saves call flushEditors() first. */
   @ViewChildren(RichEditorComponent) editors?: QueryList<RichEditorComponent>;

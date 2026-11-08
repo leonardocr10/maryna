@@ -353,6 +353,17 @@ def _pt(v):
  except ValueError:return None
  u=m.group(2) or 'px'
  return n if u=='pt' else n*0.75 if u=='px' else n*11
+# The app's own text colors (web/src/tokens.css --text, light and dark): the browser copies them into spans by itself.
+SCREEN_TEXT_COLORS={'1C2B29','E6EEEC'}
+def _font_pt(v,around=11):
+ """Font size chosen in the editor: pt, or em of the size around it (report default 11 pt). Sizes in px are written by
+ the browser itself while editing (its own screen size), never chosen, so they are ignored (same as web/src/app/rich-text.ts)."""
+ m=re.fullmatch(r'\s*([\d.]+)\s*(pt|em)\s*',v or '')
+ if not m:return None
+ try:n=float(m.group(1))
+ except ValueError:return None
+ pt=n if m.group(2)=='pt' else n*around
+ return round(pt,2) if 4<=pt<=96 else None
 def _hex(v):
  v=(v or '').strip().lower()
  m=re.fullmatch(r'#([0-9a-f]{6})',v) or re.fullmatch(r'#([0-9a-f]{3})',v)
@@ -389,8 +400,9 @@ class _Rich(HTMLParser):
   elif tag in ('s','strike'):f['s']=True
   elif tag=='sub':f['va']='subscript'
   elif tag=='sup':f['va']='superscript'
-  if _pt(st.get('font-size')):f['sz']=_pt(st['font-size'])
-  if _hex(st.get('color')):f['color']=_hex(st['color'])
+  sz=_font_pt(st.get('font-size'),f.get('sz') or 11)
+  if sz:f['sz']=sz
+  if _hex(st.get('color')) and _hex(st['color']) not in SCREEN_TEXT_COLORS:f['color']=_hex(st['color'])
   if _hex(st.get('background-color')):f['bg']=_hex(st['background-color'])
   fam=(st.get('font-family') or '').split(',')[0].strip().strip(chr(34)+chr(39))
   if fam in EDITOR_FONTS:f['font']=fam

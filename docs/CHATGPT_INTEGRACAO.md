@@ -97,3 +97,9 @@ Segurança:
 - O ChatGPT (OpenAI) recebe as anotações pseudonimizadas. Isso exige base legal e consentimento conforme a LGPD, como já ocorre com o pedido manual.
 - A disponibilidade do recurso de MCP personalizado depende do plano e das políticas do workspace. Não há garantia de uso ilimitado.
 - Dados de saúde que não são nome, data ou contato (por exemplo, o nome da escola citado de forma livre) só são trocados se estiverem na lista de privacidade da avaliação.
+
+## Extensão do Chrome — Modo automático
+
+`chrome-extension/` percorre as seções de uma avaliação e usa este mesmo fluxo do plugin (Preparar tarefa > comando > ChatGPT com o plugin > Rascunho recebido), sem a API paga. Instalação manual, modos (automático, assistido, simulação), limitações e testes: `chrome-extension/README.md`.
+
+A extensão lê a tela por atributos `data-nl-*` publicados pelo app (`evaluation.component.html` e `ui/chatgpt-anamnesis.component.ts`); mantenha-os ao mudar essas telas. Ela nunca aprova textos, nunca substitui texto existente e nunca autoriza o plugin no lugar da psicóloga.

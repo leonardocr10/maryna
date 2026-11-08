@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>NeuroLaudos IA — Modo automático</title>
+<link rel="stylesheet" href="../ui/panel.css">
+<style>
+  body{width:360px;background:var(--bg)}
+  .pn{border:0;border-radius:0}
+  main{max-height:none}
+  .field{display:flex;flex-direction:column;gap:4px;font-size:12.5px}
+  .field input[type=number],.field input[type=url]{height:32px;border:1px solid var(--line);border-radius:7px;padding:0 8px;background:var(--bg);color:var(--text);font:inherit;margin:0}
+  ul.origins{list-style:none;margin:0;padding:0;font-size:12.5px}
+  ul.origins li{display:flex;align-items:center;gap:6px;padding:3px 0}
+  ul.origins code{flex:1;font-size:12px}
+</style>
+</head>
+<body>
+<div class="pn">
+  <header class="hd">
+    <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 4v4"/><circle cx="12" cy="3.5" r="1"/><circle cx="9" cy="13" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="13" r="1.2" fill="currentColor" stroke="none"/><path d="M9.5 16.5h5"/></svg></span>
+    <div class="tt"><h1>Modo automático</h1><p>NeuroLaudos IA + ChatGPT</p></div>
+  </header>
+  <main>
+    <div class="box" id="status"><p class="muted">Carregando…</p></div>
+    <div class="row" id="runacts"></div>
+
+    <details>
+      <summary>Endereços do NeuroLaudos IA</summary>
+      <p class="note" style="margin:6px 0">Já incluídos: http://localhost:9091 e http://127.0.0.1:9091. Para outro endereço (ex.: https da clínica), adicione abaixo; o Chrome pede sua permissão só para ele.</p>
+      <ul class="origins" id="origins"></ul>
+      <div class="row" style="margin-top:6px"><input type="url" id="origin" placeholder="https://neurolaudos.exemplo.com.br" style="flex:1;height:32px;border:1px solid var(--line);border-radius:7px;padding:0 8px;margin:0;background:var(--bg);color:var(--text)"><button class="btn" id="add">Adicionar</button></div>
+    </details>
+
+    <details>
+      <summary>Configurações</summary>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+        <label class="field">Espera máxima por resposta do ChatGPT (minutos, inclui sua autorização)<input type="number" id="cgmin" min="3" max="60"></label>
+        <label class="field">Espera máxima pelo rascunho no NeuroLaudos IA (segundos)<input type="number" id="cfs" min="30" max="900"></label>
+        <label class="field">Tentativas automáticas por seção (antes de enviar a mensagem)<input type="number" id="retries" min="0" max="3"></label>
+        <div class="row"><span class="grow"></span><button class="btn pri" id="save">Salvar</button></div>
+      </div>
+    </details>
+
+    <p class="note" id="msg" role="status"></p>
+    <p class="note">Abra uma avaliação em <b>Conferir seções</b> e clique em <b>Modo automático</b> ao lado de "Aprovar todas".</p>
+  </main>
+</div>
+<script src="popup.js" type="module"></script>
+</body>
+</html>

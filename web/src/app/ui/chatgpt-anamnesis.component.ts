@@ -29,15 +29,17 @@ const newOpId = () => 'op-' + (crypto.randomUUID?.() || Math.random().toString(3
   standalone: true,
   imports: [CommonModule, FormsModule, IconComponent],
   template: `
-<div class="cg" role="region" [attr.aria-label]="'Geração: ' + sectionName">
+<div class="cg" role="region" [attr.aria-label]="'Geração: ' + sectionName" (nlrefresh)="refresh()"
+  data-nl-cg [attr.data-nl-section]="sectionKey" [attr.data-nl-ready]="ready ? '1' : null" [attr.data-nl-mcp]="cfg?.mcp_enabled ? '1' : '0'" [attr.data-nl-method]="method" [attr.data-nl-busy]="busy ? '1' : null"
+  [attr.data-nl-task-code]="task?.code || null" [attr.data-nl-task-mode]="task?.mode || null" [attr.data-nl-task-status]="task?.status || 'none'" [attr.data-nl-task-expires]="task?.expires_at || null" [attr.data-nl-needs-confirmation]="task?.needs_confirmation ? '1' : null" [attr.data-nl-applied]="task?.applied ? '1' : null">
   <div class="cg-head"><nl-icon name="spark"/><b>Gerar {{sectionName}}</b>
     <span *ngIf="task" [class]="'badge ' + badge()">{{task.status_label}}</span>
-    <button class="x" (click)="closed.emit()" aria-label="Fechar">×</button></div>
+    <button class="x" data-nl-action="close" (click)="closed.emit()" aria-label="Fechar">×</button></div>
 
   <fieldset class="methods" [class.two]="!apiEnabled" [disabled]="busy">
     <legend>Método de geração</legend>
     <label *ngIf="apiEnabled"><input type="radio" name="cg-method" value="api" [(ngModel)]="method"> <span><b>OpenAI API</b><small>Geração atual, pelo servidor (custo por uso).</small></span></label>
-    <label [class.off]="!cfg?.mcp_enabled"><input type="radio" name="cg-method" value="mcp" [(ngModel)]="method" [disabled]="!cfg?.mcp_enabled"> <span><b>ChatGPT — plugin (MCP)</b><small>{{cfg?.mcp_enabled ? 'O ChatGPT busca os dados desta seção e devolve o rascunho para cá, com sua autorização.' : 'Desligado neste computador (veja Configurações necessárias no README).'}}</small></span></label>
+    <label [class.off]="!cfg?.mcp_enabled"><input type="radio" name="cg-method" value="mcp" data-nl-method-option="mcp" [(ngModel)]="method" [disabled]="!cfg?.mcp_enabled"> <span><b>ChatGPT — plugin (MCP)</b><small>{{cfg?.mcp_enabled ? 'O ChatGPT busca os dados desta seção e devolve o rascunho para cá, com sua autorização.' : 'Desligado neste computador (veja Configurações necessárias no README).'}}</small></span></label>
     <label><input type="radio" name="cg-method" value="paste" [(ngModel)]="method"> <span><b>ChatGPT — cópia e colagem assistida</b><small>Você cola o texto preparado no ChatGPT e cola a resposta aqui.</small></span></label>
   </fieldset>
 
@@ -66,10 +68,10 @@ const newOpId = () => 'op-' + (crypto.randomUUID?.() || Math.random().toString(3
         <li>Cole o comando abaixo e envie.</li>
         <li>Quando o ChatGPT pedir para salvar no NeuroLaudos IA, confira e confirme. O rascunho aparece aqui sozinho.</li>
       </ol>
-      <textarea class="input mono" readonly rows="4" [value]="task?.command || ''" aria-label="Comando para o ChatGPT" (focus)="$any($event.target).select()"></textarea>
+      <textarea class="input mono" readonly rows="4" data-nl-command [value]="task?.command || ''" aria-label="Comando para o ChatGPT" (focus)="$any($event.target).select()"></textarea>
       <div class="row">
         <button class="btn btn-secondary btn-sm" (click)="copy('@NeuroLaudos IA', 'Copiado. No ChatGPT, cole e, se aparecer a lista, escolha NeuroLaudos IA.')"><nl-icon name="copy"/> Copiar &#64;NeuroLaudos IA</button>
-        <button class="btn btn-secondary btn-sm" (click)="copy(task?.command || '', 'Comando copiado.')"><nl-icon name="copy"/> Copiar comando</button>
+        <button class="btn btn-secondary btn-sm" data-nl-action="copy-command" (click)="copy(task?.command || '', 'Comando copiado.')"><nl-icon name="copy"/> Copiar comando</button>
         <button class="btn btn-secondary btn-sm" (click)="openChatGpt()"><nl-icon name="external"/> Abrir ChatGPT</button>
         <span class="grow"></span>
         <button class="link" [disabled]="busy" (click)="prepare('mcp')">Gerar novo código</button>
@@ -79,8 +81,8 @@ const newOpId = () => 'op-' + (crypto.randomUUID?.() || Math.random().toString(3
     </ng-container>
     <ng-template #prepareMcp>
       <p class="hint">Cria uma tarefa com código, vinculada a esta seção e à sua conta, válida por {{cfg?.task_hours || 24}} h. Os arquivos enviados não são alterados.</p>
-      <label *ngIf="images.length" class="check"><input type="checkbox" [(ngModel)]="sendImages"> Enviar também {{images.length===1 ? 'a imagem' : 'as ' + images.length + ' imagens'}} desta seção (tabelas ou gráficos colados como figura). <b>Imagens não têm nomes trocados por marcadores</b>: confira se não mostram o nome ou dados do paciente.</label>
-      <div class="row"><button class="btn btn-primary btn-sm" [disabled]="busy || readOnly" (click)="prepare('mcp')"><nl-icon name="spark"/> {{busy ? 'Preparando…' : 'Preparar tarefa'}}</button></div>
+      <label *ngIf="images.length" class="check"><input type="checkbox" data-nl-images [(ngModel)]="sendImages"> Enviar também {{images.length===1 ? 'a imagem' : 'as ' + images.length + ' imagens'}} desta seção (tabelas ou gráficos colados como figura). <b>Imagens não têm nomes trocados por marcadores</b>: confira se não mostram o nome ou dados do paciente.</label>
+      <div class="row"><button class="btn btn-primary btn-sm" data-nl-action="prepare-mcp" [disabled]="busy || readOnly" (click)="prepare('mcp')"><nl-icon name="spark"/> {{busy ? 'Preparando…' : 'Preparar tarefa'}}</button></div>
     </ng-template>
   </div>
 
@@ -179,12 +181,15 @@ export class ChatgptAnamnesisComponent implements OnInit, OnDestroy {
   method: Method = 'paste';
   task: Task | null = null;
   pasteText = ''; hidden = 0; answer = ''; opId = ''; busy = false; sendImages = true;
+  /** Config and current task loaded: the Chrome extension (Modo automático) waits for this before reading the task. */
+  ready = false;
   private poll: any;
 
   async ngOnInit() {
     try { this.cfg = await this.api.req('GET', '/chatgpt/config'); } catch {}
     await this.refresh();
     this.method = this.task?.mode || (this.cfg?.mcp_enabled ? 'mcp' : 'paste');
+    this.ready = true;
     // Waits for the plugin's answer while the task is open (own server only; the ChatGPT page is never read).
     this.poll = setInterval(() => { if (this.task?.mode === 'mcp' && OPEN.includes(this.task.status) && !document.hidden) this.refresh(); }, 5000);
   }

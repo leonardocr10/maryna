@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Fixture NeuroLaudos (sintética)</title>
+<style>body{font:14px system-ui;margin:20px}.btn{height:32px;padding:0 12px}.sn-seg{width:30px;height:8px;margin:2px}.modal{border:1px solid #ccc;padding:10px;margin-top:10px}</style>
+<link rel="stylesheet" href="../../content/neurolaudos.css">
+</head><body>
+<!-- Synthetic copy of the "Conferir seções" markup with the data-nl-* contract (no real data). -->
+<div class="card confbar" data-nl-review data-nl-evaluation="ev-sint-1">
+  <h2>Conferir seções</h2>
+  <div class="head-tools" data-nl-head-tools><button class="btn btn-secondary btn-sm" data-nl-action="approve-all" id="approve">Aprovar todas</button></div>
+</div>
+<nav><button type="button" aria-controls="sec-menu" aria-expanded="false">Todas as seções</button>
+  <div id="bars"></div></nav>
+<div id="editor"></div>
+<div id="modal"></div>
+<script>
+const SECTIONS = [
+  {key: 'fixo_fontes', name: 'Fontes fundamentais de informações', kind: 'fixed', state: 'file'},
+  {key: 'percepcao', name: 'Percepção', kind: 'ai', state: 'pend'},
+  {key: 'hipotese', name: 'Hipótese diagnóstica', kind: 'hand', state: 'pend'},
+  {key: 'conclusao', name: 'Conclusão', kind: 'ai', state: 'gen'},
+];
+const tasks = {}; window.tasks = tasks; window.approveClicks = 0;
+document.getElementById('approve').onclick = () => window.approveClicks++;
+const bars = document.getElementById('bars');
+for (const s of SECTIONS) { const b = document.createElement('button'); b.className = 'sn-seg'; Object.assign(b.dataset, {nlSection: s.key, nlName: s.name, nlKind: s.kind, nlState: s.state}); b.title = s.name; b.onclick = () => setTimeout(() => openEditor(s), 120); bars.appendChild(b); }
+function openEditor(s) {
+  closeModal();
+  document.getElementById('editor').innerHTML = `<section class="card editor" data-nl-editor="${s.key}"><div class="edt"><h2>${s.name}</h2><small>Seção</small></div><button type="button" class="hbtn" data-nl-action="chatgpt" ${s.kind !== 'ai' ? 'disabled' : ''}>ChatGPT</button></section>`;
+  document.querySelector('[data-nl-action="chatgpt"]').onclick = () => setTimeout(() => openModal(s), 150);
+}
+function attrs(key) { const t = tasks[key]; return `data-nl-cg data-nl-section="${key}" data-nl-ready="1" data-nl-mcp="1" data-nl-method="mcp" ${t ? `data-nl-task-code="${t.code}" data-nl-task-mode="mcp" data-nl-task-status="${t.status}" data-nl-task-expires="2099-01-01T00:00:00Z"` : 'data-nl-task-status="none"'} ${t?.needs ? 'data-nl-needs-confirmation="1"' : ''}`; }
+function openModal(s) {
+  const t = tasks[s.key];
+  document.getElementById('modal').innerHTML = `<div class="modal" role="dialog" aria-label="ChatGPT: ${s.name}"><div class="cg" ${attrs(s.key)}>
+    <button class="x" data-nl-action="close">×</button>
+    <label><input type="radio" name="m" value="mcp" data-nl-method-option="mcp" checked> ChatGPT — plugin (MCP)</label>
+    ${t && ['pending', 'processing'].includes(t.status) ? `<code class="code">${t.code}</code><textarea data-nl-command>Utilize o plugin NeuroLaudos IA para buscar a tarefa pendente da seção "${s.name}" identificada pelo código ${t.code}. Ao concluir, salve como rascunho.</textarea>` : `<label><input type="checkbox" data-nl-images checked> imagens</label><button class="btn" data-nl-action="prepare-mcp">Preparar tarefa</button>`}
+  </div></div>`;
+  const cg = document.querySelector('[data-nl-cg]');
+  cg.querySelector('[data-nl-action="close"]').onclick = closeModal;
+  cg.addEventListener('nlrefresh', () => { window.refreshes = (window.refreshes || 0) + 1; if (window.saveOnRefresh && tasks[s.key]) { tasks[s.key].status = 'draft_received'; openModal(s); } });
+  const p = cg.querySelector('[data-nl-action="prepare-mcp"]');
+  if (p) p.onclick = () => { cg.setAttribute('data-nl-busy', '1'); setTimeout(() => { tasks[s.key] = {code: 'NL-7KQ2-M9XD', status: 'pending'}; openModal(s); }, 400); };
+}
+function closeModal() { document.getElementById('modal').innerHTML = ''; }
+</script>
+<script src="harness.js"></script>
+<script src="../../content/selectors.js"></script>
+<script src="../../content/dom-observer.js"></script>
+<script src="../../content/neurolaudos.js"></script>
+</body></html>

@@ -449,6 +449,8 @@ export class EvaluationComponent implements OnDestroy {
   autoKeys() { return this.available().map(s => s.id).filter(k => k !== MANUAL_KEY && k !== DEMAND_KEY && !this.isHand(k)); }
   /** Sections the AI never writes (the diagnostic hypothesis, fixed parts, interpretations created without tables). */
   isHand(k: string) { return HAND_ONLY.includes(k) || this.isFixed(k) || this.createdWithoutData(k); }
+  /** Kind read by the Chrome extension (Modo automático): only 'ai' sections can go to the ChatGPT plugin. */
+  autoKind(k: string) { return this.isMissing(k) ? 'missing' : this.isFixed(k) ? 'fixed' : this.isHand(k) ? 'hand' : 'ai'; }
   autoDrafted() { return this.autoKeys().filter(k => this.state(k) !== 'pend').length; }
   demandInFile() { return (this.inspection?.markers || []).find((m: any) => m.key === DEMAND_KEY)?.existing_text || ''; }
   private same(a: string, b: string) { return (a || '').replace(/\s+/g, ' ').trim() === (b || '').replace(/\s+/g, ' ').trim(); }
@@ -1050,6 +1052,13 @@ export class EvaluationComponent implements OnDestroy {
     } catch {} finally { this.approving = ''; }
   }
   // ---------- "Aprovar todas": a modal with one check per section, its issues and a final confirmation ----------
+  // ---------- Modo automático (Chrome extension) ----------
+  autoHelp = false;
+  /** The extension marks <html data-nlx-extension>; then its panel opens, otherwise the installation steps. */
+  openAutoMode() { if (document.documentElement.hasAttribute('data-nlx-extension')) window.dispatchEvent(new CustomEvent('nlx-open-panel')); else this.autoHelp = true; }
+  async copyExtUrl() { try { await navigator.clipboard.writeText('chrome://extensions'); this.api.notify('Endereço copiado. Cole na barra de endereço do Chrome.'); } catch { this.api.notify('Digite chrome://extensions na barra de endereço do Chrome.'); } }
+  reloadPage() { location.reload(); }
+
   approveOpen = false; apmSel: Record<string, boolean> = {}; apmReviewed = false; apmBusy = false;
   approveRows() { return this.available(); }
   openApproveAll() {

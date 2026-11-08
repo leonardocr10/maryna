@@ -200,10 +200,12 @@
 
   <!-- 4. Conferir e baixar -->
   <div *ngIf="step===3" class="conf">
-    <div class="card confbar">
+    <div class="card confbar" data-nl-review [attr.data-nl-evaluation]="evaluationId" [attr.data-nl-readonly]="readOnly() ? '1' : null">
       <h2>Conferir seções</h2>
-      <div class="head-tools">
-        <button *ngIf="!readOnly()" class="btn btn-secondary btn-sm" (click)="openApproveAll()" [disabled]="allApproved()" [title]="allApproved() ? 'Todas já estão aprovadas' : 'Escolher as seções e aprovar'"><nl-icon name="check"/> Aprovar todas</button>
+      <div class="head-tools" data-nl-head-tools>
+        <button *ngIf="!readOnly()" class="btn btn-secondary btn-sm" data-nl-action="approve-all" (click)="openApproveAll()" [disabled]="allApproved()" [title]="allApproved() ? 'Todas já estão aprovadas' : 'Escolher as seções e aprovar'"><nl-icon name="check"/> Aprovar todas</button>
+        <!-- Modo automático: opens the Chrome extension's panel; without the extension, how to install it -->
+        <button *ngIf="!readOnly()" type="button" class="btn btn-primary btn-sm" data-nl-action="auto-mode" (click)="openAutoMode()" title="Gerar rascunhos automaticamente com ChatGPT" aria-haspopup="dialog"><nl-icon name="robot"/> <span class="nlx-label">Modo automático</span></button>
         <div class="seg" role="tablist" aria-label="Modo de visualização"><button type="button" role="tab" [attr.aria-selected]="mode==='secoes'" [class.on]="mode==='secoes'" (click)="setMode('secoes')"><nl-icon name="layers"/> Seções</button><button *ngIf="canWrite()" type="button" role="tab" [attr.aria-selected]="mode==='documento'" [class.on]="mode==='documento'" (click)="setMode('documento')"><nl-icon name="doc"/> Documento</button></div>
       </div>
     </div>
@@ -226,6 +228,7 @@
             <!-- While the section list is open, its filter also applies here: only the bars of that status -->
             <div class="sn-bars" [style.grid-template-columns]="'repeat(' + barRows().length + ', minmax(0, 1fr))'">
               <button *ngFor="let s of barRows(); trackBy: bySection" type="button" class="sn-seg" [ngClass]="'st-' + secKind(s.id)" [class.on]="cur()===s.id" (click)="pickSection(s.id)"
+                [attr.data-nl-section]="s.id" [attr.data-nl-name]="s.name" [attr.data-nl-kind]="autoKind(s.id)" [attr.data-nl-state]="state(s.id)"
                 [attr.aria-current]="cur()===s.id ? 'true' : null" [attr.aria-label]="secNum(s.id) + '. ' + s.name + ' · ' + secLabel(s.id)" [title]="secNum(s.id) + '. ' + s.name + ' · ' + secLabel(s.id)"></button>
             </div>
           </div>
@@ -252,7 +255,7 @@
 
         <ng-container *ngFor="let s of reviewRows(); let i=index; trackBy: bySection">
         <!-- A section missing from the base document can still be drafted by hand; its text just does not go into the Word file -->
-        <section *ngIf="cur()===s.id" class="card editor">
+        <section *ngIf="cur()===s.id" class="card editor" [attr.data-nl-editor]="s.id">
           <div class="edhead">
             <span class="ei"><nl-icon name="doc"/></span>
             <div class="edt"><h2>{{s.name}}</h2><small>Seção {{(i+1).toString().padStart(2,'0')}} · {{sourceLabel(s.id)}}</small></div>
@@ -266,7 +269,7 @@
                 <button type="button" class="hbtn" [class.on]="editing===s.id" [disabled]="editing===s.id" (click)="goEdit(s.id)" title="Abre o modo edição: texto amplo, ferramentas e salvamento automático"><nl-icon name="edit"/> {{text(s.id) ? 'Editar' : 'Escrever'}}</button>
                 <button *ngIf="aiReady" type="button" class="hbtn primary" [disabled]="generating || isHand(s.id)" (click)="openAi(s.id)" [title]="isHand(s.id) ? handWhy(s.id) : ''"><nl-icon name="spark"/> {{gen[s.id]==='running'?'Gerando…':'Gerar com IA'}}</button>
                 <!-- One entry for the chat options: the ChatGPT screen has the API, plugin and copy-and-paste methods, plus the instruction -->
-                <button type="button" class="hbtn" [class.on]="cgFor===s.id" [disabled]="isHand(s.id)" (click)="openCg(s.id)" [attr.aria-haspopup]="'dialog'"><nl-icon name="external"/> ChatGPT</button>
+                <button type="button" class="hbtn" data-nl-action="chatgpt" [class.on]="cgFor===s.id" [disabled]="isHand(s.id)" (click)="openCg(s.id)" [attr.aria-haspopup]="'dialog'"><nl-icon name="external"/> ChatGPT</button>
               </ng-container>
             </div>
           </div>
@@ -514,7 +517,25 @@
   </div>
 
   <!-- "Aprovar todas": choose the sections, see what the final check found, confirm -->
-  <div *ngIf="approveOpen" class="modal-bg" (mousedown)="$event.target===$event.currentTarget && (approveOpen=false)" (keydown.escape)="approveOpen=false">
+  <!-- Modo automático without the extension: installation steps (the ZIP is served by this app) -->
+  <div *ngIf="autoHelp" class="modal-bg" (mousedown)="$event.target===$event.currentTarget && (autoHelp=false)" (keydown.escape)="autoHelp=false">
+    <div class="modal autohelp" role="dialog" aria-modal="true" aria-labelledby="ah-title">
+      <div class="ah-head"><span class="ah-logo"><nl-icon name="robot"/></span><div><h2 id="ah-title">Instalar o Modo automático</h2><p class="caption">Extensão do Chrome que gera os rascunhos das seções com o ChatGPT e o plugin NeuroLaudos IA, uma seção por vez, sob a sua supervisão.</p></div></div>
+      <ol class="ah-steps">
+        <li><b>Baixe a extensão</b> e descompacte numa pasta fixa (ex.: <code>C:\NeuroLaudos\extensao</code>). Não apague a pasta depois.
+          <div class="ah-row"><a class="btn btn-primary btn-sm" href="assets/extensao/neurolaudos-modo-automatico.zip" download><nl-icon name="download"/> Baixar extensão (.zip)</a></div></li>
+        <li>No Chrome, abra <code>chrome://extensions</code> (cole na barra de endereço).
+          <div class="ah-row"><button type="button" class="btn btn-secondary btn-sm" (click)="copyExtUrl()"><nl-icon name="copy"/> Copiar endereço</button></div></li>
+        <li>Ative <b>Modo do desenvolvedor</b>, no canto superior direito.</li>
+        <li>Clique em <b>Carregar sem compactação</b> e escolha a pasta que tem o arquivo <code>manifest.json</code>.</li>
+        <li>Volte aqui, recarregue a página e clique em <b>Modo automático</b>.</li>
+      </ol>
+      <div class="alert tip small"><nl-icon name="info"/><div><p>Antes de usar: entre no ChatGPT (chatgpt.com) e conecte o plugin <b>NeuroLaudos IA</b>. O método <b>ChatGPT — plugin (MCP)</b> precisa estar ligado neste NeuroLaudos IA.</p><p>A extensão nunca aprova textos, nunca substitui texto existente e nunca autoriza o plugin por você. Endereço diferente de localhost:9091? Adicione-o no ícone da extensão, em <b>Endereços do NeuroLaudos IA</b>.</p></div></div>
+      <div class="ah-acts"><button type="button" class="btn btn-secondary" (click)="autoHelp=false">Fechar</button><button type="button" class="btn btn-primary" (click)="reloadPage()">Já instalei, recarregar</button></div>
+    </div>
+  </div>
+
+  <div *ngIf="approveOpen" class="modal-bg\" (mousedown)="$event.target===$event.currentTarget && (approveOpen=false)" (keydown.escape)="approveOpen=false">
     <div class="modal apm" role="dialog" aria-modal="true" aria-labelledby="apm-title">
       <h2 id="apm-title">Aprovar seções</h2>
       <p class="caption">Marque as seções que você revisou. {{apmLocks() ? 'Com todas aprovadas, a avaliação fica travada e o Word pode ser baixado.' : 'As que ficarem sem marcar continuam em revisão.'}}</p>

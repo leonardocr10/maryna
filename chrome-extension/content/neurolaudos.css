@@ -1,0 +1,13 @@
+/* "Modo automático" button next to "Aprovar todas" and the panel frame. Uses the app's own tokens when present. */
+.nlx-auto-btn{display:inline-flex;align-items:center;gap:6px;background:var(--primary,#0f6f5e)!important;color:var(--on-primary,#fff)!important;border:1px solid var(--primary,#0f6f5e)!important;border-radius:var(--radius-sm,8px);font-weight:600;cursor:pointer;white-space:nowrap}
+.nlx-auto-btn:hover{background:var(--primary-hover,#0c5d4f)!important}
+.nlx-auto-btn:focus-visible{outline:3px solid var(--ring,#dcefe9);outline-offset:1px}
+.nlx-auto-btn svg{flex:none}
+.nlx-auto-btn[data-state="running"] svg,[data-nl-action="auto-mode"][data-state="running"] svg{animation:nlx-pulse 1.4s ease-in-out infinite}
+.nlx-auto-btn[data-state="paused"],[data-nl-action="auto-mode"][data-state="paused"]{background:#8a5a00!important;border-color:#8a5a00!important;color:#fff!important}
+.nlx-auto-btn[data-state="done"],[data-nl-action="auto-mode"][data-state="done"]{background:var(--ok-dot,#1f8a68)!important;border-color:var(--ok-dot,#1f8a68)!important}
+@keyframes nlx-pulse{50%{opacity:.45}}
+@media (prefers-reduced-motion:reduce){.nlx-auto-btn[data-state="running"] svg,[data-nl-action="auto-mode"][data-state="running"] svg{animation:none}}
+#nlx-panel{position:fixed;top:84px;right:16px;width:440px;max-width:calc(100vw - 32px);height:520px;border:0;border-radius:12px;box-shadow:0 10px 32px rgba(15,40,34,.16);z-index:985;background:transparent;color-scheme:normal}
+#nlx-panel.nlx-collapsed{width:300px}
+#nlx-panel[hidden]{display:none}

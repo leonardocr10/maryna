@@ -1,0 +1,199 @@
+// Service worker: owns the run (AutomationManager), the tabs and the messages between the pages.
+import {STORAGE_KEY, SETTINGS_KEY, DEFAULT_SETTINGS, DEFAULT_NL_ORIGINS, RUN, CHATGPT_URL} from '../modules/constants.js';
+import {StateManager, recoverAfterRestart, isActive} from '../modules/state-manager.js';
+import {AutomationManager} from '../modules/automation-manager.js';
+import {describe} from '../modules/error-handler.js';
+import {progress} from '../modules/task-queue.js';
+
+const NL_SCRIPTS = ['content/selectors.js', 'content/dom-observer.js', 'content/neurolaudos.js'];
+const NL_CSS = ['content/neurolaudos.css'];
+
+// ---------- storage ----------
+const storage = {
+  get: async k => (await chrome.storage.local.get(k))[k],
+  set: (k, v) => chrome.storage.local.set({[k]: v}),
+  remove: k => chrome.storage.local.remove(k),
+};
+const state = new StateManager(storage);
+async function settings() { return {...DEFAULT_SETTINGS, ...((await storage.get(SETTINGS_KEY)) || {})}; }
+
+// ---------- tabs ----------
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const isConnErr = e => /Could not establish connection|Receiving end does not exist|message port closed|back\/forward cache/i.test(String(e?.message || e));
+
+async function tabExists(id) { if (!id) return false; try { await chrome.tabs.get(id); return true; } catch { return false; } }
+
+/** Message to a content script; retries while the page (re)loads, up to `waitMs`. */
+async function send(tabId, msg, waitMs = 20000) {
+  const end = Date.now() + waitMs;
+  let lastErr;
+  while (Date.now() < end) {
+    if (!(await tabExists(tabId))) throw new Error('No tab with id ' + tabId);
+    try {
+      const left = Math.max(1000, end - Date.now());
+      return await Promise.race([
+        chrome.tabs.sendMessage(tabId, msg, {frameId: 0}),
+        sleep(left).then(() => { throw new Error('timeout'); }),
+      ]);
+    } catch (e) {
+      lastErr = e;
+      if (String(e?.message) === 'timeout') break;
+      if (!isConnErr(e)) throw e;
+      await sleep(500);
+    }
+  }
+  throw lastErr || new Error('timeout');
+}
+
+async function activate(tabId) {
+  try { const t = await chrome.tabs.update(tabId, {active: true}); await chrome.windows.update(t.windowId, {focused: true}); } catch {}
+}
+
+/** Waits for a navigation of `tabId` to finish loading. */
+function waitLoaded(tabId, ms = 45000) {
+  return new Promise(resolve => {
+    let seenLoading = false;
+    const done = v => { clearTimeout(timer); chrome.tabs.onUpdated.removeListener(on); resolve(v); };
+    const on = (id, info) => { if (id !== tabId) return; if (info.status === 'loading') seenLoading = true; if (info.status === 'complete' && seenLoading) done(true); };
+    const timer = setTimeout(() => done(false), ms);
+    chrome.tabs.onUpdated.addListener(on);
+    setTimeout(() => { if (!seenLoading) chrome.tabs.get(tabId).then(t => { if (t.status === 'complete') { seenLoading = true; } }).catch(() => done(false)); }, 4000);
+  });
+}
+
+/** The dedicated ChatGPT tab, on a new conversation. */
+async function openChat(tabId, url = CHATGPT_URL) {
+  if (tabId) {
+    const loaded = waitLoaded(tabId);
+    await chrome.tabs.update(tabId, {url, active: true});
+    await loaded;
+    return tabId;
+  }
+  const t = await chrome.tabs.create({url, active: true});
+  await waitLoaded(t.id);
+  return t.id;
+}
+
+function notify(title, message) {
+  try { chrome.notifications.create('nlauto-' + Date.now(), {type: 'basic', iconUrl: chrome.runtime.getURL('assets/icons/icon128.png'), title, message, priority: 2}); } catch {}
+}
+
+const manager = new AutomationManager({state, settings, send, tabExists, activate, openChat, notify, sleep, now: () => Date.now()});
+
+// ---------- NeuroLaudos IA addresses added by the person (https://...) ----------
+async function registerOrigins() {
+  const {extraOrigins = []} = await settings();
+  const granted = [];
+  for (const o of extraOrigins) if (await chrome.permissions.contains({origins: [o + '/*']})) granted.push(o);
+  try { await chrome.scripting.unregisterContentScripts({ids: ['nl-extra']}); } catch {}
+  if (granted.length) await chrome.scripting.registerContentScripts([{id: 'nl-extra', matches: granted.map(o => o + '/*'), js: NL_SCRIPTS, css: NL_CSS, runAt: 'document_idle'}]);
+  return granted;
+}
+
+/** After install or update: the content script goes into NeuroLaudos IA tabs that are already open. */
+async function injectOpenTabs() {
+  const {extraOrigins = []} = await settings();
+  const patterns = [...DEFAULT_NL_ORIGINS, ...extraOrigins].map(o => o + '/*');
+  let tabs = [];
+  try { tabs = await chrome.tabs.query({url: patterns}); } catch {}
+  for (const t of tabs) {
+    try { await chrome.scripting.insertCSS({target: {tabId: t.id}, files: NL_CSS}); await chrome.scripting.executeScript({target: {tabId: t.id}, files: NL_SCRIPTS}); } catch {}
+  }
+}
+
+// ---------- badge ----------
+async function badge(s) {
+  try {
+    if (!s || !isActive(s)) { await chrome.action.setBadgeText({text: s?.status === RUN.done ? '✓' : ''}); return; }
+    const p = progress(s.items);
+    await chrome.action.setBadgeBackgroundColor({color: s.status === RUN.paused ? '#b7791f' : '#1f7a55'});
+    await chrome.action.setBadgeText({text: s.status === RUN.paused ? '||' : `${p.done}/${p.total}`});
+  } catch {}
+}
+chrome.storage.onChanged.addListener((ch, area) => { if (area === 'local' && ch[STORAGE_KEY]) badge(ch[STORAGE_KEY].newValue); });
+
+// ---------- lifecycle ----------
+chrome.runtime.onInstalled.addListener(async () => { await registerOrigins(); await injectOpenTabs(); badge(await state.load()); });
+chrome.runtime.onStartup.addListener(async () => {
+  await registerOrigins();
+  // Browser restarted: a running run is paused and nothing already sent is sent again without checking.
+  const s = await state.load();
+  if (s && s.status === RUN.running) await state.update(cur => recoverAfterRestart(cur));
+  badge(await state.load());
+});
+// Worker restarted by Chrome while running (not a browser restart): continue from the saved step.
+chrome.alarms.create('nlauto-keepalive', {periodInMinutes: 0.5});
+chrome.alarms.onAlarm.addListener(async a => {
+  if (a.name !== 'nlauto-keepalive') return;
+  const s = await state.load();
+  if (s?.status === RUN.running) manager.kick();
+});
+// Content scripts keep a port open while a run is active (keeps the worker awake during long waits).
+chrome.runtime.onConnect.addListener(port => { if (port.name === 'nlauto-keepalive') port.onMessage.addListener(() => {}); });
+
+chrome.tabs.onRemoved.addListener(async id => {
+  const s = await state.load();
+  if (!isActive(s)) return;
+  if (id === s.nlTabId) await state.pause({code: 'nl_tab_closed', message: 'A aba do NeuroLaudos IA foi fechada.', hint: 'Abra a avaliação de novo e clique em Continuar no painel.', actions: ['continue', 'skip']});
+  if (id === s.chatTabId) await state.setRun({chatTabId: null});
+});
+
+// ---------- messages ----------
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  handle(msg, sender).then(reply, err => reply({ok: false, error: describe(err)}));
+  return true;
+});
+
+const CHAT_ALLOWED = ['hello', 'run.pause', 'run.resume', 'run.focus'];
+/** Who may ask what: NeuroLaudos IA pages (and the panel inside them), the popup, and the ChatGPT status bar (limited). */
+async function allowed(msg, sender) {
+  if (sender.id !== chrome.runtime.id) return false;
+  const ext = chrome.runtime.getURL('');
+  const tabOrigin = (() => { try { return new URL(sender.tab?.url || '').origin; } catch { return null; } })();
+  const nlOrigins = [...DEFAULT_NL_ORIGINS, ...((await settings()).extraOrigins || [])];
+  if (sender.url?.startsWith(ext + 'popup/')) return true;
+  if (sender.url?.startsWith(ext + 'ui/panel.html')) return !!tabOrigin && nlOrigins.includes(tabOrigin) && (msg.tabId == null || msg.tabId === sender.tab.id);
+  if (tabOrigin === 'https://chatgpt.com') return CHAT_ALLOWED.includes(msg?.type);
+  return !!tabOrigin && nlOrigins.includes(tabOrigin) && msg?.tabId == null;
+}
+
+async function handle(msg, sender) {
+  if (!(await allowed(msg, sender))) return {ok: false, error: {message: 'Origem não autorizada.'}};
+  switch (msg?.type) {
+    case 'hello': return {ok: true, tabId: sender.tab?.id ?? null};
+    case 'run.get': return {ok: true, run: await state.load(), settings: await settings()};
+    case 'scan': {
+      const tabId = msg.tabId ?? sender.tab?.id;
+      return await send(tabId, {cmd: 'nl.scan'}, 15000);
+    }
+    case 'run.start': {
+      const tabId = msg.tabId ?? sender.tab?.id;
+      const origin = msg.origin || (sender.tab?.url ? new URL(sender.tab.url).origin : null);
+      const cfg = await settings();
+      const policy = {existing: msg.existing || cfg.existing, onError: msg.onError || cfg.onError, sendImages: msg.sendImages ?? cfg.sendImages};
+      return {ok: true, run: await manager.start({nlTabId: tabId, nlOrigin: origin, mode: msg.mode || cfg.defaultMode, policy, selected: msg.selected})};
+    }
+    case 'run.pause': await manager.pause(); return {ok: true, run: await state.load()};
+    case 'run.resume': return {ok: true, run: await manager.resume(msg.action || 'continue', msg.tabId ?? null)};
+    case 'run.stop': await manager.stop(); return {ok: true, run: await state.load()};
+    case 'run.clear': {
+      const s = await state.load();
+      if (isActive(s) && s.status === RUN.running) return {ok: false, error: {message: 'Pare a execução antes de limpar.'}};
+      await state.clear(); return {ok: true};
+    }
+    case 'run.focus': {
+      const s = await state.load();
+      const id = msg.which === 'chat' ? s?.chatTabId : s?.nlTabId;
+      if (id) await activate(id);
+      return {ok: true};
+    }
+    case 'settings.get': return {ok: true, settings: await settings()};
+    case 'settings.set': {
+      const next = {...(await settings()), ...(msg.settings || {})};
+      await storage.set(SETTINGS_KEY, next);
+      const granted = await registerOrigins();
+      return {ok: true, settings: next, granted};
+    }
+    default: return {ok: false, error: {message: 'Mensagem desconhecida.'}};
+  }
+}

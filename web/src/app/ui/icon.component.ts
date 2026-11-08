@@ -27,6 +27,7 @@ const PATHS: Record<string, string> = {
   spark: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/>',
   chart: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5h5"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
+  robot: '<rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 4v4M9.5 16h5M2 12v3M22 12v3"/><circle cx="12" cy="3.5" r="1"/><circle cx="9" cy="12.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="12.5" r="1.2" fill="currentColor" stroke="none"/>',
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13M9 7V4h6v3"/>',
   restore: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',

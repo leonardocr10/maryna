@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Fixture ChatGPT (sintética)</title>
+<style>body{font:14px system-ui;margin:20px}#prompt-textarea{border:1px solid #999;min-height:40px;padding:6px}[role=listbox]{border:1px solid #ccc;position:absolute;background:#fff}.chip{background:#dfe;padding:0 4px;border-radius:4px}</style>
+</head><body>
+<!-- Synthetic imitation of a chat page: composer (contenteditable), "@" picker, chip, send/stop, auth buttons. -->
+<main id="thread"></main>
+<form id="f">
+  <div id="chips"></div>
+  <div id="prompt-textarea" contenteditable="true" class="ProseMirror"></div>
+  <button type="button" data-testid="send-button" id="send" disabled>Enviar</button>
+</form>
+<div id="pop"></div>
+<script>
+const ed = document.getElementById('prompt-textarea'), send = document.getElementById('send'), pop = document.getElementById('pop'), thread = document.getElementById('thread');
+window.mode = {plugin: true, auth: false, reply: true};
+ed.addEventListener('input', () => {
+  const t = ed.innerText;
+  send.disabled = !t.trim();
+  const m = t.match(/@(\w*)$/);
+  if (m) {
+    const opts = ['NeuroLaudos IA', 'Outro aplicativo'].filter(o => window.mode.plugin || o !== 'NeuroLaudos IA').filter(o => o.toLowerCase().startsWith(m[1].toLowerCase()));
+    pop.innerHTML = `<div role="listbox">${opts.map(o => `<div role="option">${o}</div>`).join('')}</div>`;
+    pop.querySelectorAll('[role=option]').forEach(o => o.onclick = () => { ed.textContent = t.replace(/@\w*$/, ''); document.getElementById('chips').innerHTML = `<span class="chip">${o.textContent}</span>`; pop.innerHTML = ''; ed.dispatchEvent(new Event('input')); });
+  } else pop.innerHTML = '';
+});
+send.onclick = () => {
+  const text = ed.innerText; ed.textContent = ''; send.disabled = true;
+  thread.insertAdjacentHTML('beforeend', `<article data-testid="conversation-turn-1"><div data-message-author-role="user">${text.replace(/</g, '&lt;')}</div></article>`);
+  const stop = document.createElement('button'); stop.setAttribute('data-testid', 'stop-button'); stop.textContent = 'Parar'; document.getElementById('f').appendChild(stop);
+  setTimeout(() => {
+    thread.insertAdjacentHTML('beforeend', `<article data-testid="conversation-turn-2"><div data-message-author-role="assistant"><div class="markdown">Vou buscar a tarefa. O paciente atingiu o limite inferior esperado.</div>${window.mode.auth ? '<button id="auth">Confirmar</button><button>Negar</button>' : ''}</div></article>`);
+    if (!window.mode.auth) stop.remove();
+    else document.getElementById('auth').onclick = () => { document.querySelectorAll('#auth, #auth + button').forEach(b => b.remove()); setTimeout(() => stop.remove(), 600); };
+  }, 900);
+};
+</script>
+<script src="harness.js"></script>
+<script src="../../content/selectors.js"></script>
+<script src="../../content/dom-observer.js"></script>
+<script src="../../content/chatgpt.js"></script>
+</body></html>

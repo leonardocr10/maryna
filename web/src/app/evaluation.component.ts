@@ -780,8 +780,24 @@ export class EvaluationComponent implements OnDestroy {
       if (!retry) return false;
     }
   }
-  async emGo(k: string) {
-    if (!k || k === this.editing) { if (this.emNarrow()) this.emSide = false; return; }
+  /** Message of the loading layer shown while switching modes or sections (only when it takes more than a blink). */
+  busyMsg = ''; private busyTimer: any;
+  private async busy<T>(msg: string, fn: () => Promise<T> | T): Promise<T> {
+    clearTimeout(this.busyTimer); this.busyTimer = setTimeout(() => this.busyMsg = msg, 120);
+    try {
+      const r = await fn();
+      await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(() => done(null))));   // the new screen is drawn
+      return r;
+    } finally { clearTimeout(this.busyTimer); this.busyMsg = ''; }
+  }
+  confirmOpen() { return !!this.confirm.current(); }
+  goEdit(k: string) { return this.busy('Abrindo o modo edição…', () => this.openEditMode(k)); }
+  goRead(k: string) { return this.busy('Abrindo o modo leitura…', () => this.readSection(k)); }
+  emGo(k: string) {
+    if (!k || k === this.editing) { if (this.emNarrow()) this.emSide = false; return Promise.resolve(); }
+    return this.busy('Salvando e abrindo a seção…', () => this.emGoNow(k));
+  }
+  private async emGoNow(k: string) {
     if (!await this.emSafe()) return;
     this.emNarr.stop(); this.rte?.clearFind(); this.emFound = 0; this.emFoundAt = -1;
     this.select(k); this.startEdit(k);
@@ -835,7 +851,8 @@ export class EvaluationComponent implements OnDestroy {
   }
   @HostListener('document:fullscreenchange') emFullChange() { this.emFull = !!document.fullscreenElement && !!document.querySelector('.em'); }
   emCanFull() { return !!document.fullscreenEnabled; }
-  async emToReading() {
+  emToReading() { return this.busy('Salvando e abrindo o modo leitura…', () => this.emToReadingNow()); }
+  private async emToReadingNow() {
     if (!await this.emSafe()) return;
     this.emNarr.stop();
     const k = this.editing, rows = this.reviewRows().filter(s => s.id === k || this.text(s.id).trim());
@@ -846,7 +863,7 @@ export class EvaluationComponent implements OnDestroy {
   /** "Editar" in the reading mode: back to (or into) the edit mode on the section being read. Not offered read-only. */
   private editFromReading(): ((k: string) => void) | null {
     if (this.readOnly()) return null;
-    return k => { if (this.editFull && this.editing) this.emGo(k); else { this.select(k); this.openEditMode(k); } };
+    return k => { if (this.editFull && this.editing) this.emGo(k); else this.busy('Abrindo o modo edição…', () => { this.select(k); this.openEditMode(k); }); };
   }
   emZoomStep(d: number) { const z = this.EM_ZOOMS, i = z.indexOf(this.emZoom); this.emZoom = z[Math.max(0, Math.min(z.length - 1, (i < 0 ? 2 : i) + d))]; }
   emTogglePanel(p: 'find' | 'versions' | 'listen' | 'ai') {

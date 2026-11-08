@@ -784,3 +784,10 @@ button.ps-pill:focus-visible { outline: 2px solid var(--primary); outline-offset
 .ai-modal textarea { height: auto; padding: 10px 12px; line-height: 1.5; resize: vertical; }
 .ai-modal .hint { font-size: 12.5px; color: var(--text-3); margin: 0; }
 .ai-f { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+
+/* Loading layer above the reading and edit modes */
+.mode-busy { position: fixed; inset: 0; z-index: 1050; display: grid; place-items: center; background: color-mix(in srgb, var(--bg) 55%, transparent); animation: nlFade .15s ease; }
+.mb-card { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-radius: var(--radius-lg); background: var(--card); border: 1px solid var(--border-card); box-shadow: 0 12px 32px rgba(0,0,0,.14); font: 500 14px var(--font); color: var(--text); }
+.mb-spin { width: 20px; height: 20px; border-radius: 50%; border: 2.5px solid var(--primary-border); border-top-color: var(--primary); animation: mbSpin .8s linear infinite; }
+@keyframes mbSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .mb-spin { animation-duration: 2.5s; } }

@@ -261,9 +261,9 @@
               <span *ngIf="isMissing(s.id)" class="badge danger">Falta no documento</span>
               <span *ngIf="!isMissing(s.id)" [class]="'badge '+SECTION_STATE[state(s.id)].css">{{SECTION_STATE[state(s.id)].label}}</span>
               <span *ngIf="isExcluded(s.id)" class="badge danger">Fora do Word</span>
-              <button *ngIf="text(s.id)" type="button" class="hbtn icon" [disabled]="editing===s.id" (click)="readSection(s.id)" aria-label="Modo leitura" title="Modo leitura: o texto em tela cheia, organizado para ler (← → troca de seção, Esc fecha)"><nl-icon name="book"/></button>
+              <button *ngIf="text(s.id)" type="button" class="hbtn icon" [disabled]="editing===s.id" (click)="goRead(s.id)" aria-label="Modo leitura" title="Modo leitura: o texto em tela cheia, organizado para ler (← → troca de seção, Esc fecha)"><nl-icon name="book"/></button>
               <ng-container *ngIf="!readOnly()">
-                <button type="button" class="hbtn" [class.on]="editing===s.id" [disabled]="editing===s.id" (click)="openEditMode(s.id)" title="Abre o modo edição: texto amplo, ferramentas e salvamento automático"><nl-icon name="edit"/> {{text(s.id) ? 'Editar' : 'Escrever'}}</button>
+                <button type="button" class="hbtn" [class.on]="editing===s.id" [disabled]="editing===s.id" (click)="goEdit(s.id)" title="Abre o modo edição: texto amplo, ferramentas e salvamento automático"><nl-icon name="edit"/> {{text(s.id) ? 'Editar' : 'Escrever'}}</button>
                 <button type="button" class="hbtn primary" [disabled]="generating || isHand(s.id)" (click)="openAi(s.id)" [title]="isHand(s.id) ? handWhy(s.id) : ''"><nl-icon name="spark"/> {{gen[s.id]==='running'?'Gerando…':'Gerar com IA'}}</button>
                 <!-- One entry for the chat options: the ChatGPT screen has the API, plugin and copy-and-paste methods, plus the instruction -->
                 <button type="button" class="hbtn" [class.on]="cgFor===s.id" [disabled]="isHand(s.id)" (click)="openCg(s.id)" [attr.aria-haspopup]="'dialog'"><nl-icon name="external"/> ChatGPT</button>
@@ -297,7 +297,7 @@
           <h3 class="ed-label">{{isInterpretation(s.id) ? 'Interpretação clínica' : 'Texto da seção'}}</h3>
           <div *ngIf="editing!==s.id || editFull" class="draft" [class.is-loading]="gen[s.id]==='running'" [class.empty]="!text(s.id)"
             [class.can-write]="!text(s.id) && !readOnly()" [attr.role]="!text(s.id) && !readOnly() ? 'button' : null" [attr.tabindex]="!text(s.id) && !readOnly() ? 0 : null"
-            (click)="!text(s.id) && !readOnly() && openEditMode(s.id)" (keydown.enter)="!text(s.id) && !readOnly() && openEditMode(s.id)">
+            (click)="!text(s.id) && !readOnly() && goEdit(s.id)" (keydown.enter)="!text(s.id) && !readOnly() && goEdit(s.id)">
             <div *ngIf="richOf(s.id); else plainText" class="rich-view" [innerHTML]="richView(s.id)"></div>
             <ng-template #plainText><p *ngFor="let p of paragraphs(text(s.id))" [class.ptitle]="p.title">{{p.text}}</p></ng-template>
             <p *ngIf="!text(s.id)" class="muted">{{s.id===MANUAL_KEY ? 'Ainda sem conclusão. Escreva suas orientações acima ou use Escrever para escrever você mesma.' : s.id===DEMAND_KEY ? 'O arquivo base não tem texto nesta parte. Escreva ou escolha uma das opções acima.' : readOnly() ? 'Sem texto ainda.' : isInterpretation(s.id) ? 'Escreva a interpretação clínica ou escolha uma das opções acima.' : 'Escreva o texto da seção ou escolha uma das opções acima.'}}</p>
@@ -694,3 +694,6 @@
       (useApi)="cgToAi()" (saved)="onCgSaved()" (closed)="cgFor=''"></nl-chatgpt-anamnesis>
   </div>
 </div>
+
+<!-- Loading layer while switching between reading and edit modes or sections (saving first) -->
+<div *ngIf="busyMsg && !confirmOpen()" class="mode-busy" role="status" aria-live="polite"><div class="mb-card"><span class="mb-spin" aria-hidden="true"></span>{{busyMsg}}</div></div>

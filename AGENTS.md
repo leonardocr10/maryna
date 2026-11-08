@@ -8,6 +8,7 @@ Você está trabalhando no software de auxílio à elaboração de laudos neurop
    - Partes de texto fixo sob uma caixa de título de uma célula (ex.: Fontes fundamentais de informações, Instrumentos/avaliações aplicadas, Procedimentos de análise, Instrumentos/resultados), chaves `fixo_*`: sem edição, o Word mantém os parágrafos originais; editadas e aprovadas, o texto substitui só os parágrafos logo abaixo do título.
    - A linha de local e data do fechamento ("Cidade, D de mês de AAAA."), trocada inteira pelo texto salvo na avaliação; em branco, fica a do arquivo.
    - Campos de identificação (valor após "Nome:", "Data de Nascimento:" etc.), preenchidos com os dados da avaliação.
+   - Excluir do documento: a psicóloga pode tirar uma seção inteira do Word exportado (título, tabelas e textos daquela parte, até o próximo título de seção, caixa de título fixa, referências ou linha de local e data). Só na cópia exportada; o DOCX-base enviado nunca muda. Desfazer devolve a seção como está no arquivo.
    A Hipótese diagnóstica é região de destino escrita só pela psicóloga: a IA nunca redige diagnóstico (geração e pedido ao ChatGPT recusados).
 3. Anamnese: tópicos relevantes, um ou mais parágrafos discursivos objetivos por tópico; preservar fontes (pai, mãe, responsável, próprio paciente), divergências, temporalidade e desconhecidos.
 4. Interpretação: sem classificação explícita no parágrafo salvo quando psicóloga solicitar; não inventar sintomas, testes, datas, correlações ou diagnóstico. Nunca transformar mera contagem de sintomas em diagnóstico.

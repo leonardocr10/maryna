@@ -3,7 +3,7 @@
 
 EXTERNAL SERVICE: the section text is sent to Microsoft. Used only when TTS_PROVIDER=edge in api/.env
 (authorized by the psychologist); otherwise the local Piper voice is used. No text is logged.
-Voice and speed: EDGE_TTS_VOICE, EDGE_TTS_RATE.
+Voice and speed: EDGE_TTS_VOICE, EDGE_TTS_RATE; a request may choose another pt-BR neural voice.
 
 Two modes:
 - default: reads the text on stdin and writes MP3 audio to stdout (one request per process);
@@ -11,14 +11,16 @@ Two modes:
   streams the MP3 as frames: 4-byte big-endian length + bytes, as soon as each piece arrives; a 0-length frame
   ends the request. Playback can start with the first frame.
 """
-import sys,os,json,struct,asyncio
+import sys,os,json,struct,asyncio,re
 import edge_tts
 
 VOICE=os.environ.get('EDGE_TTS_VOICE') or 'pt-BR-FranciscaNeural'
 RATE=os.environ.get('EDGE_TTS_RATE') or '-5%'
 
-async def stream(text,write):
- async for chunk in edge_tts.Communicate(text,VOICE,rate=RATE).stream():
+VOICE_RE=re.compile(r'^pt-BR-[A-Za-z]+Neural$')
+async def stream(text,write,voice=None):
+ v=voice if voice and VOICE_RE.match(voice) else VOICE
+ async for chunk in edge_tts.Communicate(text,v,rate=RATE).stream():
   if chunk['type']=='audio' and chunk['data']:write(chunk['data'])
 
 def serve():
@@ -26,8 +28,8 @@ def serve():
  def frame(data):out.write(struct.pack('>I',len(data)));out.write(data);out.flush()
  for line in sys.stdin:
   try:
-   text=str(json.loads(line).get('text') or '').strip()
-   if text:asyncio.run(stream(text,frame))
+   req=json.loads(line);text=str(req.get('text') or '').strip()
+   if text:asyncio.run(stream(text,frame,req.get('voice')))
   except Exception as e:
    sys.stderr.write('edge tts error: '+type(e).__name__+'\n')
   frame(b'')

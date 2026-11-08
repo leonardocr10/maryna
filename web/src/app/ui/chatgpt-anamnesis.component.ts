@@ -54,7 +54,7 @@ const newOpId = () => 'op-' + (crypto.randomUUID?.() || Math.random().toString(3
   <!-- Current API generation (unchanged) -->
   <div *ngIf="method==='api'" class="pane">
     <p class="hint">Gera o texto pela API da OpenAI, como hoje{{hasText ? ', substituindo o texto atual (que fica em Versões)' : ''}}.</p>
-    <div class="row"><button class="btn btn-primary btn-sm" [disabled]="readOnly" (click)="useApi.emit()"><nl-icon name="spark"/> {{hasText ? 'Regenerar pela API' : 'Gerar pela API'}}</button></div>
+    <div class="row"><button class="btn btn-primary btn-sm" [disabled]="readOnly" (click)="useApi.emit()"><nl-icon name="spark"/> Gerar pela API</button></div>
   </div>
 
   <!-- ChatGPT plugin (MCP) -->

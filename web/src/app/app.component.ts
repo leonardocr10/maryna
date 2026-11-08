@@ -19,6 +19,7 @@ import {ChatgptConsentComponent} from './ui/chatgpt-consent.component';
 import {CommandPaletteComponent, rememberRecent} from './ui/command-palette.component';
 import {TopbarService} from './topbar.service';
 import {installTooltips} from './tooltip';
+import {ReadingModeComponent} from './ui/reading-mode.component';
 
 type Screen = 'home' | 'evaluation' | 'new' | 'settings' | 'patients' | 'models' | 'library' | 'reports';
 const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 'models', 'library', 'reports'];
@@ -26,7 +27,7 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule, NewEvaluationComponent, EvaluationComponent, SettingsComponent, IconComponent, ConfirmDialogComponent, DashboardComponent, PatientsComponent, ModelsComponent, ReportsComponent, LibraryComponent, ChatgptConsentComponent, CommandPaletteComponent],
+  imports: [CommonModule, FormsModule, NewEvaluationComponent, EvaluationComponent, SettingsComponent, IconComponent, ConfirmDialogComponent, DashboardComponent, PatientsComponent, ModelsComponent, ReportsComponent, LibraryComponent, ChatgptConsentComponent, CommandPaletteComponent, ReadingModeComponent],
   template: `
 <!-- Theme switch, shared by the login screen and the top bar -->
 <ng-template #themeSwitch>
@@ -163,6 +164,7 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
 
 <nl-command-palette *ngIf="paletteOpen && api.loggedIn()" [evaluations]="evaluations()" [screens]="paletteScreens()" (openEvaluation)="open($event)" (goScreen)="goFromPalette($event)" (closed)="paletteOpen=false"></nl-command-palette>
 <nl-confirm-dialog></nl-confirm-dialog>
+<nl-reading-mode></nl-reading-mode>
 <div *ngIf="api.toast()" class="toast" role="status">{{api.toast()}}</div>
 `,
   styles: [`

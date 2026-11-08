@@ -6,7 +6,10 @@
 const BLOCKS = new Set(['P', 'H3', 'LI', 'DIV']);
 const INLINE = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'SPAN', 'BR', 'SUB', 'SUP']);
 const BLOCK_STYLES = ['text-align', 'line-height', 'margin-top', 'margin-bottom', 'margin-left'];
-const INLINE_STYLES = ['font-size', 'color', 'background-color', 'font-weight', 'font-style', 'text-decoration-line', 'text-decoration'];
+const INLINE_STYLES = ['font-size', 'color', 'background-color', 'font-weight', 'font-style', 'text-decoration-line', 'text-decoration', 'font-family'];
+/** Fonts the editor offers; the Word export writes the same name in the run (worker/docx_worker.py). */
+export const EDITOR_FONTS = ['Arial', 'Calibri', 'Cambria', 'Georgia', 'Segoe UI', 'Tahoma', 'Times New Roman', 'Verdana'];
+const fontOk = (v: string) => EDITOR_FONTS.includes(v.split(',')[0].replace(/["']/g, '').trim());
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
@@ -45,7 +48,7 @@ export function textFromHtml(html: string): string {
 }
 
 function keepStyle(el: HTMLElement, allowed: string[]) {
-  const kept = allowed.map(p => [p, el.style.getPropertyValue(p)]).filter(([, v]) => v && v.length < 40 && !/url|expression|[;<>]/i.test(v));
+  const kept = allowed.map(p => [p, el.style.getPropertyValue(p)]).filter(([p, v]) => v && v.length < 40 && !/url|expression|[;<>]/i.test(v) && (p !== 'font-family' || fontOk(v)));
   el.removeAttribute('style');
   for (const [p, v] of kept) el.style.setProperty(p, v);
   if (!el.getAttribute('style')) el.removeAttribute('style');

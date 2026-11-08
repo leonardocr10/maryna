@@ -322,6 +322,61 @@ class TestWorker(unittest.TestCase):
   self.assertEqual([m['key'] for m in r['markers']],['memoria'])
   self.assertEqual(r['titled_domains'],['inteligencia','memoria'])
 
+def word_constructs_base(path):
+ """Synthetic file with what Word users leave behind: text typed with Track changes on (w:ins), deleted text
+ (w:del), inline and block content controls (w:sdt), a smart tag and a simple field. All content fictitious."""
+ from docx.oxml import OxmlElement
+ from docx.oxml.ns import qn
+ def run(text):
+  r=OxmlElement('w:r');t=OxmlElement('w:t');t.set(qn('xml:space'),'preserve');t.text=text;r.append(t);return r
+ def el(tag,*kids,**attrs):
+  e=OxmlElement(tag)
+  for k,v in attrs.items():e.set(qn('w:'+k),v)
+  for c in kids:e.append(c)
+  return e
+ track=dict(id='1',author='Fictícia',date='2030-01-01T00:00:00Z')
+ d=Document();sect=d.element.body.sectPr;add=sect.addprevious
+ add(el('w:p',run('Nome: '),el('w:ins',run('Paciente Fictício'),**track)))
+ add(el('w:p',run('ANAMNESE')));add(el('w:p',run('Histórico fictício.')))
+ add(el('w:p',el('w:sdt',el('w:sdtPr'),el('w:sdtContent',run('PERCEPÇÃO')))))
+ t=d.add_table(rows=1,cols=2);t.cell(0,0).text='Teste A';t.cell(0,1).text='91';add(t._tbl)
+ add(el('w:p',el('w:ins',run('Interpretação Clínica:'),**track)))
+ blk=el('w:sdtContent',el('w:p',run('MEMÓRIA E APRENDIZAGEM')))
+ t2=d.add_table(rows=1,cols=2);t2.cell(0,0).text='Teste B';t2.cell(0,1).text='104';blk.append(t2._tbl)
+ blk.append(el('w:p',run('Interpretação Clínica:')));add(el('w:sdt',el('w:sdtPr'),blk))
+ dl=el('w:del',el('w:r',el('w:delText')),**track);dl[0][0].text=' TEXTO APAGADO';add(el('w:p',run('ATENÇÃO'),dl))
+ add(el('w:p',el('w:smartTag',run('Interpretação Clínica:'),uri='urn:x',element='x')))
+ add(el('w:p',el('w:fldSimple',run('FUNÇÕES EXECUTIVAS'),instr=' QUOTE x ')))
+ add(el('w:p',run('Interpretação Clínica:')))
+ d.save(path)
+
+class TestWordConstructs(unittest.TestCase):
+ """The reader sees the text Word shows, not only the paragraph's direct runs (python-docx Paragraph.text)."""
+ def setUp(self):
+  self.tmp=tempfile.TemporaryDirectory();self.dir=Path(self.tmp.name)
+  self.base=self.dir/'base.docx';self.out=self.dir/'out.docx';word_constructs_base(self.base)
+ def tearDown(self):self.tmp.cleanup()
+
+ def test_inspect_reads_tracked_inserts_content_controls_fields_and_skips_deleted_text(self):
+  r=run('inspect',str(self.base))
+  self.assertEqual([m['key'] for m in r['markers']],['anamnesis','percepcao','memoria','atencao','funcoes_executivas'])
+  self.assertEqual(r['identification']['Nome'],'Paciente Fictício')
+  texts=[e.get('text') for e in r['elements'] if e['type']=='p']
+  self.assertIn('PERCEPÇÃO',texts);self.assertIn('MEMÓRIA E APRENDIZAGEM',texts);self.assertIn('FUNÇÕES EXECUTIVAS',texts)
+  self.assertIn('ATENÇÃO',texts);self.assertFalse(any('APAGADO' in (t or '') for t in texts))
+  self.assertIn([['Teste B','104']],[e.get('rows') for e in r['elements']])
+
+ def test_export_writes_into_those_sections_and_keeps_tracked_text_untouched(self):
+  before=sha(self.base)
+  sections={k:f'Texto fictício de {k}.' for k in ('percepcao','memoria','atencao','funcoes_executivas')}
+  r=run('export',stdin={'base':str(self.base),'out':str(self.out),'sections':sections,'fields':{'Nome':'Outro Nome'}})
+  self.assertEqual(r['missing'],[]);self.assertEqual(sha(self.base),before)
+  out=Document(self.out);xml=out.element.body.xml
+  for v in sections.values():self.assertEqual(xml.count(v),1,v)
+  # a value typed with track changes is not rewritten (the tracked insertion stays as the author left it)
+  self.assertNotIn('Nome',r['fields_filled']);self.assertIn('Paciente Fictício',xml);self.assertNotIn('Outro Nome',xml)
+  self.assertIn('TEXTO APAGADO',xml)   # deleted text stays in the file, as a deletion
+
 class TestLetter(unittest.TestCase):
  def test_letter_builds_a_new_document_with_titles_and_paragraphs(self):
   with tempfile.TemporaryDirectory() as t:
@@ -335,5 +390,40 @@ class TestLetter(unittest.TestCase):
    out=Path(t)/'x.docx';out.write_bytes(b'existente')
    with self.assertRaises(AssertionError):run('letter',stdin={'out':str(out),'content':'Texto.'})
    self.assertEqual(out.read_bytes(),b'existente')
+
+ def test_export_removes_only_the_excluded_section(self):
+  """Approved exception to rule 2: a section left out by the psychologist loses its title, tables and texts in the
+  copy; the next section, the closing line and the base file stay untouched."""
+  tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup);self.dir=Path(tmp.name);self.out=self.dir/'out.docx'
+  base=self.dir/'titled.docx';d=Document()
+  d.add_paragraph('DESCRIÇÃO DA DEMANDA');d.add_paragraph('Demanda fictícia.')
+  for title,score in (('PERCEPÇÃO','91'),('MEMÓRIA E APRENDIZAGEM','104')):
+   d.add_paragraph(title);t=d.add_table(rows=1,cols=2);t.cell(0,0).text='Teste fictício';t.cell(0,1).text=score
+   d.add_paragraph('Texto fixo fictício de '+title.lower()+'.');d.add_paragraph('Interpretação Clínica:')
+  d.add_paragraph('Cidade Fictícia, 1 de janeiro de 2030.');d.save(base)
+  before=sha(base)
+  r=run('export',stdin={'base':str(base),'out':str(self.out),'sections':{'percepcao':'Não deve entrar.','memoria':'Memória fictícia.'},'excluded':['percepcao']})
+  self.assertEqual(r['excluded'],['percepcao']);self.assertEqual(sha(base),before)
+  out=Document(self.out);texts=[p.text for p in out.paragraphs]
+  self.assertNotIn('PERCEPÇÃO',texts);self.assertNotIn('Não deve entrar.',texts);self.assertNotIn('Texto fixo fictício de percepção.',texts)
+  self.assertEqual([[c.text for c in row.cells] for t in out.tables for row in t.rows],[['Teste fictício','104']])
+  for kept in ('DESCRIÇÃO DA DEMANDA','Demanda fictícia.','MEMÓRIA E APRENDIZAGEM','Texto fixo fictício de memória e aprendizagem.','Memória fictícia.'):self.assertIn(kept,texts)
+  # the last section, excluded, stops at the closing place/date line
+  r=run('export',stdin={'base':str(base),'out':str(self.dir/'last.docx'),'sections':{},'excluded':['memoria']})
+  last=[p.text for p in Document(self.dir/'last.docx').paragraphs]
+  self.assertNotIn('MEMÓRIA E APRENDIZAGEM',last);self.assertIn('PERCEPÇÃO',last);self.assertEqual(last[-1],'Cidade Fictícia, 1 de janeiro de 2030.')
+  # nothing excluded: same result as before the feature
+  r=run('export',stdin={'base':str(base),'out':str(self.dir/'all.docx'),'sections':{}})
+  self.assertEqual(r['excluded'],[]);self.assertIn('PERCEPÇÃO',[p.text for p in Document(self.dir/'all.docx').paragraphs])
+
+ def test_export_keeps_the_font_chosen_in_the_editor(self):
+  tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup);d=Path(tmp.name)
+  base=d/'b.docx';out=d/'o.docx';synthetic_base(base)
+  html='<p>Texto <span style="font-family: Georgia">fictício</span> e <span style="font-family: Comic Sans MS">outro</span>.</p>'
+  run('export',stdin={'base':str(base),'out':str(out),'sections':{'anamnesis':'Texto fictício e outro.'},'rich':{'anamnesis':html}})
+  runs=[r for p in Document(out).paragraphs if p.text=='Texto fictício e outro.' for r in p.runs]
+  fonts={r.text.strip():r.font.name for r in runs if r.text.strip()}
+  self.assertEqual(fonts['fictício'],'Georgia')
+  self.assertNotEqual(fonts['outro'],'Comic Sans MS')   # fonts outside the editor list are ignored
 
 if __name__=='__main__':unittest.main()

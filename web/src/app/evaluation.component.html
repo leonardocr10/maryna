@@ -10,8 +10,8 @@
     </nav>
   <!-- Pendências: compact summary here, the list opens below (closed by default) -->
     <div *ngIf="pendCount()" class="pendsum">
-      <span class="ps-pill"><nl-icon name="alert"/> {{pendCount()===1 ? '1 pendência' : pendCount() + ' pendências'}}</span>
-      <button type="button" class="btn btn-secondary btn-sm" (click)="pendOpen=!pendOpen" [attr.aria-expanded]="pendOpen" aria-controls="pendpanel">{{pendOpen ? 'Ocultar detalhes' : 'Ver detalhes'}} <nl-icon [name]="pendOpen ? 'chevu' : 'chevd'"/></button>
+      <!-- The pill itself opens and closes the list -->
+      <button type="button" class="ps-pill" (click)="pendOpen=!pendOpen" [attr.aria-expanded]="pendOpen" aria-controls="pendpanel" [title]="pendOpen ? 'Ocultar pendências' : 'Ver pendências'"><nl-icon name="alert"/> {{pendCount()===1 ? '1 pendência' : pendCount() + ' pendências'}} <nl-icon class="ps-chev" [name]="pendOpen ? 'chevu' : 'chevd'"/></button>
     </div>
     <span class="grow"></span>
     <nl-review-panel #rp [slim]="true" [evaluationId]="evaluationId" [locked]="locked()" [canWrite]="canWrite()" [docsReady]="docsReady()" [pendings]="pendings()"
@@ -42,7 +42,7 @@
           <p *ngIf="locked()">Essas seções não entraram no Word. A avaliação está aprovada; para incluí-las, crie uma nova avaliação com o arquivo corrigido.</p>
           <div *ngIf="!locked()" class="create-row">
             <ng-container *ngIf="!readOnly()">
-              <button *ngFor="let ms of missingKeys()" type="button" class="btn btn-secondary btn-sm" [disabled]="!!creatingSection" (click)="setCreated(ms.id, true)" [title]="'Cria ' + ms.name + ' no Word, ' + createdPlace(ms.id)"><nl-icon name="plus"/> Criar {{ms.name}} no documento</button>
+              <button *ngFor="let ms of missingKeys(); trackBy: bySection" type="button" class="btn btn-secondary btn-sm" [disabled]="!!creatingSection" (click)="setCreated(ms.id, true)" [title]="'Cria ' + ms.name + ' no Word, ' + createdPlace(ms.id)"><nl-icon name="plus"/> Criar {{ms.name}} no documento</button>
             </ng-container>
             <button *ngIf="step!==0" type="button" class="btn btn-secondary btn-sm" (click)="pendOpen=false; goStep(0)"><nl-icon name="upload"/> Enviar arquivo corrigido</button>
           </div>
@@ -63,56 +63,55 @@
   <!-- Steps 1–3: card + side column -->
   <div *ngIf="step<3" class="stepwrap">
     <!-- step 1: Identificação on the left, Arquivos on the right -->
-    <div class="col-main" [class.two]="step===0">
+    <div class="col-main">
 
-      <!-- 1. Identificação -->
-      <section *ngIf="step===0" class="card stepcard">
-        <div class="card-head"><h2>Identificação</h2><small>{{idSaving ? 'Salvando…' : locked() ? 'Travada (avaliação aprovada)' : !canWrite() ? 'Somente leitura para o seu papel' : 'Salva automaticamente · campos em branco usam o arquivo base'}}</small></div>
-        <div class="card-body">
-          <nl-identity-form [model]="idModel" (modelChange)="onIdentity($event)" [disabled]="readOnly()" [showRequired]="!readOnly()"></nl-identity-form>
-          <div class="place-row">
-            <label for="place-date" class="mlabel">Local e data (final do laudo)</label>
-            <div class="place-in">
-              <input id="place-date" class="input" [(ngModel)]="placeDate" (blur)="savePlaceDate()" (keyup.enter)="savePlaceDate()" [disabled]="readOnly()" [placeholder]="placeInFile() || 'Ex.: Uberlândia, 30 de outubro de 2026.'" maxlength="120">
-              <button *ngIf="!readOnly()" type="button" class="btn btn-secondary btn-sm" (click)="todayPlaceDate()"><nl-icon name="calendar"/> Data de hoje</button>
-            </div>
-            <small>{{placeInFile() ? (placeDate ? 'No Word, a linha "' + placeInFile() + '" é trocada por este texto.' : 'Em branco: fica "' + placeInFile() + '", como está no arquivo base.') : 'O arquivo base não tem a linha de local e data (ex.: "Uberlândia, 30 de outubro de 2026.").'}}</small>
+      <!-- Step 1, same layout as "Nova avaliação": 1 identification (full width), then 2 model and files beside 3 writing mode -->
+      <ng-container *ngIf="step===0">
+      <section class="card idcard">
+        <div class="sec-title"><span class="num">1</span><h2>Identificação do paciente</h2>
+          <small class="sec-note">{{idSaving ? 'Salvando…' : locked() ? 'Travada (avaliação aprovada)' : !canWrite() ? 'Somente leitura para o seu papel' : 'Salva automaticamente · campos em branco usam o arquivo base'}}</small></div>
+        <nl-identity-form [model]="idModel" (modelChange)="onIdentity($event)" [disabled]="readOnly()" [showRequired]="!readOnly()"></nl-identity-form>
+        <div class="place-row">
+          <label for="place-date" class="mlabel">Local e data (final do laudo)</label>
+          <div class="place-in">
+            <input id="place-date" class="input" [(ngModel)]="placeDate" (blur)="savePlaceDate()" (keyup.enter)="savePlaceDate()" [disabled]="readOnly()" [placeholder]="placeInFile() || 'Ex.: Uberlândia, 30 de outubro de 2026.'" maxlength="120">
+            <button *ngIf="!readOnly()" type="button" class="btn btn-secondary btn-sm" (click)="todayPlaceDate()"><nl-icon name="calendar"/> Data de hoje</button>
           </div>
-          <div class="mode-row">
-            <span class="mlabel">Como esta avaliação é escrita</span>
-            <div class="theme-switch" role="group" aria-label="Modo da avaliação">
-              <button type="button" [attr.aria-pressed]="aiOn()" [disabled]="readOnly()" (click)="setAiMode('ai')"><nl-icon name="spark"/> Com IA</button>
-              <button type="button" [attr.aria-pressed]="!aiOn()" [disabled]="readOnly()" (click)="setAiMode('manual')"><nl-icon name="edit"/> Manual</button>
-            </div>
-            <small>{{aiOn() ? 'A IA redige rascunhos das seções para você revisar.' : 'Nada é gerado automaticamente: você escreve cada seção e, se quiser, usa a IA só na seção que escolher.'}}</small>
-          </div>
+          <small>{{placeInFile() ? (placeDate ? 'No Word, a linha "' + placeInFile() + '" é trocada por este texto.' : 'Em branco: fica "' + placeInFile() + '", como está no arquivo base.') : 'O arquivo base não tem a linha de local e data (ex.: "Uberlândia, 30 de outubro de 2026.").'}}</small>
         </div>
       </section>
 
-
-      <!-- 2. Arquivos -->
-      <section *ngIf="step===0" class="card stepcard">
-        <div class="card-head"><h2>Arquivos</h2><small>{{docCount()}} de 2 enviados</small></div>
-        <div class="card-body">
-          <div class="model-row">
-            <div class="mr-field"><span class="mr-label">Modelo do laudo</span>
-              <nl-filter-select [options]="models" [value]="current.model_id || ''" [disabled]="readOnly()" ariaLabel="Modelo do laudo" placeholder="Sem modelo" (valueChange)="setModel($event)"></nl-filter-select></div>
-            <p class="footnote">O arquivo da estagiária é comparado com o modelo, e as instruções da IA do modelo valem nesta avaliação.</p>
+      <div class="idpair">
+        <section class="card idcard">
+          <div class="sec-title"><span class="num">2</span><h2>Modelo e arquivos</h2><span class="caption">{{docCount()}} de 2 enviados</span></div>
+          <div class="id-model" title="O arquivo da estagiária é comparado com o modelo, e as instruções da IA do modelo valem nesta avaliação.">
+            <span class="mlabel">Modelo do laudo</span>
+            <nl-filter-select [options]="models" [value]="current.model_id || ''" [disabled]="readOnly()" ariaLabel="Modelo do laudo" placeholder="Sem modelo" (valueChange)="setModel($event)"></nl-filter-select>
           </div>
-          <div class="files2">
-            <nl-drop-zone title="Arquivo base (estagiária)" [filename]="docName('base')" [busy]="uploading==='base'" [disabled]="locked()" (file)="upload('base',$event)"></nl-drop-zone>
-            <nl-drop-zone title="Anamnese (psicóloga)" [filename]="docName('anamnesis')" [busy]="uploading==='anamnesis'" [disabled]="locked()" (file)="upload('anamnesis',$event)"></nl-drop-zone>
+          <div class="id-files">
+            <nl-drop-zone [inline]="true" title="Arquivo base (estagiária)" [filename]="docName('base')" [busy]="uploading==='base'" [disabled]="locked()" (file)="upload('base',$event)"></nl-drop-zone>
+            <nl-drop-zone [inline]="true" title="Anamnese (psicóloga)" [filename]="docName('anamnesis')" [busy]="uploading==='anamnesis'" [disabled]="locked()" (file)="upload('anamnesis',$event)"></nl-drop-zone>
           </div>
           <ng-container *ngIf="inspection?.model_check as mc">
             <div *ngIf="mc.ok" class="alert tip"><nl-icon name="checkc"/><div><strong>O arquivo confere com o modelo "{{mc.model.name}}"</strong><p *ngFor="let i of mc.items">{{i.text}}</p><p *ngIf="!mc.items.length">Mesmas seções, campos de interpretação e tabelas.</p></div></div>
             <div *ngIf="!mc.ok" class="alert" [class.danger]="hasDanger(mc)" [class.warn]="!hasDanger(mc)"><nl-icon name="alert"/><div><strong>Diferenças em relação ao modelo "{{mc.model.name}}"</strong><ul class="mc-list"><li *ngFor="let i of mc.items" [class.info]="i.level==='info'">{{i.text}}</li></ul><p>Confira o arquivo com a estagiária antes de gerar. Se estiver certo assim, pode seguir.</p></div></div>
           </ng-container>
           <div *ngIf="withOldText().length" class="alert warn"><nl-icon name="info"/><div><strong>O arquivo base já tem texto em: {{withOldText().join(', ')}}</strong><p>No Word final, esse texto será trocado pelo gerado em cada parte. Tabelas, gráficos e referências não mudam, e o arquivo enviado fica guardado como está.</p></div></div>
-          <div class="row-actions"><button class="btn btn-primary" [disabled]="!docsReady()" (click)="goStep(2)">{{aiOn() ? 'Continuar para geração' : 'Continuar para as seções'}} <nl-icon name="chevr"/></button></div>
-        </div>
-      </section>
+        </section>
 
-      <nl-plan *ngIf="step===0" [evaluationId]="evaluationId" [canWrite]="canWrite()" [locked]="locked()"></nl-plan>
+        <section class="card idcard">
+          <div class="sec-title"><span class="num">3</span><h2>Como a avaliação é escrita</h2></div>
+          <div class="id-modes" role="radiogroup" aria-label="Modo da avaliação">
+            <button type="button" role="radio" class="opt" [class.on]="!aiOn()" [attr.aria-checked]="!aiOn()" [disabled]="readOnly()" (click)="setAiMode('manual')"><nl-icon name="edit"/><span><b>Manual</b><small>Nada é gerado automaticamente: você escreve cada seção e, se quiser, usa a IA só na seção que escolher.</small></span></button>
+            <button type="button" role="radio" class="opt" [class.on]="aiOn()" [attr.aria-checked]="aiOn()" [disabled]="readOnly()" (click)="setAiMode('ai')"><nl-icon name="spark"/><span><b>Com IA</b><small>A IA redige rascunhos das seções a partir dos arquivos; você revisa e aprova.</small></span></button>
+          </div>
+        </section>
+      </div>
+
+      <div class="id-actions"><button class="btn btn-primary" [disabled]="!docsReady()" (click)="goStep(2)">{{aiOn() ? 'Continuar para geração' : 'Continuar para as seções'}} <nl-icon name="chevr"/></button></div>
+      </ng-container>
+
+      <!-- Sessões (nl-plan) hidden for now at the psychologist's request; the component and its data stay as they are -->
 
       <!-- 3. Gerar com IA -->
       <ng-container *ngIf="step===2">
@@ -154,7 +153,7 @@
                 <div *ngIf="!generating" class="row-actions">
                   <ng-container *ngIf="!readOnly()">
                     <button class="btn btn-primary" [disabled]="!autoDrafted()" (click)="goStep(3)">Conferir seções <nl-icon name="chevr"/></button>
-                    <button class="btn btn-secondary" (click)="generateAll()"><nl-icon name="restore"/> Regenerar tudo</button>
+                    <button class="btn btn-secondary" (click)="generateAll()"><nl-icon name="restore"/> Gerar todas de novo</button>
                   </ng-container>
                   <p *ngIf="locked()" class="muted">Avaliação aprovada: textos travados.</p>
                   <p *ngIf="!locked() && !canWrite()" class="muted">Somente a psicóloga gera, edita e aprova os textos.</p>
@@ -219,14 +218,15 @@
               <span class="label-caps">Seção {{secNum(cur())}} de {{reviewRows().length}}</span>
               <!-- progress summary (the section name is already in the card below); a click lists those sections -->
               <span class="sn-legend">
-                <button *ngFor="let g of secGroups()" type="button" class="lg" [ngClass]="'lg-' + g.kind" (click)="secFilter=g.kind; secMenu=true" [title]="'Ver as seções: ' + g.label">
+                <button *ngFor="let g of secGroups(); trackBy: byKind" type="button" class="lg" [ngClass]="'lg-' + g.kind" [class.on]="secMenu && secFilter===g.kind" [attr.aria-pressed]="secMenu && secFilter===g.kind" (click)="pickLegend(g.kind)" [title]="'Ver as seções: ' + g.label">
                   <i aria-hidden="true"></i><b>{{secCount(g.kind)}}</b> {{secCount(g.kind)===1 ? g.one : g.label}}</button>
               </span>
               <button type="button" class="btn btn-secondary btn-sm sn-all" (click)="secMenu=!secMenu" [attr.aria-expanded]="secMenu" aria-controls="sec-menu">Todas as seções <nl-icon [name]="secMenu ? 'chevu' : 'chevd'"/></button>
             </div>
-            <div class="sn-bars" [style.grid-template-columns]="'repeat(' + reviewRows().length + ', minmax(0, 1fr))'">
-              <button *ngFor="let s of reviewRows(); let i=index; trackBy: bySection" type="button" class="sn-seg" [ngClass]="'st-' + secKind(s.id)" [class.on]="cur()===s.id" (click)="pickSection(s.id)"
-                [attr.aria-current]="cur()===s.id ? 'true' : null" [attr.aria-label]="(i+1) + '. ' + s.name + ' · ' + secLabel(s.id)" [title]="(i+1) + '. ' + s.name + ' · ' + secLabel(s.id)"></button>
+            <!-- While the section list is open, its filter also applies here: only the bars of that status -->
+            <div class="sn-bars" [style.grid-template-columns]="'repeat(' + barRows().length + ', minmax(0, 1fr))'">
+              <button *ngFor="let s of barRows(); trackBy: bySection" type="button" class="sn-seg" [ngClass]="'st-' + secKind(s.id)" [class.on]="cur()===s.id" (click)="pickSection(s.id)"
+                [attr.aria-current]="cur()===s.id ? 'true' : null" [attr.aria-label]="secNum(s.id) + '. ' + s.name + ' · ' + secLabel(s.id)" [title]="secNum(s.id) + '. ' + s.name + ' · ' + secLabel(s.id)"></button>
             </div>
           </div>
 
@@ -256,15 +256,29 @@
           <div class="edhead">
             <span class="ei"><nl-icon name="doc"/></span>
             <div class="edt"><h2>{{s.name}}</h2><small>Seção {{(i+1).toString().padStart(2,'0')}} · {{sourceLabel(s.id)}}</small></div>
-            <span *ngIf="isMissing(s.id)" class="badge danger">Falta no documento</span>
-            <span *ngIf="!isMissing(s.id)" [class]="'badge '+SECTION_STATE[state(s.id)].css">{{SECTION_STATE[state(s.id)].label}}</span>
+            <!-- Status and the section's actions, side by side in the header (they wrap to a second line when there is no room) -->
+            <div class="edacts-h" role="group" aria-label="Ações da seção">
+              <span *ngIf="isMissing(s.id)" class="badge danger">Falta no documento</span>
+              <span *ngIf="!isMissing(s.id)" [class]="'badge '+SECTION_STATE[state(s.id)].css">{{SECTION_STATE[state(s.id)].label}}</span>
+              <span *ngIf="isExcluded(s.id)" class="badge danger">Fora do Word</span>
+              <button *ngIf="text(s.id)" type="button" class="hbtn icon" [disabled]="editing===s.id" (click)="readSection(s.id)" aria-label="Modo leitura" title="Modo leitura: o texto em tela cheia, organizado para ler (← → troca de seção, Esc fecha)"><nl-icon name="book"/></button>
+              <ng-container *ngIf="!readOnly()">
+                <button type="button" class="hbtn" [class.on]="editing===s.id" [disabled]="editing===s.id" (click)="openEditMode(s.id)" title="Abre o modo edição: texto amplo, ferramentas e salvamento automático"><nl-icon name="edit"/> {{text(s.id) ? 'Editar' : 'Escrever'}}</button>
+                <button type="button" class="hbtn primary" [disabled]="generating || isHand(s.id)" (click)="openAi(s.id)" [title]="isHand(s.id) ? handWhy(s.id) : ''"><nl-icon name="spark"/> {{gen[s.id]==='running'?'Gerando…':'Gerar com IA'}}</button>
+                <!-- One entry for the chat options: the ChatGPT screen has the API, plugin and copy-and-paste methods, plus the instruction -->
+                <button type="button" class="hbtn" [class.on]="cgFor===s.id" [disabled]="isHand(s.id)" (click)="openCg(s.id)" [attr.aria-haspopup]="'dialog'"><nl-icon name="external"/> ChatGPT</button>
+              </ng-container>
+            </div>
           </div>
+          <p *ngIf="isHand(s.id) && !readOnly()" class="act-why">{{handWhy(s.id)}}</p>
 
-          <div class="edgrid"><div class="edmain">
+          <div class="edmain">
           <div *ngIf="isMissing(s.id)" class="alert danger small"><nl-icon name="alert"/><div><p>{{missingWhy(s.id)}} O texto fica salvo aqui, mas não entra no Word. Crie a seção no documento ou envie o arquivo base de novo com ela.</p>
             <button *ngIf="!readOnly() && !locked()" class="btn btn-secondary btn-sm" [disabled]="!!creatingSection" (click)="setCreated(s.id, true)"><nl-icon name="plus"/> Criar no documento</button></div></div>
           <div *ngIf="isCreated(s.id)" class="alert tip small"><nl-icon name="info"/><div><p>Seção criada por você: o arquivo base não tem. Ao baixar o Word, o sistema põe o título "{{s.name.toUpperCase()}}"{{isInterpretation(s.id) ? ', o campo "Interpretação Clínica:"' : ''}} e este texto {{createdPlace(s.id)}}. O resto do arquivo não muda.{{isHand(s.id) && isInterpretation(s.id) ? ' Como não há tabelas desta seção no arquivo, o texto é escrito por você.' : ''}}</p>
             <button *ngIf="!readOnly() && !locked()" class="link" [disabled]="!!creatingSection" (click)="setCreated(s.id, false)">Excluir do documento</button></div></div>
+          <div *ngIf="isExcluded(s.id)" class="alert warn small"><nl-icon name="info"/><div><p>Seção excluída do documento: o título, as tabelas e os textos desta parte não entram no Word baixado. O texto escrito aqui continua salvo e o arquivo base enviado não muda.</p>
+            <button *ngIf="!readOnly() && !locked()" class="btn btn-secondary btn-sm" [disabled]="!!creatingSection" (click)="setExcluded(s.id, false)"><nl-icon name="restore"/> Incluir no documento</button></div></div>
           <div *ngIf="fieldAdded(s.id)" class="alert tip small"><nl-icon name="info"/><div><p>O arquivo base não tem o campo "Interpretação" desta seção: ao baixar o Word, o sistema cria "Interpretação Clínica:" logo após as tabelas da seção e coloca este texto ali.</p></div></div>
           <div *ngFor="let w of warnings(s.id)" class="alert warn small"><nl-icon name="info"/><div><p>{{w}}</p></div></div>
 
@@ -275,19 +289,22 @@
             <nl-dictate [evaluationId]="evaluationId"><textarea [id]="'guide-'+s.id" class="input" rows="5" [(ngModel)]="instrDraft[s.id]" placeholder="Ex.: Integrar os achados de atenção e funções executivas com as queixas escolares; destacar memória preservada; mencionar que os dados são compatíveis com a hipótese que será descrita na Hipótese Diagnóstica."></textarea></nl-dictate>
             <div class="ed-instr-row">
               <small class="mono">{{words(instrDraft[s.id])}} palavras</small>
-              <small class="hint">Depois use <b>Gerar com IA</b> abaixo (ou ChatGPT, na setinha ao lado).</small>
+              <small class="hint">Depois clique em <b>Gerar com IA</b> ou <b>ChatGPT</b>, no topo da seção.</small>
             </div>
           </div>
 
           <!-- Text: read mode, or edited in place -->
-          <div *ngIf="editing!==s.id" class="draft" [class.is-loading]="gen[s.id]==='running'" [class.empty]="!text(s.id)">
+          <h3 class="ed-label">{{isInterpretation(s.id) ? 'Interpretação clínica' : 'Texto da seção'}}</h3>
+          <div *ngIf="editing!==s.id || editFull" class="draft" [class.is-loading]="gen[s.id]==='running'" [class.empty]="!text(s.id)"
+            [class.can-write]="!text(s.id) && !readOnly()" [attr.role]="!text(s.id) && !readOnly() ? 'button' : null" [attr.tabindex]="!text(s.id) && !readOnly() ? 0 : null"
+            (click)="!text(s.id) && !readOnly() && openEditMode(s.id)" (keydown.enter)="!text(s.id) && !readOnly() && openEditMode(s.id)">
             <div *ngIf="richOf(s.id); else plainText" class="rich-view" [innerHTML]="richView(s.id)"></div>
             <ng-template #plainText><p *ngFor="let p of paragraphs(text(s.id))" [class.ptitle]="p.title">{{p.text}}</p></ng-template>
-            <p *ngIf="!text(s.id)" class="muted">{{s.id===MANUAL_KEY ? 'Ainda sem conclusão. Escreva suas orientações acima ou use Editar para escrever você mesma.' : s.id===DEMAND_KEY ? 'O arquivo base não tem texto nesta parte. Escreva em Editar ou gere com a IA.' : 'Sem texto ainda.'}}</p>
+            <p *ngIf="!text(s.id)" class="muted">{{s.id===MANUAL_KEY ? 'Ainda sem conclusão. Escreva suas orientações acima ou use Escrever para escrever você mesma.' : s.id===DEMAND_KEY ? 'O arquivo base não tem texto nesta parte. Escreva ou escolha uma das opções acima.' : readOnly() ? 'Sem texto ainda.' : isInterpretation(s.id) ? 'Escreva a interpretação clínica ou escolha uma das opções acima.' : 'Escreva o texto da seção ou escolha uma das opções acima.'}}</p>
           </div>
-          <nl-dictate *ngIf="editing===s.id" [evaluationId]="evaluationId" (keydown.escape)="closeEdit()"><nl-rich-editor #rte [html]="editInitHtml" label="Texto da seção" (htmlChange)="editHtml=$event" (textChange)="onEditText(s.id, $event)"></nl-rich-editor></nl-dictate>
+          <nl-dictate *ngIf="editing===s.id && !editFull" [evaluationId]="evaluationId" (keydown.escape)="closeEdit()"><nl-rich-editor #rte [html]="editInitHtml" label="Texto da seção" (htmlChange)="editHtml=$event" (textChange)="onEditText(s.id, $event)"></nl-rich-editor></nl-dictate>
           <p *ngIf="editing!==s.id && ((s.id===DEMAND_KEY && demandIsFromFile()) || (s.id!==DEMAND_KEY && fromFile(s.id)))" class="footnote from-file">Texto do arquivo enviado, sem alteração e sem IA.</p>
-          <div *ngIf="editing===s.id" class="ed-editbar">
+          <div *ngIf="editing===s.id && !editFull" class="ed-editbar">
             <span>{{autoSaving ? 'Salvando…' : autoSaved ? 'Salvo automaticamente às ' + autoSaved + '.' : 'Editando o texto. Salva sozinho a cada pausa.'}}</span>
             <button *ngIf="!isHand(s.id)" class="btn btn-secondary btn-sm" [disabled]="gptLoading===s.id" (click)="openGpt(s.id)" title="Copia o pedido desta seção e abre o ChatGPT"><nl-icon name="external"/> Abrir no ChatGPT</button>
             <button class="btn btn-secondary btn-sm" (click)="pasteAnswer()" title="Troca o texto pelo que está copiado (por exemplo, a resposta do ChatGPT)"><nl-icon name="copy"/> Colar resposta</button>
@@ -297,22 +314,10 @@
             <button class="btn btn-primary btn-sm" (click)="saveEdit(s.id)"><nl-icon name="check"/> Salvar edição</button>
           </div>
           <div *ngIf="prevOpen===s.id && previous?.sections?.[s.id]" class="prev-box">
-            <div class="prev-head"><b><nl-icon name="calendar"/> Avaliação anterior · {{brDate(previous.start_date || previous.created_at)}}</b><span class="caption">texto aprovado, só para comparar a evolução (não vai para a IA)</span><button class="link" (click)="prevOpen=''">Fechar</button></div>
+            <div class="prev-head"><b><nl-icon name="calendar"/> Avaliação anterior · {{brDate(previous.start_date || previous.created_at)}}</b><span class="caption">texto aprovado, só para comparar a evolução (não vai para a IA)</span><button type="button" class="tl" (click)="readPrevious(s.id, s.name)"><nl-icon name="book"/> Modo leitura</button><button class="link" (click)="prevOpen=''">Fechar</button></div>
             <p *ngFor="let p of paragraphs(previous.sections[s.id])" [class.ptitle]="p.title">{{p.text}}</p>
           </div>
           <nl-section-versions *ngIf="versionsOpen===s.id" [evaluationId]="evaluationId" [sectionKey]="s.id" [canRestore]="!readOnly()" (closed)="versionsOpen=''" (restored)="versionsOpen='';load();changed.emit()"></nl-section-versions>
-
-          <!-- Instruction for this section -->
-          <div *ngIf="sectionInstr===s.id" class="ed-instr">
-            <label [for]="'instr-'+s.id">Instrução para regenerar esta seção</label>
-            <nl-dictate [evaluationId]="evaluationId"><textarea [id]="'instr-'+s.id" class="input" rows="5" [(ngModel)]="instrDraft[s.id]"></textarea></nl-dictate>
-            <div class="ed-instr-row">
-              <small>A IA usa só os dados desta seção no arquivo base, mais a sua instrução.</small>
-              <button class="link" (click)="resetInstruction(s.id)">{{instruction(s.id)?.model ? 'Usar a do modelo' : 'Usar padrão'}}</button>
-              <button class="btn btn-secondary btn-sm" (click)="sectionInstr=''">Cancelar</button>
-              <button class="btn btn-primary btn-sm" [disabled]="generating" (click)="regenerate(s.id, true)"><nl-icon name="spark"/> Regenerar com instrução</button>
-            </div>
-          </div>
 
           <!-- ChatGPT web: request ready to paste, then the answer comes back into the editor -->
           <div *ngIf="gptOpen===s.id" class="ed-gpt" role="region" aria-label="Pedido para o ChatGPT">
@@ -328,12 +333,9 @@
             </div>
           </div>
 
-          <!-- Any section: API, ChatGPT plugin (MCP) or assisted copy and paste; the draft comes back for review -->
-          <nl-chatgpt-anamnesis *ngIf="cgOpen===s.id" [manual]="!aiOn()" [evaluationId]="evaluationId" [sectionKey]="s.id" [sectionName]="s.name"
-            [notes]="s.id===MANUAL_KEY ? (instrDraft[s.id] || '') : ''" [images]="sectionImages(s.id)" [hasTables]="!!refCount(s.id)" (copyTables)="copyTablesImage(s.id)"
-            [hasText]="!!text(s.id)" [readOnly]="readOnly()"
-            (useApi)="cgOpen=''; useApiFor(s.id)" (saved)="load(); changed.emit()" (closed)="cgOpen=''"></nl-chatgpt-anamnesis>
+          <!-- "Gerar com IA" (with the instruction) and ChatGPT open in dialogs: see the end of this template -->
 
+          <!-- Under the text: word count on the left; reading aloud and the "view and copy" links on the right -->
           <div class="edbar">
             <span class="wc">{{words(editing===s.id ? editText : text(s.id))}} palavras</span>
             <!-- Read aloud with the local natural voice (Piper via the local API; Windows voice as fallback). No AI, nothing leaves the machine -->
@@ -343,31 +345,34 @@
               <button class="speed" (click)="reader.cycleRate()" title="Velocidade da leitura">{{reader.rate.toString().replace('.', ',')}}x</button>
               <button *ngIf="reader.key===s.id" class="speed" (click)="reader.stop()" aria-label="Parar leitura"><nl-icon name="stop"/></button>
             </ng-container>
-            <button *ngIf="refCount(s.id)" class="link tlink" (click)="toggleRefs(s.id)">{{refLabel(s.id)}}</button>
+            <span class="sp"></span>
+            <button *ngIf="s.id===DEMAND_KEY && demandInFile() && !demandIsFromFile() && !readOnly()" type="button" class="tl" (click)="useFileDemand()"><nl-icon name="doc"/> Usar o texto do arquivo</button>
+            <button *ngIf="text(s.id)" type="button" class="tl" (click)="copyText(s.id)"><nl-icon [name]="copied===s.id ? 'check' : 'copy'"/> {{copied===s.id ? 'Copiado' : 'Copiar texto'}}</button>
+            <button *ngIf="s.id===MANUAL_KEY && conclusionSources().length" type="button" class="tl" (click)="copyAll()" title="Copia os textos de todas as seções usadas na conclusão"><nl-icon [name]="copied==='__all' ? 'check' : 'list'"/> {{copied==='__all' ? 'Copiado' : 'Copiar tudo'}}</button>
+            <button *ngIf="(section(s.id)?.version || 1) > 1" type="button" class="tl" [class.on]="versionsOpen===s.id" (click)="versionsOpen = versionsOpen===s.id ? '' : s.id" [attr.aria-expanded]="versionsOpen===s.id"><nl-icon name="restore"/> Versões <span class="act-n">{{(section(s.id)?.version || 1) - 1}}</span></button>
+            <button *ngIf="previous?.sections?.[s.id]" type="button" class="tl" [class.on]="prevOpen===s.id" (click)="prevOpen = prevOpen===s.id ? '' : s.id" [attr.aria-expanded]="prevOpen===s.id"><nl-icon name="calendar"/> Avaliação anterior</button>
+            <button *ngIf="isCreated(s.id) && !readOnly() && !locked()" type="button" class="tl danger" [disabled]="!!creatingSection" (click)="setCreated(s.id, false)"><nl-icon name="trash"/> Excluir do documento</button>
+            <button *ngIf="!isCreated(s.id) && !isMissing(s.id) && !isExcluded(s.id) && !readOnly() && !locked()" type="button" class="tl danger" [disabled]="!!creatingSection" (click)="setExcluded(s.id, true)" title="Tira o título, as tabelas e os textos desta parte do Word baixado"><nl-icon name="trash"/> Excluir do documento</button>
+            <button *ngIf="isExcluded(s.id) && !readOnly() && !locked()" type="button" class="tl" [disabled]="!!creatingSection" (click)="setExcluded(s.id, false)"><nl-icon name="restore"/> Incluir no documento</button>
+            <button *ngIf="canWrite() && !isMissing(s.id) && !isExcluded(s.id)" type="button" class="tl strong" (click)="viewInDocument(s.id)"><nl-icon name="eye"/> Ver no documento</button>
+          </div>
           </div>
 
-          <!-- Reference material: read-only, from the base document -->
-          <div *ngIf="fileShown(s.id).length" class="file-text">
-            <div class="ft-head"><nl-icon name="doc"/><b>No arquivo base, nesta seção</b><small>Tudo o que o Word já tem neste bloco. Fica como está; o texto acima entra no campo de interpretação.</small></div>
-            <ng-container *ngFor="let b of fileShown(s.id)">
-              <p *ngIf="b.type==='p'">{{b.text}}</p>
-              <img *ngIf="b.type==='img'" [src]="b.src" class="ft-img" alt="Imagem do arquivo base" loading="lazy">
-              <div *ngIf="b.type==='table'" class="ref-scroll"><table class="dt">
-                <tr *ngFor="let row of b.grid; let r=index">
-                  <ng-container *ngFor="let c of row">
-                    <th *ngIf="r===0" [attr.rowspan]="c.rowspan" [attr.colspan]="c.colspan">{{c.text}}</th>
-                    <td *ngIf="r>0" [attr.rowspan]="c.rowspan" [attr.colspan]="c.colspan">{{c.text}}</td>
-                  </ng-container>
-                </tr>
-              </table></div>
+          <!-- Reference data: read-only, from the base document, below the text and full width -->
+          <section *ngIf="refs(s.id).length || fileShown(s.id).length || (s.id===MANUAL_KEY && conclusionSources().length)" class="refdata" aria-label="Dados de referência">
+            <!-- Collapsed by default: the header is the button that opens and closes it -->
+            <button type="button" class="rd-head" (click)="toggleRefs(s.id)" [attr.aria-expanded]="refOpen===s.id" [attr.aria-controls]="'rd-'+s.id">
+              <span class="rd-ico"><nl-icon name="lock"/></span><b>{{s.id===MANUAL_KEY ? 'Textos das seções usados pela IA' : 'Dados de referência'}}</b><small>{{s.id===MANUAL_KEY ? 'Seções de resultados · somente leitura' : 'Arquivo base · somente leitura'}}</small>
+              <span class="rd-toggle">{{refOpen===s.id ? 'Ocultar' : 'Mostrar'}}<nl-icon [name]="refOpen===s.id ? 'chevu' : 'chevd'"/></span>
+            </button>
+            <div *ngIf="refOpen===s.id" [id]="'rd-'+s.id" class="rd-body">
+            <ng-container *ngIf="s.id===MANUAL_KEY">
+              <button type="button" class="tl rd-read" (click)="readSources()"><nl-icon name="book"/> Ler em modo leitura</button>
+              <div *ngFor="let t of conclusionSources()" class="ref-text">
+                <p class="label-caps">{{t.name}}</p>
+                <p *ngFor="let p of paragraphs(t.text)" [class.ptitle]="p.title">{{p.text}}</p>
+              </div>
             </ng-container>
-          </div>
-          <div *ngIf="refOpen===s.id" class="ed-tables">
-            <div class="subh"><nl-icon name="table"/> {{s.id===MANUAL_KEY ? 'Textos das seções usados pela IA' : 'Tabelas de referência'}} <small>— do arquivo base, somente leitura</small></div>
-            <div *ngFor="let t of (s.id===MANUAL_KEY ? conclusionSources() : [])" class="ref-text">
-              <p class="label-caps">{{t.name}}</p>
-              <p *ngFor="let p of paragraphs(t.text)" [class.ptitle]="p.title">{{p.text}}</p>
-            </div>
             <div *ngFor="let t of refs(s.id)" class="ref-table">
               <div class="ref-scroll"><table class="dt">
                 <tr *ngFor="let row of t.grid; let r=index">
@@ -379,34 +384,31 @@
               </table></div>
               <p *ngIf="t.caption" class="footnote">{{t.caption}}</p>
             </div>
-          </div>
-
-          </div>
-          <!-- Actions of the section: one card on the right, each button with its name -->
-          <aside class="actcard" aria-label="Ações da seção">
-            <ng-container *ngIf="!readOnly()">
-              <p class="act-h">Escrever</p>
-              <button class="act" [class.on]="editing===s.id" [disabled]="editing===s.id" (click)="startEdit(s.id)"><nl-icon name="edit"/> {{text(s.id) ? 'Editar' : 'Escrever'}}</button>
-              <button class="act" [disabled]="generating || isHand(s.id)" (click)="useApiFor(s.id)" [title]="isHand(s.id) ? handWhy(s.id) : ''"><nl-icon [name]="text(s.id) && !isHand(s.id) ? 'restore' : 'spark'"/> {{gen[s.id]==='running'?'Gerando…':text(s.id) && !isHand(s.id) && s.id!==DEMAND_KEY?'Regenerar':'Gerar com IA'}}</button>
-              <button *ngIf="s.id!==MANUAL_KEY" class="act" [class.on]="sectionInstr===s.id" [disabled]="isHand(s.id)" (click)="openInstr(s.id)" [attr.aria-expanded]="sectionInstr===s.id"><nl-icon name="chat"/> Regenerar com instrução</button>
-              <button class="act" [class.on]="cgOpen===s.id" [disabled]="isHand(s.id)" (click)="toggleCg(s.id)" [attr.aria-expanded]="cgOpen===s.id"><nl-icon name="external"/> ChatGPT</button>
-              <button *ngIf="s.id===DEMAND_KEY && demandInFile() && !demandIsFromFile()" class="act" (click)="useFileDemand()"><nl-icon name="doc"/> Usar o texto do arquivo</button>
-              <p *ngIf="isHand(s.id)" class="act-why">{{handWhy(s.id)}}</p>
-            </ng-container>
-            <p class="act-h">Ver e copiar</p>
-            <button *ngIf="canWrite() && !isMissing(s.id)" class="act" (click)="viewInDocument(s.id)"><nl-icon name="eye"/> Ver no documento</button>
-            <button *ngIf="text(s.id)" class="act" (click)="copyText(s.id)"><nl-icon [name]="copied===s.id ? 'check' : 'copy'"/> {{copied===s.id ? 'Copiado' : 'Copiar texto'}}</button>
-            <button *ngIf="s.id===MANUAL_KEY && conclusionSources().length" class="act" (click)="copyAll()" title="Copia os textos de todas as seções usadas na conclusão"><nl-icon [name]="copied==='__all' ? 'check' : 'list'"/> {{copied==='__all' ? 'Copiado' : 'Copiar tudo'}}</button>
-            <button *ngIf="(section(s.id)?.version || 1) > 1" class="act" [class.on]="versionsOpen===s.id" (click)="versionsOpen = versionsOpen===s.id ? '' : s.id" [attr.aria-expanded]="versionsOpen===s.id"><nl-icon name="restore"/> Versões <span class="act-n">{{(section(s.id)?.version || 1) - 1}}</span></button>
-            <button *ngIf="previous?.sections?.[s.id]" class="act" [class.on]="prevOpen===s.id" (click)="prevOpen = prevOpen===s.id ? '' : s.id" [attr.aria-expanded]="prevOpen===s.id"><nl-icon name="calendar"/> Avaliação anterior</button>
-            <button *ngIf="isCreated(s.id) && !readOnly() && !locked()" class="act danger" [disabled]="!!creatingSection" (click)="setCreated(s.id, false)"><nl-icon name="trash"/> Excluir do documento</button>
-          </aside>
-          </div>
+            <!-- Everything else the Word already has in this block: kept as it is, apart from the editable text above -->
+            <details *ngIf="fileShown(s.id).length" class="file-text">
+              <summary><nl-icon name="chevr"/> Texto presente no arquivo base</summary>
+              <div class="ft-row"><small class="ft-note">Tudo o que o Word já tem neste bloco. Fica como está; o texto acima entra no campo de interpretação.</small>
+                <button *ngIf="hasFileText(s.id)" type="button" class="tl" (click)="readFileText(s.id, s.name)"><nl-icon name="book"/> Modo leitura</button></div>
+              <ng-container *ngFor="let b of fileShown(s.id)">
+                <p *ngIf="b.type==='p'">{{b.text}}</p>
+                <img *ngIf="b.type==='img'" [src]="b.src" class="ft-img" alt="Imagem do arquivo base" loading="lazy">
+                <div *ngIf="b.type==='table'" class="ref-scroll"><table class="dt">
+                  <tr *ngFor="let row of b.grid; let r=index">
+                    <ng-container *ngFor="let c of row">
+                      <th *ngIf="r===0" [attr.rowspan]="c.rowspan" [attr.colspan]="c.colspan">{{c.text}}</th>
+                      <td *ngIf="r>0" [attr.rowspan]="c.rowspan" [attr.colspan]="c.colspan">{{c.text}}</td>
+                    </ng-container>
+                  </tr>
+                </table></div>
+              </ng-container>
+            </details>
+            </div>
+          </section>
 
           <!-- Footer fixed at the bottom: previous, approve and go on, next -->
           <div class="secfoot">
             <button class="btn btn-secondary" [disabled]="!neighbour(s.id, -1)" (click)="select(neighbour(s.id, -1))"><nl-icon name="chevl"/> {{neighbourName(s.id, -1) || 'Início'}}</button>
-            <span class="ai-note">{{state(s.id)==='gen' && aiOn() ? 'Rascunho de IA · só entra no Word depois de aprovado' : 'Seção ' + (i+1) + ' de ' + reviewRows().length}}</span>
+            <span class="ai-note"><b>Seção {{i+1}} de {{reviewRows().length}}</b><small *ngIf="state(s.id)==='gen' && aiOn()">Rascunho de IA · só entra no Word depois de aprovado</small></span>
             <button *ngIf="neighbour(s.id, 1)" class="btn btn-secondary" (click)="select(neighbour(s.id, 1))">{{state(s.id)==='gen' && !readOnly() ? 'Pular' : neighbourName(s.id, 1)}} <nl-icon name="chevr"/></button>
             <button *ngIf="!readOnly() && state(s.id)==='gen' && !isMissing(s.id) && editing!==s.id" class="btn btn-primary" (click)="approveAndNext(s.id)"><nl-icon name="check"/> {{isLastPending(s.id) ? 'Aprovar' : 'Aprovar e próxima'}}</button>
           </div>
@@ -440,7 +442,7 @@
             <p *ngFor="let p of paragraphs(text(s.id)).slice(0, docActive===s.id ? 99 : 2)" [class.ptitle]="p.title">{{p.text}}</p>
             <p *ngIf="!text(s.id)" class="muted">Sem texto ainda.</p>
           </ng-container>
-          <div *ngIf="editing===s.id" class="dblk-edit" (click)="$event.stopPropagation()">
+          <div *ngIf="editing===s.id && !editFull" class="dblk-edit" (click)="$event.stopPropagation()">
             <nl-dictate [evaluationId]="evaluationId" (keydown.escape)="closeEdit()"><nl-rich-editor #rte [html]="editInitHtml" label="Texto da seção" (htmlChange)="editHtml=$event" (textChange)="onEditText(s.id, $event)"></nl-rich-editor></nl-dictate>
             <small class="caption">{{autoSaving ? 'Salvando…' : autoSaved ? 'Salvo às ' + autoSaved + '. O Word ao lado já mostra a mudança.' : 'O Word ao lado se atualiza a cada pausa na digitação.'}}</small>
           </div>
@@ -500,7 +502,7 @@
       <p class="caption">Marque as seções que você revisou. {{apmLocks() ? 'Com todas aprovadas, a avaliação fica travada e o Word pode ser baixado.' : 'As que ficarem sem marcar continuam em revisão.'}}</p>
       <div class="apm-tools"><button type="button" class="link" (click)="apmAll(true)">Marcar todas</button><button type="button" class="link" (click)="apmAll(false)">Desmarcar todas</button></div>
       <ul class="apm-list">
-        <li *ngFor="let s of approveRows()" [class.off]="!apmCanPick(s.id)">
+        <li *ngFor="let s of approveRows(); trackBy: bySection" [class.off]="!apmCanPick(s.id)">
           <label>
             <input type="checkbox" [checked]="state(s.id)==='ap' || apmSel[s.id]" [disabled]="!apmCanPick(s.id)" (change)="apmSel[s.id]=$any($event.target).checked">
             <span class="nm">{{s.name}}</span>
@@ -517,3 +519,178 @@
     </div>
   </div>
 </ng-container>
+
+<!-- ===== Edit mode: whole window, index | editor sheet | tools, autosave with real states ===== -->
+<div *ngIf="editFull && editing" class="em" role="dialog" aria-modal="true" [attr.aria-label]="'Modo edição: ' + emName()">
+  <header class="em-bar">
+    <span class="em-logo" aria-hidden="true"><nl-icon name="edit"/></span>
+    <div class="em-t"><b>Modo edição</b><small>{{emName()}} · Seção {{emPos() + 1}} de {{emIndex().length}}</small></div>
+    <!-- Quick actions, as in Word: save, undo, redo -->
+    <div class="em-quick" role="toolbar" aria-label="Salvar, desfazer e refazer">
+      <button type="button" class="qb" (click)="emSaveNow()" [disabled]="saveState==='saving'" aria-label="Salvar" title="Salvar (Ctrl+S)"><nl-icon name="save"/></button>
+      <button type="button" class="qb" (mousedown)="$event.preventDefault()" (click)="emUndo()" [disabled]="!rte?.canUndo" aria-label="Desfazer" title="Desfazer (Ctrl+Z)"><nl-icon name="undo"/></button>
+      <button type="button" class="qb" (mousedown)="$event.preventDefault()" (click)="emRedo()" [disabled]="!rte?.canRedo" aria-label="Refazer" title="Refazer (Ctrl+Y)"><nl-icon name="redo"/></button>
+    </div>
+    <span class="em-save" [ngClass]="'s-' + saveState" role="status" aria-live="polite">
+      <i aria-hidden="true"></i><span class="lbl-s">{{emSaveLabel()}}</span>
+      <button *ngIf="saveState==='error'" type="button" class="link" (click)="emRetry()">Tentar novamente</button>
+    </span>
+    <div class="em-tools-top">
+      <span class="em-wwrap">
+        <button type="button" class="tb" [class.on]="emWidthOpen" [attr.aria-expanded]="emWidthOpen" aria-controls="em-width" (click)="emWidthOpen=!emWidthOpen; emWidthPreview=''" [attr.aria-label]="'Largura do texto: ' + emWidthName()" title="Largura do texto"><nl-icon name="layers"/><span>{{emWidthName()}}</span><nl-icon class="chev" [name]="emWidthOpen ? 'chevu' : 'chevd'"/></button>
+        <div *ngIf="emWidthOpen" id="em-width" class="em-wpop" role="dialog" aria-label="Largura do texto">
+          <p class="pop-h">Largura do texto</p>
+          <div class="wlist" role="radiogroup" aria-label="Largura do texto">
+            <button *ngFor="let w of EM_WIDTHS" type="button" role="radio" class="wopt" [class.on]="emWidth===w.id" [attr.aria-checked]="emWidth===w.id" (click)="emPickWidth(w.id)"
+              (mouseenter)="emWidthPreview=w.id" (mouseleave)="emWidthPreview=''" (focus)="emWidthPreview=w.id" (blur)="emWidthPreview=''">
+              <span class="wprev" aria-hidden="true"><span class="wcol" [style.width.%]="w.pct"><i></i><i></i><i></i><i class="short"></i></span></span>
+              <span class="wtx"><b>{{w.name}}</b><small>{{w.hint}}</small></span>
+              <nl-icon *ngIf="emWidth===w.id" name="check" class="wok"/>
+            </button>
+          </div>
+        </div>
+      </span>
+      <button type="button" class="tb" (click)="emToReading()" title="Abre o texto salvo no modo leitura"><nl-icon name="book"/><span>Modo leitura</span></button>
+      <button *ngIf="emCanFull()" type="button" class="tb" (click)="emToggleFull()" [attr.aria-pressed]="emFull"><nl-icon [name]="emFull ? 'exitfull' : 'fullscreen'"/><span>{{emFull ? 'Sair da tela cheia' : 'Tela cheia'}}</span></button>
+      <button type="button" class="tb" (click)="emClose()" title="Salva o que falta e volta à seção (Esc)"><nl-icon name="close"/><span>Fechar</span></button>
+    </div>
+  </header>
+
+  <div class="em-mid">
+    <!-- Index -->
+    <nav *ngIf="emSide" class="em-side" [class.over]="emNarrow()" aria-label="Seções">
+      <div class="side-h"><nl-icon name="list"/><b>Seções</b><button type="button" class="ib" (click)="emSide=false" aria-label="Recolher seções" title="Recolher"><nl-icon name="chevl"/></button></div>
+      <ol>
+        <li *ngFor="let s of emIndex(); trackBy: bySection">
+          <button type="button" [class.on]="s.id===editing" [attr.aria-current]="s.id===editing ? 'true' : null" (click)="emGo(s.id)">
+            <span class="num">{{secNum(s.id)}}</span><span class="nm">{{s.name}}</span>
+          </button>
+        </li>
+      </ol>
+    </nav>
+    <button *ngIf="!emSide" type="button" class="em-rail l" (click)="emSide=true" [attr.aria-label]="'Mostrar seções (' + emIndex().length + ')'" title="Mostrar seções"><span class="rl">Seções · {{emIndex().length}}</span><nl-icon name="chevr"/></button>
+    <div *ngIf="emNarrow() && (emSide || emTools)" class="scrim" (click)="emSide=false; emTools=false"></div>
+
+    <!-- Editor -->
+    <div class="em-scroll">
+      <div class="em-head" [style.max-width]="emSheet() ? emSheet() + 'px' : 'none'"><p class="em-kicker">Seção {{secNum(editing)}}</p><h2 class="em-title">{{emName()}}</h2></div>
+      <nl-dictate #emDict [evaluationId]="evaluationId">
+        <nl-rich-editor #rte [page]="true" [zoom]="emZoom" [sheet]="emSheet()" [html]="editInitHtml" [label]="'Texto da seção ' + emName()" (htmlChange)="editHtml=$event" (textChange)="onEditText(editing, $event)"></nl-rich-editor>
+      </nl-dictate>
+    </div>
+
+    <!-- Tools -->
+    <aside *ngIf="emTools" class="em-tools" [class.over]="emNarrow()" aria-label="Ferramentas">
+      <div class="side-h"><nl-icon name="gear"/><b>Ferramentas</b><button type="button" class="ib" (click)="emTools=false" aria-label="Recolher ferramentas" title="Recolher"><nl-icon name="chevr"/></button></div>
+
+      <div *ngIf="emPanel==='find'" class="em-pane" role="search" aria-label="Buscar e substituir nesta seção">
+        <div class="pane-h"><b>Buscar e substituir</b><button type="button" class="ib" (click)="emTogglePanel('find')" aria-label="Fechar"><nl-icon name="close"/></button></div>
+        <input id="em-find-q" class="input" [(ngModel)]="emFind.q" (ngModelChange)="emFindRun()" (keydown.enter)="$event.preventDefault(); emFindStep(1)" placeholder="Buscar nesta seção" aria-label="Buscar">
+        <div class="find-row"><small aria-live="polite">{{emFind.q ? (emFound ? (emFoundAt + 1) + ' de ' + emFound : 'Nada encontrado') : ''}}</small>
+          <button type="button" class="ib" [disabled]="!emFound" (click)="emFindStep(-1)" aria-label="Anterior"><nl-icon name="chevu"/></button>
+          <button type="button" class="ib" [disabled]="!emFound" (click)="emFindStep(1)" aria-label="Próxima"><nl-icon name="chevd"/></button></div>
+        <label class="chk"><input type="checkbox" [(ngModel)]="emFind.matchCase" (ngModelChange)="emFindRun()"> Diferenciar maiúsculas</label>
+        <label class="chk"><input type="checkbox" [(ngModel)]="emFind.word" (ngModelChange)="emFindRun()"> Palavra inteira</label>
+        <input class="input" [(ngModel)]="emFind.by" placeholder="Substituir por" aria-label="Substituir por">
+        <div class="find-row"><button type="button" class="btn btn-secondary btn-sm" [disabled]="!emFound || readOnly()" (click)="emReplace()">Substituir</button>
+          <button type="button" class="btn btn-secondary btn-sm" [disabled]="!emFound || readOnly()" (click)="emReplaceAll()">Substituir todas</button></div>
+        <small class="hint">Só nesta seção. Ctrl+Z desfaz.</small>
+      </div>
+
+      <div *ngIf="emPanel==='versions'" class="em-pane em-versions">
+        <nl-section-versions [evaluationId]="evaluationId" [sectionKey]="editing" [canRestore]="!readOnly()" (closed)="emPanel=''" (restored)="emVersionRestored()"></nl-section-versions>
+      </div>
+
+      <div *ngIf="emPanel==='listen'" class="em-pane">
+        <div class="pane-h"><b>Voz e velocidade</b><button type="button" class="ib" (click)="emPanel=''" aria-label="Fechar"><nl-icon name="close"/></button></div>
+        <label class="lbl">Voz
+          <select class="input" [ngModel]="emNarr.voiceId" (ngModelChange)="emNarr.setVoice($event)" aria-label="Voz">
+            <option *ngFor="let v of emNarr.voices()" [value]="v.id">{{v.name}}{{v.gender ? ' · ' + v.gender : ''}}{{v.local ? ' (local)' : ''}}</option>
+          </select></label>
+        <label class="lbl">Velocidade
+          <select class="input" [ngModel]="emNarr.rate" (ngModelChange)="emNarr.setRate(+$event)" aria-label="Velocidade">
+            <option *ngFor="let r of EM_RATES" [ngValue]="r">{{r.toString().replace('.', ',')}}×</option>
+          </select></label>
+        <small class="hint">Lê o texto atual da seção, frase por frase. Ao digitar, a leitura para.</small>
+      </div>
+
+      <ng-container *ngIf="emPanel!=='find' && emPanel!=='versions'">
+        <p class="grp">Ações do texto</p>
+        <button type="button" class="tool" [disabled]="readOnly()" (click)="emPaste()"><nl-icon name="clipboard"/><span><b>Colar resposta</b><small>no cursor ou sobre o trecho selecionado</small></span></button>
+        <button type="button" class="tool" (click)="emCopy()"><nl-icon name="copy"/><span><b>Copiar texto</b></span></button>
+        <button type="button" class="tool" [disabled]="readOnly()" (click)="emDictate()" [class.on]="dictation.state()==='recording'"><nl-icon name="mic"/><span><b>{{dictation.state()==='recording' ? 'Ouvindo… clique para concluir' : 'Ditar texto'}}</b><small>insere no cursor, pela voz</small></span></button>
+        <nl-filter-select *ngIf="snippetsFor(editing).length" size="sm" [searchable]="true" ariaLabel="Inserir texto-padrão" placeholder="Inserir texto-padrão" [options]="snippetsFor(editing)" value="" (valueChange)="insertSnippet($event)"></nl-filter-select>
+
+        <ng-container *ngIf="!isHand(editing) && !readOnly()">
+          <p class="grp">Inteligência artificial</p>
+          <button type="button" class="tool" (click)="openAi(editing)" [disabled]="generating"><nl-icon name="spark"/><span><b>Gerar com IA</b><small>com a sua instrução, aqui mesmo</small></span></button>
+          <button type="button" class="tool" (click)="openCg(editing)"><nl-icon name="external"/><span><b>ChatGPT</b><small>plugin ou copiar e colar</small></span></button>
+        </ng-container>
+
+        <p class="grp">Revisão</p>
+        <button type="button" class="tool" (click)="emTogglePanel('find')"><nl-icon name="search"/><span><b>Buscar e substituir</b><small>Ctrl+F</small></span></button>
+        <button type="button" class="tool" (click)="emTogglePanel('versions')"><nl-icon name="restore"/><span><b>Versões</b></span><span class="cnt">{{(section(editing)?.version || 1) - 1}}</span></button>
+        <button *ngIf="canWrite() && !isMissing(editing) && !isExcluded(editing)" type="button" class="tool" (click)="emSeeInDoc()"><nl-icon name="eye"/><span><b>Ver no documento</b></span></button>
+        <div class="tool listen">
+          <button type="button" class="playb" (click)="emListen()" [attr.aria-label]="emNarr.state()==='playing' || emNarr.state()==='loading' ? 'Pausar leitura' : 'Ouvir texto'"><nl-icon [name]="emNarr.state()==='playing' || emNarr.state()==='loading' ? 'pause' : 'play'"/></button>
+          <span><b>Ouvir texto</b><small>{{emNarr.state()==='unavailable' ? 'Voz indisponível agora' : emNarr.count() && emNarr.state()!=='ready' && emNarr.state()!=='done' ? 'frase ' + (emNarr.index() + 1) + ' de ' + emNarr.count() : 'frase por frase'}}</small></span>
+          <button *ngIf="emNarr.state()==='playing' || emNarr.state()==='paused' || emNarr.state()==='loading'" type="button" class="ib" (click)="emNarr.stop()" aria-label="Parar leitura"><nl-icon name="stop"/></button>
+          <button type="button" class="ib" (click)="emTogglePanel('listen')" aria-label="Voz e velocidade" title="Voz e velocidade"><nl-icon name="gear"/></button>
+        </div>
+
+        <div *ngIf="emOrigin()" class="origin"><nl-icon name="info"/><span><b>{{emOrigin()}}</b><small>{{sourceLabel(editing)}}</small></span></div>
+      </ng-container>
+    </aside>
+    <button *ngIf="!emTools" type="button" class="em-rail r" (click)="emTools=true" aria-label="Mostrar ferramentas" title="Mostrar ferramentas"><span class="rl">Ferramentas</span><nl-icon name="chevl"/></button>
+  </div>
+
+  <footer class="em-foot">
+    <div class="ef-l"><span class="mono">{{emWords()}} palavras · {{emChars()}} caracteres</span>
+      <span class="zoomc" role="group" aria-label="Zoom do texto"><button type="button" (click)="emZoomStep(-1)" [disabled]="emZoom<=EM_ZOOMS[0]" aria-label="Diminuir zoom">−</button><span>{{(emZoom*100).toFixed(0)}}%</span><button type="button" (click)="emZoomStep(1)" [disabled]="emZoom>=EM_ZOOMS[EM_ZOOMS.length-1]" aria-label="Aumentar zoom">+</button></span></div>
+    <div class="ef-c">
+      <button type="button" class="nb" [disabled]="emPos()<=0" (click)="emStep(-1)"><nl-icon name="chevl"/><span>Seção anterior</span></button>
+      <span class="pos">Seção {{emPos() + 1}} de {{emIndex().length}}</span>
+      <button type="button" class="nb" [disabled]="emPos()>=emIndex().length-1" (click)="emStep(1)"><span>Próxima seção</span><nl-icon name="chevr"/></button>
+    </div>
+    <div class="ef-r">
+      <button *ngIf="emCanDiscard()" type="button" class="btn btn-secondary" (click)="emDiscard()" title="Volta o texto ao que era quando você abriu o modo edição nesta seção">Descartar alterações</button>
+      <button type="button" class="btn btn-primary" (click)="emClose(true)"><nl-icon name="check"/> Concluir edição</button>
+    </div>
+  </footer>
+</div>
+
+<!-- ===== "Gerar com IA": the section's instruction (or the conclusion's guidance) and the generation, in a dialog ===== -->
+<div *ngIf="aiFor" class="modal-bg ai-bg" (mousedown)="$event.target===$event.currentTarget && !generating && (aiFor='')">
+  <div class="modal ai-modal" role="dialog" aria-modal="true" [attr.aria-label]="'Gerar com IA: ' + sectionName(aiFor)">
+    <div class="ai-h"><span class="ai-ico"><nl-icon name="spark"/></span><div><b>Gerar com IA</b><small>{{sectionName(aiFor)}}</small></div>
+      <button type="button" class="x" [disabled]="generating" (click)="aiFor=''" aria-label="Fechar">×</button></div>
+    <div *ngIf="!aiReady" class="alert warn small"><nl-icon name="info"/><div><p>A geração pela API está desligada. Ative em Configurações → IA e custos, ou use o ChatGPT.</p></div></div>
+    <ng-container *ngIf="aiFor===MANUAL_KEY">
+      <label class="ai-l" for="ai-instr">Suas orientações para a conclusão</label>
+      <nl-dictate [evaluationId]="evaluationId"><textarea id="ai-instr" class="input" rows="7" [(ngModel)]="instrDraft[aiFor]" placeholder="Ex.: Integrar os achados de atenção e funções executivas com as queixas escolares; destacar memória preservada."></textarea></nl-dictate>
+      <small class="hint">A IA junta os textos das seções de resultados (sem a descrição da demanda e sem a anamnese) seguindo estas orientações.</small>
+    </ng-container>
+    <p *ngIf="aiFor===DEMAND_KEY" class="hint">A IA escreve a Descrição da demanda a partir da anamnese enviada.</p>
+    <ng-container *ngIf="aiFor!==MANUAL_KEY && aiFor!==DEMAND_KEY">
+      <div class="ai-lrow"><label class="ai-l" for="ai-instr">Instrução para esta seção</label>
+        <button type="button" class="link" (click)="resetInstruction(aiFor)">{{instruction(aiFor)?.model ? 'Usar a do modelo' : 'Usar padrão'}}</button></div>
+      <nl-dictate [evaluationId]="evaluationId"><textarea id="ai-instr" class="input mono" rows="8" [(ngModel)]="instrDraft[aiFor]"></textarea></nl-dictate>
+      <small class="hint">A IA usa só os dados desta seção no arquivo base, mais esta instrução. Mudar aqui vale para esta avaliação.</small>
+    </ng-container>
+    <p *ngIf="text(aiFor)" class="hint">O texto atual é substituído pelo novo rascunho e fica guardado em Versões.</p>
+    <div class="ai-f">
+      <button type="button" class="btn btn-secondary" [disabled]="generating" (click)="aiFor=''">Cancelar</button>
+      <button type="button" class="btn btn-primary" [disabled]="generating || !aiReady" (click)="runAi()"><nl-icon name="spark"/> {{generating ? 'Gerando…' : 'Gerar com IA'}}</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== ChatGPT (plugin or assisted copy and paste) in a dialog; the draft comes back into the section ===== -->
+<div *ngIf="cgFor" class="modal-bg ai-bg" (mousedown)="$event.target===$event.currentTarget && (cgFor='')">
+  <div class="modal ai-modal cg-modal" role="dialog" aria-modal="true" [attr.aria-label]="'ChatGPT: ' + sectionName(cgFor)">
+    <nl-chatgpt-anamnesis [manual]="!aiOn()" [evaluationId]="evaluationId" [sectionKey]="cgFor" [sectionName]="sectionName(cgFor)"
+      [notes]="cgFor===MANUAL_KEY ? (instrDraft[cgFor] || '') : ''" [images]="sectionImages(cgFor)" [hasTables]="!!refCount(cgFor)" (copyTables)="copyTablesImage(cgFor)"
+      [hasText]="!!text(cgFor)" [readOnly]="readOnly()"
+      (useApi)="cgToAi()" (saved)="onCgSaved()" (closed)="cgFor=''"></nl-chatgpt-anamnesis>
+  </div>
+</div>

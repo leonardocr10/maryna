@@ -19,3 +19,14 @@ body.nl-resizing { cursor: col-resize; user-select: none; }
 #nl-tip.below::after { bottom: auto; top: -5px; }
 [data-theme="dark"] #nl-tip { background: #e8efed; color: #10221f; }
 @media (prefers-reduced-motion: reduce) { #nl-tip { transition: none; } }
+
+/* Reading mode: sentence being read aloud and search matches (CSS Custom Highlight API; the text itself is not changed) */
+::highlight(nl-speak) { background-color: var(--rt-speak, rgba(15, 111, 94, .18)); }
+::highlight(nl-search) { background-color: var(--rt-hit, #ffe58a); color: var(--rt-hit-text, #1a1a1a); }
+::highlight(nl-search-cur) { background-color: var(--rt-hit-cur, #ffb347); color: var(--rt-hit-text, #1a1a1a); }
+/* Reading mode open: the page behind does not scroll (wheel and touch stay in the reading text) */
+html.nl-reading-open, html.nl-reading-open body { overflow: hidden !important; overscroll-behavior: none; }
+
+/* Edit mode find and replace (Custom Highlight API; the text is not changed) */
+::highlight(nl-ed-find) { background-color: #ffe58a; color: #1a1a1a; }
+::highlight(nl-ed-find-cur) { background-color: #ffb347; color: #1a1a1a; }

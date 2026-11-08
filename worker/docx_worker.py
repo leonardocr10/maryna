@@ -23,9 +23,48 @@ FIXED=[
  ('recomendacoes',('INDICAÇÕES E RECOMENDAÇÕES','SUGESTÕES E ENCAMINHAMENTOS')),
 ]
 def clean(v):return re.sub(r'\s+',' ',v or '').strip()
+# ---- Reading what Word shows ----
+# python-docx's Paragraph.text only reads runs that are direct children of the paragraph (and hyperlinks). Text typed
+# with "Track changes" on (w:ins), inside content controls (w:sdt), smart tags, simple fields (w:fldSimple) or custom
+# XML is missed, and whole blocks inside a block content control are skipped. These helpers read the text as Word
+# shows it (deleted text excluded) and walk the body through those wrappers. Writing still goes through python-docx.
+_W='{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+_MC='{http://schemas.openxmlformats.org/markup-compatibility/2006}'
+_SKIP={_W+'del',_W+'moveFrom',_W+'delText',_W+'instrText',_W+'delInstrText',_W+'txbxContent',_W+'pPr',_W+'rPr',_W+'sdtPr',_W+'sdtEndPr',_MC+'Fallback',_W+'footnoteReference',_W+'endnoteReference',_W+'commentReference'}
+def ptext(p_el):
+ """Visible text of a w:p element: tracked insertions, content controls, smart tags and field results included;
+ deleted text, field codes and text boxes (their own paragraphs) left out. Tabs and line breaks as in Paragraph.text."""
+ out=[]
+ def walk(el):
+  for c in el:
+   tag=c.tag
+   if not isinstance(tag,str) or tag in _SKIP:continue
+   if tag==_W+'p':continue                      # nested paragraph (text box): not part of this line
+   if tag==_W+'t':out.append(c.text or '')
+   elif tag==_W+'tab' or tag==_W+'ptab':out.append('\t')
+   elif tag in (_W+'br',_W+'cr'):out.append('\n')
+   elif tag==_W+'noBreakHyphen':out.append('-')
+   elif tag==_W+'softHyphen':pass
+   else:walk(c)
+ walk(p_el)
+ return ''.join(out)
+def body_elements(container):
+ """Paragraphs and tables of a body (or table cell) in reading order, entering block content controls and custom
+ XML wrappers, as Word displays them."""
+ for ch in container.iterchildren():
+  tag=ch.tag
+  if not isinstance(tag,str):continue
+  if tag==_W+'p' or tag==_W+'tbl':yield ch
+  elif tag in (_W+'sdt',_W+'customXml'):
+   inner=ch.find(_W+'sdtContent') if tag==_W+'sdt' else ch
+   if inner is not None:yield from body_elements(inner)
+def body_children(doc):return list(body_elements(doc.element.body))
+def cell_text(cell):
+ """Text of a table cell: its paragraphs (also inside content controls), one per line, as cell.text does."""
+ return '\n'.join(ptext(e) for e in body_elements(cell._tc) if e.tag==_W+'p')
 def element_text(ch,doc):
- if ch.tag.endswith('}p'):return clean(Paragraph(ch,doc).text)
- if ch.tag.endswith('}tbl'):return clean(' '.join(c.text for r in Table(ch,doc).rows for c in r.cells))
+ if ch.tag.endswith('}p'):return clean(ptext(ch))
+ if ch.tag.endswith('}tbl'):return clean(' '.join(cell_text(c) for r in Table(ch,doc).rows for c in r.cells))
  return ''
 def is_interpretation(label):
  return len(label)<130 and ('INTERPRETAÇÃO E OBSERVAÇÕES CLÍNICAS' in label or label=='INTERPRETAÇÃO CLÍNICA:')
@@ -87,8 +126,8 @@ def existing_narrative(marker,doc):
  Trailing blank lines stay, so the spacing of the template is kept."""
  run=[];last=-1;sib=marker.getnext()
  while sib is not None and sib.tag.endswith('}p') and not has_protected_content(sib):
-  text=clean(Paragraph(sib,doc).text)
-  if text and is_boundary(Paragraph(sib,doc).text):break
+  text=clean(ptext(sib))
+  if text and is_boundary(ptext(sib)):break
   run.append(sib)
   if text:last=len(run)-1
   sib=sib.getnext()
@@ -112,7 +151,7 @@ def table_rows(table):
  """Plain rows of cell text, with stacked rows split apart."""
  out=[]
  for i,row in enumerate(table.rows):
-  texts=[c.text for c in row.cells]
+  texts=[cell_text(c) for c in row.cells]
   # the header row keeps its line breaks ("SOMA DOS / ESCORES T" is one title)
   out.extend((i and stacked_lines(texts)) or [[clean(t) for t in texts]])
  return out
@@ -127,7 +166,7 @@ def table_grid(table):
    elif tc in cells:
     if tc not in counted:cells[tc]['rowspan']+=1;counted.add(tc)
    else:
-    cells[tc]={'text':clean(c.text),'raw':c.text,'rowspan':1,'colspan':1};new.add(tc);line.append(cells[tc])
+    raw=cell_text(c);cells[tc]={'text':clean(raw),'raw':raw,'rowspan':1,'colspan':1};new.add(tc);line.append(cells[tc])
   grid.append(line)
  out=[];width=max((sum(c['colspan'] for c in l) for l in grid),default=0)
  for i,line in enumerate(grid):
@@ -139,9 +178,9 @@ def table_grid(table):
   for c in line:c.pop('raw',None)
  return out
 def all_elements(doc):
- for ch in doc.element.body.iterchildren():
+ for ch in body_elements(doc.element.body):
   if ch.tag.endswith('}p'):
-   yield {'type':'p','text':clean(Paragraph(ch,doc).text)}
+   yield {'type':'p','text':clean(ptext(ch))}
   elif ch.tag.endswith('}tbl'):
    t=Table(ch,doc);yield {'type':'table','rows':table_rows(t),'grid':table_grid(t)}
 def section_ranges(elements,markers):
@@ -175,10 +214,10 @@ def title_ranges(elements,markers):
 PLACE_DATE_RE=re.compile(r'^[A-ZÀ-Ý][^,\d]{1,60},\s*\d{1,2}\s+de\s+[A-Za-zçÇ]+\s+de\s+\d{4}\.?$')
 def place_date_paragraph(doc):
  found=None
- for ch in doc.element.body.iterchildren():
+ for ch in body_elements(doc.element.body):
   if ch.tag.endswith('}p'):
    p=Paragraph(ch,doc)
-   if PLACE_DATE_RE.match(clean(p.text)):found=p
+   if PLACE_DATE_RE.match(clean(ptext(ch))):found=p
  return found
 # Fixed parts the intern fills under a one-cell heading box ("FONTES FUNDAMENTAIS DE INFORMAÇÕES", "INSTRUMENTOS/
 # AVALIAÇÕES APLICADAS"...). The psychologist may rewrite them: key "fixo_<heading>", text = paragraphs under the box.
@@ -189,23 +228,28 @@ def fixed_slug(label):
 def fixed_heading(ch,doc):
  """Label of a one-cell all-caps heading box that is not a section the system writes, else None."""
  if not ch.tag.endswith('}tbl'):return None
- cells=list(dict.fromkeys(clean(c.text) for r in Table(ch,doc).rows for c in r.cells if clean(c.text)))
+ cells=list(dict.fromkeys(clean(cell_text(c)) for r in Table(ch,doc).rows for c in r.cells if clean(cell_text(c))))
  if len(cells)!=1:return None
  t=re.sub(r'\s*:\s*$','',cells[0])
  if len(t)<4 or len(t)>80 or t.upper().startswith('INTERPRETA') or domain_of(t.upper()) or not re.search(r'[A-Za-zÀ-ÿ]{3}',t):return None
  return t
+def visible_runs(p):
+ """Runs Word shows in a paragraph, wherever they sit (insertions, content controls, smart tags, hyperlinks)."""
+ from docx.text.run import Run
+ bad=('del','moveFrom','txbxContent','Fallback')
+ return [Run(r,p) for r in p._p.iter(_W+'r') if not any(isinstance(a.tag,str) and a.tag.rsplit('}',1)[-1] in bad for a in r.iterancestors()) and next((a for a in r.iterancestors(_W+'p')),None) is p._p]
 def paragraph_html(p):
  """One body paragraph as editor HTML: bold/italic/underline runs; Word list paragraphs become list items."""
  esc=lambda s:s.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
  parts=[]
- for r in p.runs:
+ for r in visible_runs(p):
   t=esc(r.text)
   if not t:continue
   if r.underline:t='<u>'+t+'</u>'
   if r.italic:t='<i>'+t+'</i>'
   if r.bold:t='<b>'+t+'</b>'
   parts.append(t)
- body=''.join(parts).strip() or esc(p.text.strip())
+ body=''.join(parts).strip() or esc(ptext(p._p).strip())
  ppr=p._p.pPr
  is_list=ppr is not None and ppr.numPr is not None
  return ('li' if is_list else 'p'),body
@@ -213,7 +257,7 @@ def block_html(paragraphs):
  """Paragraphs (with text) as editor HTML, consecutive list items grouped in one <ul>."""
  out=[];open_list=False
  for p in paragraphs:
-  if not clean(p.text):continue
+  if not clean(ptext(p._p)):continue
   kind,body=paragraph_html(p)
   if kind=='li' and not open_list:out.append('<ul>');open_list=True
   if kind!='li' and open_list:out.append('</ul>');open_list=False
@@ -223,8 +267,7 @@ def block_html(paragraphs):
 def fixed_blocks(doc):
  """[(key,label,heading element)] after the first section marker, in document order."""
  out=[];m=Markers();started=False;keys=set()
- for ch in doc.element.body.iterchildren():
-  if not (ch.tag.endswith('}p') or ch.tag.endswith('}tbl')):continue
+ for ch in body_elements(doc.element.body):
   if m.key(element_text(ch,doc)):started=True;continue
   if not started:continue
   label=fixed_heading(ch,doc)
@@ -242,7 +285,7 @@ def section_titles(elements,markers):
  return out
 def inspect(path):
  d=open_docx(path);elements=list(all_elements(d));markers=[];m=Markers()
- children=[ch for ch in d.element.body.iterchildren() if ch.tag.endswith('}p') or ch.tag.endswith('}tbl')]
+ children=body_children(d)
  position={ch:i for i,ch in enumerate(children)}
  for i,e in enumerate(elements):
   txt=e['text'] if e['type']=='p' else ' '.join(x for row in e['rows'] for x in row)
@@ -251,10 +294,10 @@ def inspect(path):
    old=existing_narrative(children[i],d)
    # old text is flagged so it is never sent to the AI as if it were evidence
    for ch in old:elements[position[ch]]['replaceable']=k
-   markers.append({'key':k,'index':i,'label':txt,'existing_paragraphs':sum(1 for ch in old if clean(Paragraph(ch,d).text)),'existing_text':'\n\n'.join(t for t in (Paragraph(ch,d).text.strip() for ch in old) if t)})
+   markers.append({'key':k,'index':i,'label':txt,'existing_paragraphs':sum(1 for ch in old if clean(ptext(ch))),'existing_text':'\n\n'.join(t for t in (ptext(ch).strip() for ch in old) if t)})
  section_ranges(elements,markers)
  titled=sorted({domain_of(e['text'] if e['type']=='p' else ' '.join(x for row in e['rows'] for x in row)) for e in elements}-{None})
- return {'elements':elements,'markers':markers,'titled_domains':titled,'title_ranges':title_ranges(elements,markers),'identification':identification(d),'place_date':(lambda p:clean(p.text) if p is not None else None)(place_date_paragraph(d)),'fixed_blocks':[(lambda html:{'key':k,'label':label,'index':position[ch],'existing_html':html,'existing_text':plain_from_html(html)})(block_html([Paragraph(o,d) for o in existing_narrative(ch,d)])) for k,label,ch in fixed_blocks(d)],'titles':section_titles(elements,markers),'warnings':['Conferir visualmente a ordem dos marcadores e os resultados.']}
+ return {'elements':elements,'markers':markers,'titled_domains':titled,'title_ranges':title_ranges(elements,markers),'identification':identification(d),'place_date':(lambda p:clean(ptext(p._p)) if p is not None else None)(place_date_paragraph(d)),'fixed_blocks':[(lambda html:{'key':k,'label':label,'index':position[ch],'existing_html':html,'existing_text':plain_from_html(html)})(block_html([Paragraph(o,d) for o in existing_narrative(ch,d)])) for k,label,ch in fixed_blocks(d)],'titles':section_titles(elements,markers),'warnings':['Conferir visualmente a ordem dos marcadores e os resultados.']}
 
 REPORT_FONT='Arial';REPORT_HALF_POINTS='22'  # Arial 11 pt
 def run_props(bold=False,red=False):
@@ -349,6 +392,8 @@ class _Rich(HTMLParser):
   if _pt(st.get('font-size')):f['sz']=_pt(st['font-size'])
   if _hex(st.get('color')):f['color']=_hex(st['color'])
   if _hex(st.get('background-color')):f['bg']=_hex(st['background-color'])
+  fam=(st.get('font-family') or '').split(',')[0].strip().strip(chr(34)+chr(39))
+  if fam in EDITOR_FONTS:f['font']=fam
   if st.get('font-weight') in ('bold','600','700','800','900'):f['b']=True
   if st.get('font-style')=='italic':f['i']=True
   td=st.get('text-decoration','')+' '+st.get('text-decoration-line','')
@@ -386,6 +431,8 @@ def plain_from_html(html):
 def rich_matches(html,content):
  """The formatting is used only while it still describes the saved text (a new AI draft or a restore drops it)."""
  return bool(html) and clean(plain_from_html(html))==clean(content)
+# Fonts the editor offers (web/src/app/rich-text.ts EDITOR_FONTS); any other name is ignored.
+EDITOR_FONTS={'Arial','Calibri','Cambria','Georgia','Segoe UI','Tahoma','Times New Roman','Verdana'}
 def _twips(pt):return str(int(round(pt*20)))
 def _rich_props(f,title=False,red=False):
  rpr=run_props(bool(f.get('b')) or title,red and not f.get('color'))
@@ -394,6 +441,9 @@ def _rich_props(f,title=False,red=False):
   e=OxmlElement(tag)
   if val is not None:e.set(qn('w:val'),val)
   sz.addprevious(e)
+ if f.get('font'):
+  rf=rpr.find(qn('w:rFonts'))
+  for a in ('ascii','hAnsi','cs','eastAsia'):rf.set(qn('w:'+a),f['font'])
  if f.get('i'):before_sz('w:i');before_sz('w:iCs')
  if f.get('s'):before_sz('w:strike')
  if f.get('color'):before_sz('w:color',f['color'])
@@ -466,17 +516,17 @@ def field_spans(text):
 def identification(doc):
  """Values currently written in the identification lines (before the first section heading)."""
  out={};m=Markers()
- for ch in doc.element.body.iterchildren():
+ for ch in body_elements(doc.element.body):
   if not ch.tag.endswith('}p'):
    if ch.tag.endswith('}tbl') and m.key(element_text(ch,doc)):break
    continue
-  text=Paragraph(ch,doc).text
+  text=ptext(ch)
   for label,(a,b) in field_spans(text).items():out.setdefault(label,text[a:b].strip())
  return out
 def replace_span(p,start,end,new):
  """Replace characters [start,end) of a paragraph, keeping the formatting of the run where the value starts."""
  runs=list(p.runs)
- if ''.join(r.text for r in runs)!=p.text:return False  # hyperlinks/fields inside: leave untouched
+ if ''.join(r.text for r in runs)!=ptext(p._p):return False  # tracked changes/controls/fields inside: leave untouched
  pos=0;done=False
  for r in runs:
   rs,re_=pos,pos+len(r.text);pos=re_
@@ -487,24 +537,23 @@ def replace_span(p,start,end,new):
  return done
 def fill_fields(doc,fields):
  filled=[];m=Markers()
- for ch in list(doc.element.body.iterchildren()):
+ for ch in body_children(doc):
   if ch.tag.endswith('}tbl'):
    if m.key(element_text(ch,doc)):break
    continue
-  if not ch.tag.endswith('}p'):continue
-  p=Paragraph(ch,doc)
+  p=Paragraph(ch,doc);text=ptext(ch)
   # right-to-left so earlier offsets stay valid
-  for label,(a,b) in sorted(field_spans(p.text).items(),key=lambda x:-x[1][0]):
+  for label,(a,b) in sorted(field_spans(text).items(),key=lambda x:-x[1][0]):
    value=fields.get(label)
    if value is None or label in filled:continue
-   if p.text[a:b]==value or replace_span(p,a,b,value):filled.append(label)
+   if ptext(ch)[a:b]==value or replace_span(p,a,b,value):filled.append(label)
  return filled
 FIELD_LABEL='Interpretação Clínica:'
 def fieldless_anchors(d):
  """{key: last element of the section} for sections whose title exists but that have no interpretation field.
  The export adds the field label and the text right after it, i.e. after the section's tables and captions."""
  elements=list(all_elements(d));m=Markers();markers=[]
- children=[ch for ch in d.element.body.iterchildren() if ch.tag.endswith('}p') or ch.tag.endswith('}tbl')]
+ children=body_children(d)
  for i,e in enumerate(elements):
   k=m.key(e['text'] if e['type']=='p' else ' '.join(x for row in e['rows'] for x in row))
   if k:markers.append({'key':k,'index':i})
@@ -519,7 +568,7 @@ def created_anchors(d,keys,order):
  That is the title of the next section of the report found in the file; None when there is none (they then go
  before the closing place/date line, or at the end)."""
  elements=list(all_elements(d));m=Markers();starts={}
- children=[ch for ch in d.element.body.iterchildren() if ch.tag.endswith('}p') or ch.tag.endswith('}tbl')]
+ children=body_children(d)
  fixed={k for k,_ in FIXED}
  for i,e in enumerate(elements):
   t=e['text'] if e['type']=='p' else ' '.join(x for row in e['rows'] for x in row)
@@ -533,7 +582,35 @@ def created_anchors(d,keys,order):
   nxt=next((n for n in order[order.index(k)+1:] if n in starts),None)
   out[k]=children[starts[nxt]] if nxt is not None else None
  return out
-def export(base,out,sections,highlight=False,fields=None,rich=None,created=None):
+END_RE=re.compile(r'^(REFER[ÊE]NCIAS|LAUDO REALIZADO|_{3,})')
+def excluded_elements(d,keys):
+ """Sections the psychologist chose to leave out of the report (approved exception to rule 2, always her choice):
+ {key: [elements]} from the section's title up to the next section title, fixed heading box, references,
+ signature or closing place/date line. A section with no title of its own in the file (e.g. the DIVA field)
+ cannot be found and is not removed."""
+ if not keys:return {}
+ elements=list(all_elements(d));m=Markers();starts={}
+ children=body_children(d)
+ fixed={k for k,_ in FIXED};stops=set()
+ for i,e in enumerate(elements):
+  t=e['text'] if e['type']=='p' else ' '.join(x for row in e['rows'] for x in row)
+  k=m.key(t)
+  if k in fixed:starts.setdefault(k,i);stops.add(i)
+  dom=domain_of(t)
+  if dom:starts.setdefault(dom,i);stops.add(i)
+  if fixed_heading(children[i],d) or END_RE.match(clean(t).upper()):stops.add(i)
+ closing=place_date_paragraph(d)
+ if closing is not None:
+  stops.update(i for i,ch in enumerate(children) if ch is closing._p)
+ out={}
+ for k in keys:
+  if k not in starts:continue
+  s=starts[k];e=min([x for x in stops if x>s],default=len(children))
+  out[k]=children[s:e]
+ return out
+def export(base,out,sections,highlight=False,fields=None,rich=None,created=None,excluded=None):
+ excluded=[k for k in (excluded or [])]
+ sections={k:v for k,v in sections.items() if k not in excluded}
  rich={k:v for k,v in (rich or {}).items() if k in sections and rich_matches(v,sections[k])}
  if os.path.abspath(base)==os.path.abspath(out):raise SystemExit('out must differ from base')
  before=sha256(base)
@@ -542,29 +619,30 @@ def export(base,out,sections,highlight=False,fields=None,rich=None,created=None)
  place=clean((fields or {}).get('__local_data'))
  if place:
   p=place_date_paragraph(d)
-  if p is not None and (clean(p.text)==place or replace_span(p,0,len(p.text),place)):filled.append('__local_data')
+  if p is not None and (clean(ptext(p._p))==place or replace_span(p,0,len(ptext(p._p)),place)):filled.append('__local_data')
  anchors=fieldless_anchors(d);added=[]
  # computed before any change, while the element order is still the file's
  created=created or {};made=created_anchors(d,[k for k in created.get('keys',[]) if k in sections and clean(sections[k])],created.get('order',[]))
+ gone=excluded_elements(d,excluded)
  closing=place_date_paragraph(d)
  # fixed parts rewritten by the psychologist: same replacement as a section, under their heading box
  for k,label,ch in fixed_blocks(d):
   if k in sections and clean(sections[k]) and k not in seen:
    current=existing_narrative(ch,d);seen.append(k)
-   if clean(' '.join(Paragraph(o,d).text for o in current))==clean(sections[k]):continue
+   if clean(' '.join(ptext(o) for o in current))==clean(sections[k]):continue
    for old in current:
-    if clean(Paragraph(old,d).text):replaced[k]=replaced.get(k,0)+1
+    if clean(ptext(old)):replaced[k]=replaced.get(k,0)+1
     old.getparent().remove(old)
    insert_rich_after(ch,rich[k],highlight) if k in rich else insert_after(ch,sections[k],highlight)
- for ch in list(d.element.body.iterchildren()):
-  if not (ch.tag.endswith('}p') or ch.tag.endswith('}tbl')) or ch.getparent() is None:continue
+ for ch in body_children(d):
+  if ch.getparent() is None:continue
   k=m.key(element_text(ch,d))
   if k in sections and clean(sections[k]) and k not in seen:
    current=existing_narrative(ch,d);seen.append(k)
    # same text as the document (e.g. demand copied from the file): keep the original paragraphs and formatting
-   if clean(' '.join(Paragraph(o,d).text for o in current))==clean(sections[k]):continue
+   if clean(' '.join(ptext(o) for o in current))==clean(sections[k]):continue
    for old in current:
-    if clean(Paragraph(old,d).text):replaced[k]=replaced.get(k,0)+1
+    if clean(ptext(old)):replaced[k]=replaced.get(k,0)+1
     old.getparent().remove(old)
    insert_rich_after(ch,rich[k],highlight) if k in rich else insert_after(ch,sections[k],highlight)
  # sections written by hand for a title without field: add the field label and the text after the section's content
@@ -587,10 +665,14 @@ def export(base,out,sections,highlight=False,fields=None,rich=None,created=None)
   if k in SLOTS:label=new_paragraph(FIELD_LABEL,bold=True,red=highlight);title.addnext(label);last=label
   insert_rich_after(last,rich[k],highlight) if k in rich else insert_after(last,sections[k],highlight)
   seen.append(k);made_keys.append(k)
+ # sections left out by the psychologist's choice: their title, tables and texts are removed from the copy
+ for els in gone.values():
+  for el in els:
+   if el.getparent() is not None:el.getparent().remove(el)
  d.save(out)
  after=sha256(base)
  if before!=after:raise SystemExit('base document changed during export')
- return {'inserted':seen,'missing':[k for k in sections if k not in seen],'fields_filled':filled,'replaced':replaced,'fields_added':added,'created':made_keys,'formatted':sorted(rich),'base_sha256':before,'out_sha256':sha256(out)}
+ return {'excluded':sorted(gone),'inserted':seen,'missing':[k for k in sections if k not in seen],'fields_filled':filled,'replaced':replaced,'fields_added':added,'created':made_keys,'formatted':sorted(rich),'base_sha256':before,'out_sha256':sha256(out)}
 def letter(out,title,subtitle,content):
  """Standalone document (the devolutiva): title, patient name and the approved text, same body style as the report."""
  if os.path.exists(out):raise SystemExit('output exists')
@@ -608,8 +690,7 @@ MAX_IMAGE=4*1024*1024
 def images(path):
  import base64
  d=open_docx(path);out={};i=0
- for ch in d.element.body.iterchildren():
-  if not (ch.tag.endswith('}p') or ch.tag.endswith('}tbl')):continue
+ for ch in body_children(d):
   if ch.tag.endswith('}p'):
    srcs=[]
    for blip in ch.iter(qn('a:blip')):
@@ -626,7 +707,7 @@ def main():
  sys.stdout.reconfigure(encoding='utf-8')
  if op=='inspect': print(json.dumps(inspect(sys.argv[2]),ensure_ascii=False))
  elif op=='export':
-  spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(export(spec['base'],spec['out'],spec['sections'],spec.get('highlight',False),spec.get('fields'),spec.get('rich'),spec.get('created')),ensure_ascii=False))
+  spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(export(spec['base'],spec['out'],spec['sections'],spec.get('highlight',False),spec.get('fields'),spec.get('rich'),spec.get('created'),spec.get('excluded')),ensure_ascii=False))
  elif op=='images': print(json.dumps(images(sys.argv[2])))
  elif op=='letter':
   spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(letter(spec['out'],spec.get('title',''),spec.get('subtitle',''),spec['content']),ensure_ascii=False))

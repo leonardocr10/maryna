@@ -146,7 +146,7 @@ input[type=date].input { font-family: var(--font); }
 .zoom-switch .zval { min-width: 52px; justify-content: center; font-size: 12px; color: var(--text-3); }
 
 /* Modal (confirmation) */
-.modal-bg { position: fixed; inset: 0; z-index: 60; background: rgba(8, 24, 22, .45); display: grid; place-items: center; padding: 24px; animation: nlFade .15s ease; }
+.modal-bg { position: fixed; inset: 0; z-index: 1100; background: rgba(8, 24, 22, .45); display: grid; place-items: center; padding: 24px; animation: nlFade .15s ease; }
 .modal { width: min(480px, 100%); background: var(--card); color: var(--text); border: 1px solid var(--border-card); border-radius: var(--radius-xl); box-shadow: 0 24px 60px rgba(0,0,0,.25); padding: 24px; animation: nlPop .18s ease; }
 .modal h2 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
 .modal-body { font-size: 14px; line-height: 1.55; color: var(--text-2); }

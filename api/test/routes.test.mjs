@@ -157,6 +157,14 @@ test('assistant reads but cannot generate, edit, approve, export or delete', asy
   assert.equal(aiRequests.length, calls, 'nothing reached the AI');
 });
 
+test('natural voices: online ones only when authorized, local Piper models when installed', async () => {
+  assert.equal((await api('GET', '/api/tts/voices')).status, 401);
+  const r = await api('GET', '/api/tts/voices', {token: tokens.assistant});
+  assert.equal(r.status, 200);
+  // the test server runs with TTS_PROVIDER empty: no online voice is offered
+  assert.ok(r.data.voices.every(v => v.local && v.id.startsWith('local:pt_BR-')));
+});
+
 test('only an admin changes the AI settings', async () => {
   assert.equal((await api('PUT', '/api/ai/settings', {token: tokens.psy, body: {model: 'gpt-4.1', enabled: false}})).status, 403);
 });
@@ -315,6 +323,17 @@ test('a section missing from the base is created in the Word only when the psych
   const off = await api('PUT', ev + '/created-sections', {token: tokens.psy, body: {key: 'recomendacoes', create: false}});
   assert.deepEqual(off.data.created_sections, []);
   assert.ok(!(await text()).includes('INDICAÇÕES E RECOMENDAÇÕES'));
+  // excluded by the psychologist (approved exception to rule 2): the section leaves the Word copy, the base file stays
+  assert.equal((await api('PUT', ev + '/excluded-sections', {token: tokens.assistant, body: {key: 'anamnesis'}})).status, 403);
+  assert.equal((await api('PUT', ev + '/excluded-sections', {token: tokens.psy, body: {key: 'nada'}})).status, 400);
+  assert.ok((await text()).includes('ANAMNESE'));
+  const ex = await api('PUT', ev + '/excluded-sections', {token: tokens.psy, body: {key: 'anamnesis'}});
+  assert.deepEqual(ex.data.excluded_sections, ['anamnesis']);
+  assert.ok(!(await text()).includes('ANAMNESE'));
+  assert.deepEqual(docxText(path.join(tmp, 'base.docx')), before);
+  const back = await api('PUT', ev + '/excluded-sections', {token: tokens.psy, body: {key: 'anamnesis', exclude: false}});
+  assert.deepEqual(back.data.excluded_sections, []);
+  assert.ok((await text()).includes('ANAMNESE'));
 });
 
 test('deleting an evaluation removes its encrypted files and drafts', async () => {

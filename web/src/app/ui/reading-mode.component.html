@@ -1,0 +1,158 @@
+<div *ngIf="r.doc() as d" #root class="rm" [attr.data-rt]="prefs().theme" [class.full]="full()" role="dialog" aria-modal="true" [attr.aria-label]="'Modo leitura: ' + d.title">
+
+  <!-- 1. Top bar -->
+  <header class="rm-bar">
+    <span class="rm-ico" aria-hidden="true"><nl-icon name="book"/></span>
+    <div class="rm-t">
+      <b>Modo leitura</b>
+      <small>{{r.list().length > 1 ? 'Seção ' + (r.index() + 1) + ' de ' + r.list().length + ' · ' : ''}}{{words()}} palavras · cerca de {{minutes()}} min (estimativa)</small>
+    </div>
+    <div class="rm-tools" role="toolbar" aria-label="Modo leitura">
+      <button *ngIf="canEdit()" type="button" class="tb primary" (click)="edit()" title="Editar esta seção no modo edição"><nl-icon name="edit"/><span>Editar</span></button>
+      <button *ngIf="r.list().length > 1" type="button" class="tb" [class.on]="sideOpen()" [attr.aria-pressed]="sideOpen()" aria-controls="rm-side" (click)="toggleSide()"><nl-icon name="list"/><span>Índice</span></button>
+      <button type="button" class="tb" [class.on]="panel()==='width'" [attr.aria-expanded]="panel()==='width'" aria-controls="rm-width" (click)="togglePanel('width')" [attr.aria-label]="'Largura do texto: ' + widthName()" title="Largura do texto"><nl-icon name="layers"/><span class="opt-l">{{widthName()}}</span><nl-icon class="chev" [name]="panel()==='width' ? 'chevu' : 'chevd'"/></button>
+      <button type="button" class="tb" [class.on]="panel()==='look'" [attr.aria-expanded]="panel()==='look'" aria-controls="rm-look" (click)="togglePanel('look')"><nl-icon name="type"/><span>Aparência</span></button>
+      <button type="button" class="tb" [class.on]="searchOpen()" [attr.aria-expanded]="searchOpen()" (click)="toggleSearch()" aria-label="Buscar no laudo" title="Buscar (Ctrl+F)"><nl-icon name="search"/><span class="opt-l">Buscar</span></button>
+      <button *ngIf="fullOk" type="button" class="tb" (click)="toggleFull()" [attr.aria-pressed]="full()"><nl-icon [name]="full() ? 'exitfull' : 'fullscreen'"/><span>{{full() ? 'Sair da tela cheia' : 'Tela cheia'}}</span></button>
+      <button #exitBtn type="button" class="tb" (click)="close()" title="Sair (Esc)"><nl-icon name="close"/><span>Sair</span></button>
+    </div>
+
+    <!-- Width popover: each option with a small drawing of the page -->
+    <div *ngIf="panel()==='width'" id="rm-width" class="pop wpop" role="dialog" aria-label="Largura do texto">
+      <p class="pop-h">Largura do texto</p>
+      <div class="wlist" role="radiogroup" aria-label="Largura do texto">
+        <button *ngFor="let w of WIDTHS" type="button" role="radio" class="wopt" [class.on]="prefs().width===w.id" [attr.aria-checked]="prefs().width===w.id" (click)="pickWidth(w.id)"
+          (mouseenter)="previewWidth.set(w.id)" (mouseleave)="previewWidth.set('')" (focus)="previewWidth.set(w.id)" (blur)="previewWidth.set('')">
+          <span class="wprev" aria-hidden="true"><span class="wcol" [style.width.%]="w.pct"><i></i><i></i><i></i><i class="short"></i></span></span>
+          <span class="wtx"><b>{{w.name}}</b><small>{{w.hint}}</small></span>
+          <nl-icon *ngIf="prefs().width===w.id" name="check" class="wok"/>
+        </button>
+      </div>
+    </div>
+
+    <!-- Appearance popover -->
+    <div *ngIf="panel()==='look'" id="rm-look" class="pop" role="dialog" aria-label="Aparência de leitura">
+      <p class="pop-h">Aparência de leitura</p>
+      <span class="lbl">Fonte</span>
+      <select class="font-sel" [ngModel]="prefs().font" (ngModelChange)="set({font: $event})" aria-label="Fonte" [style.font-family]="family()">
+        <optgroup label="Sem serifa"><option *ngFor="let f of sansFonts" [value]="f.id" [style.font-family]="f.family">{{f.name}}</option></optgroup>
+        <optgroup label="Com serifa"><option *ngFor="let f of serifFonts" [value]="f.id" [style.font-family]="f.family">{{f.name}}</option></optgroup>
+      </select>
+      <span class="lbl">Tamanho da fonte</span>
+      <div class="seg3" role="group" aria-label="Tamanho da fonte">
+        <button type="button" (click)="set({size: prefs().size - 1})" [disabled]="prefs().size<=14" aria-label="Diminuir fonte">A−</button>
+        <span aria-live="polite">{{prefs().size}}</span>
+        <button type="button" (click)="set({size: prefs().size + 1})" [disabled]="prefs().size>=28" aria-label="Aumentar fonte">A+</button>
+      </div>
+      <label class="row"><span>Espaçamento entre linhas</span>
+        <select [ngModel]="prefs().line" (ngModelChange)="set({line: +$event})"><option *ngFor="let l of LINES" [ngValue]="l">{{l.toFixed(1).replace('.', ',')}}</option></select></label>
+      <label class="row"><span>Largura do texto</span>
+        <select [ngModel]="prefs().width" (ngModelChange)="set({width: $event})"><option *ngFor="let w of WIDTHS" [value]="w.id">{{w.name}}</option></select></label>
+      <span class="lbl">Tema</span>
+      <div class="themes" role="radiogroup" aria-label="Tema de leitura">
+        <button type="button" role="radio" [attr.aria-checked]="prefs().theme==='light'" [class.on]="prefs().theme==='light'" (click)="set({theme: 'light'})"><i class="sw light"></i>Claro</button>
+        <button type="button" role="radio" [attr.aria-checked]="prefs().theme==='sepia'" [class.on]="prefs().theme==='sepia'" (click)="set({theme: 'sepia'})"><i class="sw sepia"></i>Sépia</button>
+        <button type="button" role="radio" [attr.aria-checked]="prefs().theme==='dark'" [class.on]="prefs().theme==='dark'" (click)="set({theme: 'dark'})"><i class="sw dark"></i>Escuro</button>
+      </div>
+      <label *ngIf="d.text" class="row sw-row"><span>Organizar texto <small>listas e parágrafos curtos; as palavras não mudam</small></span>
+        <input type="checkbox" class="switch" [checked]="prefs().organised" (change)="set({organised: $any($event.target).checked})"></label>
+      <div class="row sw-row"><span>Rolagem automática</span>
+        <input type="checkbox" class="switch" aria-label="Rolagem automática" [checked]="autoOn() && !autoPaused()" (change)="$any($event.target).checked ? startAuto() : stopAuto()"></div>
+      <label class="speed"><span>Velocidade</span>
+        <input type="range" min="10" max="160" step="5" [ngModel]="prefs().autoSpeed" (ngModelChange)="set({autoSpeed: +$event})" aria-label="Velocidade da rolagem automática">
+        <small>{{prefs().autoSpeed < 35 ? 'Lenta' : prefs().autoSpeed < 80 ? 'Média' : 'Rápida'}}</small></label>
+      <button type="button" class="link reset" (click)="resetPrefs()">Restaurar padrão</button>
+    </div>
+  </header>
+
+  <!-- Search row -->
+  <div *ngIf="searchOpen()" class="rm-search" role="search">
+    <nl-icon name="search"/>
+    <input #searchBox type="search" [(ngModel)]="query" (ngModelChange)="runSearch()" placeholder="Buscar em todas as seções" aria-label="Buscar no laudo" autocomplete="off">
+    <span class="count" aria-live="polite">{{query.trim().length < 2 ? '' : hits().length ? (hitAt() + 1) + ' de ' + hits().length : 'Nada encontrado'}}</span>
+    <button type="button" class="ib" [disabled]="!hits().length" (click)="searchStep(-1)" aria-label="Ocorrência anterior" title="Anterior (Shift+Enter)"><nl-icon name="chevu"/></button>
+    <button type="button" class="ib" [disabled]="!hits().length" (click)="searchStep(1)" aria-label="Próxima ocorrência" title="Próxima (Enter)"><nl-icon name="chevd"/></button>
+    <button type="button" class="ib" (click)="toggleSearch()" aria-label="Fechar busca"><nl-icon name="close"/></button>
+  </div>
+
+  <div class="rm-progress" role="progressbar" aria-label="Posição de leitura no documento" [attr.aria-valuenow]="progress() | number:'1.0-0'" aria-valuemin="0" aria-valuemax="100">
+    <span [style.width.%]="progress()"></span><b>{{progress() | number:'1.0-0'}}%</b>
+  </div>
+
+  <!-- 2. Index + reading area -->
+  <div class="rm-mid">
+    <nav *ngIf="r.list().length > 1 && sideOpen()" id="rm-side" class="rm-side" [class.over]="narrow()" aria-label="Seções">
+      <div class="side-h"><b>Seções</b><span class="n">{{r.list().length}}</span>
+        <button *ngIf="narrow()" type="button" class="ib" (click)="toggleSide()" aria-label="Fechar índice"><nl-icon name="close"/></button></div>
+      <ol>
+        <li *ngFor="let s of r.list(); let i = index">
+          <button type="button" [class.on]="i===r.index()" [attr.aria-current]="i===r.index() ? 'true' : null" (click)="goTo(i)">
+            <span class="num">{{s.num || ((i + 1).toString().padStart(2, '0'))}}</span><span class="nm">{{s.title}}</span>
+            <span *ngIf="s.status" class="st" [ngClass]="'st-' + s.status.css" [title]="s.status.label" [attr.aria-label]="s.status.label"></span>
+          </button>
+        </li>
+      </ol>
+    </nav>
+    <div *ngIf="narrow() && sideOpen() && r.list().length > 1" class="scrim" (click)="toggleSide()"></div>
+
+    <div #scroller class="rm-scroll" tabindex="0" (scroll)="onScroll()" (wheel)="manualScroll()" (touchmove)="manualScroll()" (pointerdown)="manualScroll()">
+      <div *ngIf="resumeOffer() as o" class="chip resume" role="status">
+        <span>Você parou em <b>{{o.title}}</b>.</span>
+        <button type="button" class="link" (click)="resume()">Continuar de onde parei</button>
+        <button type="button" class="ib sm" (click)="resumeOffer.set(null)" aria-label="Dispensar"><nl-icon name="close"/></button>
+      </div>
+      <article #body class="rm-page" [ngClass]="'w-' + shownWidth()" [style.font-family]="family()"
+        [style.font-size.px]="prefs().size" [style.line-height]="prefs().line">
+        <p *ngIf="d.subtitle" class="rm-kicker">{{d.subtitle}}</p>
+        <h2 class="rm-title">{{d.title}}</h2>
+        <div *ngIf="useHtml()" class="rm-html" [innerHTML]="safeHtml()"></div>
+        <ng-container *ngIf="!useHtml() && prefs().organised">
+          <ng-container *ngFor="let b of blocks()">
+            <h3 *ngIf="b.kind==='h'">{{$any(b).text}}</h3>
+            <p *ngIf="b.kind==='note'" class="note">{{$any(b).text}}</p>
+            <p *ngIf="b.kind==='p'"><b *ngIf="$any(b).label">{{$any(b).label}}: </b>{{$any(b).text}}</p>
+            <ul *ngIf="b.kind==='list'"><li *ngFor="let i of $any(b).items"><b *ngIf="i.label">{{i.label}}: </b>{{i.text}}</li></ul>
+          </ng-container>
+        </ng-container>
+        <ng-container *ngIf="!useHtml() && !prefs().organised"><p *ngFor="let p of plain()" class="pre">{{p}}</p></ng-container>
+      </article>
+    </div>
+    <div *ngIf="autoOn() && autoPaused()" class="chip auto" role="status">
+      <span>Rolagem automática pausada</span>
+      <button type="button" class="link" (click)="startAuto()">Retomar</button>
+      <button type="button" class="ib sm" (click)="stopAuto()" aria-label="Desligar rolagem automática"><nl-icon name="close"/></button>
+    </div>
+  </div>
+
+  <!-- 3. Section navigation -->
+  <nav *ngIf="r.list().length > 1" class="rm-nav" aria-label="Navegação entre seções">
+    <button type="button" class="nb" [disabled]="r.index()===0" (click)="goTo(r.index() - 1)" [title]="titleAt(-1)"><nl-icon name="chevl"/> Anterior</button>
+    <span>Seção {{r.index() + 1}} de {{r.list().length}}</span>
+    <button type="button" class="nb" [disabled]="r.index()===r.list().length-1" (click)="goTo(r.index() + 1)" [title]="titleAt(1)">Próxima seção <nl-icon name="chevr"/></button>
+  </nav>
+
+  <!-- 3. Reading aloud -->
+  <section class="rm-player" aria-label="Leitura em voz alta">
+    <span class="pl-ico" aria-hidden="true"><nl-icon name="headphones"/></span>
+    <div class="pl-t"><b>Leitura em voz alta</b><small aria-live="polite">{{stateLabel()}}{{narrator.state()==='unavailable' ? '' : narrator.count() ? ' · frase ' + (narrator.index() + 1) + ' de ' + narrator.count() : ''}}</small></div>
+    <div class="pl-ctl">
+      <button type="button" class="ib" [disabled]="!narrator.count() || narrator.state()==='unavailable'" (click)="narrator.step(-1)" aria-label="Frase anterior" title="Frase anterior"><nl-icon name="skipback"/></button>
+      <button type="button" class="play" [disabled]="!narrator.count()" (click)="playPause()"
+        [attr.aria-label]="speaking() ? 'Pausar' : narrator.state()==='paused' ? 'Retomar' : 'Reproduzir'" [title]="speaking() ? 'Pausar' : narrator.state()==='paused' ? 'Retomar' : 'Reproduzir'">
+        <nl-icon [name]="speaking() ? 'pause' : 'play'"/></button>
+      <button type="button" class="ib" [disabled]="!narrator.count() || narrator.state()==='unavailable'" (click)="narrator.step(1)" aria-label="Próxima frase" title="Próxima frase"><nl-icon name="skipfwd"/></button>
+      <button type="button" class="ib" [disabled]="narrator.state()==='ready' || narrator.state()==='done' || narrator.state()==='unavailable'" (click)="narrator.stop()" aria-label="Parar" title="Parar"><nl-icon name="stop"/></button>
+    </div>
+    <div class="pl-bar" aria-hidden="true"><span [style.width.%]="narrator.count() ? (narrator.index() + (speaking() ? 0.5 : 0)) / narrator.count() * 100 : 0"></span></div>
+    <button type="button" class="tb more" [class.on]="panel()==='more'" [attr.aria-expanded]="panel()==='more'" (click)="togglePanel('more')">Opções</button>
+    <div class="pl-opts" [class.open]="panel()==='more'">
+      <label><span class="sr">O que ler</span><select [ngModel]="prefs().scope" (ngModelChange)="set({scope: $event})" aria-label="O que a voz lê" title="Até onde a voz lê: para no fim desta seção, ou segue sozinha pelas seções seguintes até o fim do laudo"><option value="section">Ler só esta seção</option><option *ngIf="r.list().length > 1" value="all">Ler até o fim do laudo</option></select></label>
+      <label><span class="sr">Velocidade da voz</span><select [ngModel]="prefs().rate" (ngModelChange)="setRate($event)" aria-label="Velocidade da voz"><option *ngFor="let x of RATES" [ngValue]="x">{{x.toString().replace('.', ',')}}×</option></select></label>
+      <label *ngIf="narrator.voices().length"><span class="sr">Voz</span><select [ngModel]="narrator.voiceId" (ngModelChange)="setVoice($event)" aria-label="Voz">
+        <optgroup *ngIf="onlineVoices().length" label="Vozes naturais"><option *ngFor="let v of onlineVoices()" [value]="v.id">{{v.name}}{{v.gender ? ' · ' + v.gender : ''}}</option></optgroup>
+        <optgroup *ngIf="localVoices().length" label="Vozes locais"><option *ngFor="let v of localVoices()" [value]="v.id">{{v.name}}{{v.gender ? ' · ' + v.gender : ''}}</option></optgroup>
+      </select></label>
+      <label class="follow"><input type="checkbox" class="switch" [checked]="prefs().follow" (change)="set({follow: $any($event.target).checked})"> Acompanhar texto</label>
+    </div>
+  </section>
+</div>

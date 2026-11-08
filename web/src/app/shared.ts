@@ -75,7 +75,7 @@ export const HAND_ONLY = ['hipotese'];
 /** Confirmation shown before an evaluation switches to AI drafting (paid calls). */
 export const AI_MODE_CONFIRM = {tone: 'review' as const, title: 'Usar a IA nesta avaliação?',
   body: 'Com IA, cada seção gerada é enviada à OpenAI e consome créditos da conta da API. Os nomes e dados pessoais são trocados por marcadores antes do envio.',
-  facts: ['Cada geração ou regeneração de seção é cobrada', 'O custo aparece em Custo da IA desta avaliação', 'Dá para voltar ao modo Manual depois'], ok: 'Usar a IA'};
+  facts: ['Cada geração de seção é cobrada', 'O custo aparece em Custo da IA desta avaliação', 'Dá para voltar ao modo Manual depois'], ok: 'Usar a IA'};
 
 export type EvalStatus = 'rs' | 'rv' | 'ap';
 export const STATUS: Record<EvalStatus, {label: string; css: string}> = {rs: {label: 'Rascunho', css: 'idle'}, rv: {label: 'Em revisão', css: 'warn'}, ap: {label: 'Aprovada', css: 'ok'}};

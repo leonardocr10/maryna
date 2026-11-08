@@ -1,4 +1,4 @@
-import {Component, ElementRef, EventEmitter, HostListener, Input, OnDestroy, Output, ViewChild, inject} from '@angular/core';
+import {Component, ElementRef, EventEmitter, HostListener, Input, NgZone, OnDestroy, Output, ViewChild, inject} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {FormsModule} from '@angular/forms';
 import {renderAsync} from 'docx-preview';
@@ -19,10 +19,12 @@ import {Identity, IdentityFormComponent, emptyIdentity} from './ui/identity-form
 import {Pending, ReviewPanelComponent} from './ui/review-panel.component';
 import {SectionVersionsComponent} from './ui/section-versions.component';
 import {DevolutivaComponent} from './ui/devolutiva.component';
-import {PlanComponent} from './ui/plan.component';
+// PlanComponent (Sessões) is hidden for now; import it again with <nl-plan> in the template to show it.
 import {DeliveryComponent} from './ui/delivery.component';
 import {ChatgptAnamnesisComponent} from './ui/chatgpt-anamnesis.component';
 import {TopbarService} from './topbar.service';
+import {ReadingService} from './ui/reading-mode.component';
+import {Narrator, highlight, segmentsOf} from './ui/reading-narrator';
 import {AI_MODE_CONFIRM, CONCLUSION_GUIDANCE, HAND_ONLY, niceTitle, OPTIONAL_SECTIONS, PERCEPTION_MAX_AGE, SECTIONS, SECTION_STATE, STATUS, SectionState, ageText, ageYears, brDate, brl, int, words} from './shared';
 /** Interpretation sections: written from their own tables in the base document. */
 const INTERPRETATION_SLOTS = ['inteligencia', 'percepcao', 'memoria', 'atencao', 'funcoes_executivas', 'comportamento', 'personalidade', 'comportamento_diva'];
@@ -48,7 +50,7 @@ async function writeClipboard(text: string): Promise<boolean> {
 @Component({
   selector: 'nl-evaluation',
   standalone: true,
-  imports: [CommonModule, FormsModule, DropZoneComponent, IdentityFormComponent, IconComponent, FilterSelectComponent, DictateComponent, RichEditorComponent, ReviewPanelComponent, SectionVersionsComponent, DevolutivaComponent, PlanComponent, DeliveryComponent, ChatgptAnamnesisComponent],
+  imports: [CommonModule, FormsModule, DropZoneComponent, IdentityFormComponent, IconComponent, FilterSelectComponent, DictateComponent, RichEditorComponent, ReviewPanelComponent, SectionVersionsComponent, DevolutivaComponent, DeliveryComponent, ChatgptAnamnesisComponent],
   templateUrl: './evaluation.component.html',
   styleUrl: './evaluation.component.css',
 })
@@ -56,6 +58,7 @@ export class EvaluationComponent implements OnDestroy {
   private api = inject(Api);
   private timer = inject(WorkTimer);
   reader = inject(Reader);
+  private reading = inject(ReadingService);
   dictation = inject(Dictation);
   private instrSaveTimer: any;
   private confirm = inject(ConfirmService);
@@ -221,6 +224,7 @@ export class EvaluationComponent implements OnDestroy {
   fromFile(k: string) { const r = this.section(k); return !!r && r.source_summary === 'from_file' && (r.version || 1) === 1 && !!r.content?.trim(); }
   /** Section lists are rebuilt on every change check (names from the document): keep the same DOM rows by id, or clicks get lost. */
   bySection = (_: number, s: {id: string}) => s.id;
+  byKind = (_: number, g: {kind: string}) => g.kind;
   isFixed(k: string) { return k.startsWith('fixo_'); }
   fixedText(k: string) { return this.fixedBlocks().find((b: any) => b.key === k)?.existing_text || ''; }
   private docPos(k: string): number | null {
@@ -248,6 +252,25 @@ export class EvaluationComponent implements OnDestroy {
     return next ? `antes de "${next.name}"` : 'no final, antes do local e data';
   }
   creatingSection = '';
+  // ---------- Sections the psychologist leaves out of the Word (approved exception to rule 2, always her choice) ----------
+  excludedKeys(): string[] { try { const v = JSON.parse(this.current?.excluded_sections || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } }
+  isExcluded(k: string) { return this.excludedKeys().includes(k); }
+  /** Excluding a section of the base file removes its title, tables and texts from the exported copy; the uploaded file never changes. */
+  async setExcluded(k: string, exclude: boolean) {
+    if (this.readOnly() || this.locked() || this.creatingSection) return;
+    const name = this.sectionName(k);
+    if (exclude && !await this.confirm.ask({tone: 'danger', title: `Excluir "${name}" do documento?`,
+      body: 'O título, as tabelas e os textos desta parte saem do Word baixado. O arquivo base enviado continua guardado como está.',
+      facts: ['O texto escrito aqui continua salvo', 'A seção não precisa ser aprovada para finalizar', 'Você pode incluir a seção de novo depois'], ok: 'Excluir do documento'})) return;
+    this.creatingSection = k;
+    try {
+      const r = await this.api.req('PUT', `/evaluations/${this.evaluationId}/excluded-sections`, {key: k, exclude});
+      this.current = {...this.current, excluded_sections: r.excluded_sections.length ? JSON.stringify(r.excluded_sections) : null};
+      this.api.notify(exclude ? `"${name}" foi excluída do documento.` : `"${name}" volta para o documento.`);
+      if (this.inDocView()) this.renderPreview(true);
+      this.changed.emit();
+    } catch {} finally { this.creatingSection = ''; }
+  }
   /** Why the generation buttons are off in this section. */
   handWhy(k: string) {
     if (HAND_ONLY.includes(k)) return 'Escrita só pela psicóloga: a IA nunca redige o diagnóstico.';
@@ -299,12 +322,12 @@ export class EvaluationComponent implements OnDestroy {
   richView(k: string) { const h = this.richOf(k); let v = this.richCache.get(h); if (!v) { v = this.domSan.bypassSecurityTrustHtml(h); this.richCache.set(h, v); } return v; }
   @ViewChild('rte') rte?: RichEditorComponent;
   editHtml = ''; editInitHtml = '';
-  onEditText(k: string, t: string) { this.editText = t; this.autosaveLater(k); }
+  onEditText(k: string, t: string) { this.editText = t; this.saveState = this.isDirty() ? 'dirty' : 'saved'; this.emNarr.stop(); this.autosaveLater(k); }
   /** Replaces the whole text being edited (answer pasted from ChatGPT). */
   private setEditText(t: string) { this.editText = t; this.editInitHtml = this.editHtml = htmlFromText(t); }
   state(k: string): SectionState { const s = this.section(k); if (this.isFixed(k) && !s?.content?.trim()) return 'file'; return !s?.content?.trim() ? 'pend' : s.status === 'approved' ? 'ap' : 'gen'; }
   drafted() { return this.available().filter(s => this.state(s.id) !== 'pend').length; }
-  approved() { return this.available().filter(s => this.state(s.id) === 'ap' || this.state(s.id) === 'file').length; }
+  approved() { return this.available().filter(s => this.state(s.id) === 'ap' || this.state(s.id) === 'file' || this.isExcluded(s.id)).length; }
   total() { return this.available().length; }
   allApproved() { return this.locked() || (this.total() > 0 && this.approved() === this.total()); }
   status() { return this.allApproved() ? STATUS.ap : this.autoDrafted() ? STATUS.rv : STATUS.rs; }
@@ -433,7 +456,7 @@ export class EvaluationComponent implements OnDestroy {
     if (this.state(DEMAND_KEY) !== 'pend' && !await this.confirm.ask({tone: 'review', title: 'Trocar a demanda pelo texto da IA?',
       body: 'A Descrição da demanda atual será substituída por um texto gerado pela IA a partir da anamnese.',
       facts: ['O texto atual vai para o histórico', 'A seção volta para revisão'], ok: 'Gerar com IA'})) return;
-    this.regenerate(DEMAND_KEY, false, true);
+    await this.regenerate(DEMAND_KEY, false, true);
   }
   hasConclusion() { return this.available().some(s => s.id === MANUAL_KEY); }
   genKeys() { return Object.keys(this.gen); }
@@ -447,7 +470,7 @@ export class EvaluationComponent implements OnDestroy {
     if (!this.aiReady) { this.api.notify('Geração pela API desligada. Ative em Configurações.'); return; }
     if (!skipConfirm && this.autoDrafted() && !await this.confirm.ask({tone: 'review', title: 'Gerar tudo de novo?',
       body: 'Os textos atuais de todas as seções geradas pela IA serão substituídos por novas versões. Edições feitas nelas serão perdidas.',
-      facts: ['As versões anteriores ficam no histórico', 'Todas as seções voltam para revisão', 'O custo entra em Custo da IA desta avaliação'], ok: 'Regenerar tudo'})) return;
+      facts: ['As versões anteriores ficam no histórico', 'Todas as seções voltam para revisão', 'O custo entra em Custo da IA desta avaliação'], ok: 'Gerar todas de novo'})) return;
     const keys = only || this.autoKeys();
     for (const k of keys) if (!await this.saveInstruction(k)) return;
     this.gen = Object.fromEntries(keys.map(k => [k, 'pending' as Gen]));
@@ -538,6 +561,10 @@ export class EvaluationComponent implements OnDestroy {
       {kind: 'idle', one: 'pendente', label: 'pendentes'}, {kind: 'missing', one: 'falta no documento', label: 'faltam no documento'}] as {kind: 'ok' | 'warn' | 'idle' | 'missing'; one: string; label: string}[]).filter(g => this.secCount(g.kind));
   }
   secCount(kind: string) { return this.reviewRows().filter(s => this.secKind(s.id) === kind).length; }
+  /** A status in the summary filters the list and the bars; a second click on it shows all again. */
+  pickLegend(kind: 'ok' | 'warn' | 'idle' | 'missing') { this.secFilter = this.secMenu && this.secFilter === kind ? '' : kind; this.secMenu = true; }
+  /** Bars of the progress strip: all sections, or only the filtered ones while the section list is open. */
+  barRows() { return this.secMenu && this.secFilter ? this.secMenuRows() : this.reviewRows(); }
   secMenuRows() { return this.secFilter ? this.reviewRows().filter(s => this.secKind(s.id) === this.secFilter) : this.reviewRows(); }
   // ---------- Documento, modelo B: section texts beside the Word ----------
   /** Section whose text is open in the side list and marked in the Word. */
@@ -636,27 +663,276 @@ export class EvaluationComponent implements OnDestroy {
     const sn = this.snippets.find(x => x.id === id); if (!sn) return;
     this.rte?.insertText(sn.text);
   }
-  autosaveLater(k: string) { clearTimeout(this.autoTimer); this.autoTimer = setTimeout(() => this.autosave(k), this.inDocView() ? 1200 : 2500); }
-  async autosave(k: string) {
+  autosaveLater(k: string) { clearTimeout(this.autoTimer); this.autoTimer = setTimeout(() => this.autosave(k), this.inDocView() ? 1200 : this.editFull ? 1500 : 2500); }
+  /** What the server has for the section being edited (set at start and after each confirmed save). */
+  private lastSaved = {content: '', html: ''};
+  private inflight: Promise<boolean> | null = null;
+  /** Real saving state: success only after the server answers. */
+  saveState: 'saved' | 'dirty' | 'saving' | 'error' | 'empty' = 'saved';
+  isDirty() { return !!this.editing && (this.editText !== this.lastSaved.content || this.editHtml !== this.lastSaved.html); }
+  /** Saves the section being edited. One request at a time, so an older answer never overwrites newer text; on error the
+   *  text stays on screen and can be sent again. The server merges these saves into one version (no version per pause). */
+  async autosave(k: string): Promise<boolean> {
     this.autoTimer = null;
-    if (!k || this.editing !== k || !this.editText.trim() || this.readOnly() || (this.editText === this.text(k) && this.editHtml === this.section(k)?.content_html)) return;
-    const content = this.editText, html = this.editHtml; this.autoSaving = true;
-    try {
-      await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content, html, merge: true});
-      const s = this.section(k); if (s) { s.content = content; s.content_html = html; s.status = 'edited'; }
-      this.autoSaved = new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
-      if (this.inDocView()) this.renderPreview(true);
-    } catch {} finally { this.autoSaving = false; }
+    if (!k || this.editing !== k || this.readOnly()) return true;
+    if (this.inflight) { await this.inflight; if (this.editing !== k) return true; }
+    if (!this.isDirty()) { if (this.saveState !== 'error') this.saveState = 'saved'; return true; }
+    if (!this.editText.trim()) { this.saveState = 'empty'; return false; }
+    const content = this.editText, html = this.editHtml;
+    this.autoSaving = true; this.saveState = 'saving';
+    const req = (async () => {
+      try { await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content, html, merge: true}); return true; } catch { return false; }
+    })();
+    this.inflight = req;
+    const ok = await req;
+    this.inflight = null; this.autoSaving = false;
+    if (!ok) { this.saveState = 'error'; return false; }
+    this.lastSaved = {content, html};
+    const s = this.section(k); if (s) { s.content = content; s.content_html = html; s.status = 'edited'; }
+    this.autoSaved = new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+    if (this.inDocView()) this.renderPreview(true);
+    this.saveState = this.isDirty() ? 'dirty' : 'saved';
+    if (this.isDirty() && this.editing === k) this.autosaveLater(k);
+    return true;
+  }
+  /** Sends what is pending now (the last dictated words included) and waits for the server. */
+  async flushSave(): Promise<boolean> {
+    clearTimeout(this.autoTimer); this.autoTimer = null;
+    if (!this.editing) return true;
+    await this.dictation.stop();
+    return this.autosave(this.editing);
   }
   /** Leaves edit mode; text already saved automatically stays saved. */
   async closeEdit() { clearTimeout(this.autoTimer); this.autoTimer = null; const saved = !!this.autoSaved; this.editing = ''; this.autoSaved = ''; if (saved) { await this.load(); this.changed.emit(); if (this.inDocView()) this.renderPreview(true); } }
-  startEdit(k: string) { this.reader.stop(); this.loadSnippets(); this.versionsOpen = ''; this.autoSaved = ''; this.editing = k; this.editText = this.text(k); this.editInitHtml = this.editHtml = this.richOf(k) || htmlFromText(this.editText); this.sectionInstr = ''; setTimeout(() => this.rte?.focus()); }
+  startEdit(k: string) { this.reader.stop(); this.loadSnippets(); this.versionsOpen = ''; this.autoSaved = ''; this.editing = k; this.editText = this.text(k); this.editInitHtml = this.editHtml = this.richOf(k) || htmlFromText(this.editText); this.lastSaved = {content: this.editText, html: this.editInitHtml}; this.saveState = 'saved'; this.sectionInstr = ''; setTimeout(() => this.rte?.focus()); }
   async saveEdit(k: string) {
     await this.dictation.stop(); // the last dictated words enter the text before it is saved
     if (!this.editText.trim()) { this.api.notify('O texto não pode ficar vazio.'); return; }
     clearTimeout(this.autoTimer); this.autoTimer = null;
     try { await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content: this.editText, html: this.editHtml, merge: true}); this.editing = ''; this.autoSaved = ''; await this.load(); this.changed.emit(); if (this.inDocView()) this.renderPreview(true); this.api.notify('Texto salvo. A seção voltou para revisão.'); } catch {}
   }
+  // ---------- Full-window edit mode (index, editor sheet, tools; autosave as above) ----------
+  private zone = inject(NgZone);
+  editFull = false;
+  emSide = true; emTools = true; emZoom = 1; emFull = false;
+  emPanel: '' | 'find' | 'versions' | 'listen' | 'ai' = '';
+  emFind = {q: '', by: '', matchCase: false, word: false}; emFound = 0; emFoundAt = -1;
+  /** Text at the start of this editing session, for "Descartar alterações desta sessão". */
+  private emStart = {key: '', content: '', html: ''};
+  readonly emNarr = new Narrator(this.zone);
+  @ViewChild('emDict') emDict?: DictateComponent;
+  readonly EM_ZOOMS = [0.8, 0.9, 1, 1.1, 1.25, 1.5];
+  readonly EM_RATES = [0.75, 1, 1.25, 1.5, 1.75, 2];
+  /** Sheet widths of the edit mode (same names as in the reading mode); kept in this browser. */
+  readonly EM_WIDTHS = [
+    {id: 'narrow', name: 'Estreita', hint: 'folha de 680 px', px: 680, pct: 38},
+    {id: 'normal', name: 'Confortável', hint: 'folha de 900 px', px: 900, pct: 50},
+    {id: 'wide', name: 'Ampla', hint: 'folha de 1.100 px', px: 1100, pct: 66},
+    {id: 'xwide', name: 'Muito ampla', hint: 'folha de 1.400 px', px: 1400, pct: 84},
+    {id: 'full', name: 'Toda a largura', hint: 'ocupa toda a área do editor', px: 0, pct: 100}];
+  emWidth = (() => { try { const v = localStorage.getItem('nl.edit.width') || ''; return ['narrow', 'normal', 'wide', 'xwide', 'full'].includes(v) ? v : 'normal'; } catch { return 'normal'; } })();
+  emWidthPreview = '';
+  emWidthOpen = false;
+  emSheet() { const id = this.emWidthPreview || this.emWidth; return this.EM_WIDTHS.find(w => w.id === id)?.px ?? 900; }
+  emWidthName() { return this.EM_WIDTHS.find(w => w.id === this.emWidth)?.name || ''; }
+  emPickWidth(id: string) { this.emWidth = id; this.emWidthPreview = ''; this.emWidthOpen = false; try { localStorage.setItem('nl.edit.width', id); } catch {} }
+  /** Saves, leaves the edit mode and shows the section in the Word preview. */
+  async emSeeInDoc() { if (!await this.emSafe()) return; const k = this.editing; this.emLeave(); this.viewInDocument(k); }
+  emNarrow() { return window.innerWidth < 1000; }
+
+  /** Opens the edit mode on a section (header "Escrever/Editar"). */
+  openEditMode(k: string) {
+    if (this.readOnly()) return;
+    this.reading.close();
+    this.startEdit(k);
+    this.emStart = {key: k, content: this.editText, html: this.editInitHtml};
+    this.editFull = true; this.emPanel = '';
+    const narrow = this.emNarrow(); this.emSide = !narrow; this.emTools = !narrow;
+    document.documentElement.classList.add('nl-reading-open');
+    this.emNarr.onSegment = i => { const sg = i === null ? undefined : this.emNarr.segment(i); highlight('nl-speak', sg ? [sg.range] : []); if (sg) (sg.range.startContainer.parentElement as HTMLElement | null)?.scrollIntoView({block: 'center', behavior: 'smooth'}); };
+    this.emNarr.loadVoices();
+  }
+  emIndex() { return this.reviewRows(); }
+  emPos() { return this.reviewRows().findIndex(s => s.id === this.editing); }
+  emName() { return this.sectionName(this.editing); }
+  emWords() { return words(this.editText); }
+  emChars() { return this.editText.replace(/\n/g, '').length; }
+  emOrigin(): string {
+    const k = this.editing, r = this.section(k);
+    if (!r) return '';
+    if (this.fromFile(k)) return 'Texto do arquivo base';
+    if (r.status === 'draft' || r.status === 'review') return 'Rascunho gerado por IA';
+    if (r.status === 'edited') return 'Texto editado à mão';
+    return '';
+  }
+  emSaveLabel() {
+    return ({saved: 'Todas as alterações salvas', dirty: 'Alterações não salvas', saving: 'Salvando…', error: 'Falha ao salvar', empty: 'Texto vazio não é salvo'} as const)[this.saveState];
+  }
+  /** Saves first; if the server refuses, the person decides (try again or stay). Never drops text silently. */
+  private async emSafe(): Promise<boolean> {
+    for (;;) {
+      if (await this.flushSave()) return true;
+      const empty = this.saveState === 'empty';
+      const retry = await this.confirm.ask({tone: 'review', title: empty ? 'O texto está vazio' : 'Não foi possível salvar',
+        body: empty ? 'Uma seção não pode ser salva sem texto. Escreva algo ou desfaça (Ctrl+Z) antes de sair.' : 'As alterações desta seção ainda não chegaram ao servidor. Elas continuam aqui na tela.',
+        ok: empty ? 'Ficar na seção' : 'Tentar de novo', cancel: empty ? 'Sair sem salvar' : 'Ficar na seção'});
+      if (empty) return !retry;          // "Sair sem salvar" (cancel) leaves; the saved text stays as it was
+      if (!retry) return false;
+    }
+  }
+  async emGo(k: string) {
+    if (!k || k === this.editing) { if (this.emNarrow()) this.emSide = false; return; }
+    if (!await this.emSafe()) return;
+    this.emNarr.stop(); this.rte?.clearFind(); this.emFound = 0; this.emFoundAt = -1;
+    this.select(k); this.startEdit(k);
+    this.emStart = {key: k, content: this.editText, html: this.editInitHtml};
+    if (this.emNarrow()) this.emSide = false;
+    if (this.emPanel === 'versions') this.emPanel = '';
+  }
+  emStep(d: -1 | 1) { const rows = this.reviewRows(), i = this.emPos(); const n = rows[i + d]; if (n) this.emGo(n.id); }
+  /** Leaves the edit mode keeping what is saved (after saving what is pending). */
+  async emClose(done = false) {
+    if (!await this.emSafe()) return;
+    this.emLeave();
+    if (done) this.api.notify('Edição concluída. A seção continua em revisão.');
+  }
+  private emLeave() {
+    this.emNarr.stop(); highlight('nl-speak', []); this.rte?.clearFind();
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    document.documentElement.classList.remove('nl-reading-open');
+    this.editFull = false; this.emPanel = '';
+    this.closeEdit();
+  }
+  emCanDiscard() { return this.emStart.key === this.editing && !!this.emStart.content.trim() && (this.editText !== this.emStart.content || this.editHtml !== this.emStart.html); }
+  /** Puts back the text this editing session started with (saved again, so it becomes the current version). */
+  async emDiscard() {
+    if (!this.emCanDiscard()) return;
+    if (!await this.confirm.ask({tone: 'danger', title: 'Descartar as alterações desta sessão?', body: 'O texto volta a ser exatamente o que era quando você abriu o modo edição nesta seção. As mudanças feitas desde então saem do texto.',
+      facts: ['O texto descartado fica em Versões, se já tinha sido salvo', 'Outras seções não mudam'], ok: 'Descartar alterações'})) return;
+    clearTimeout(this.autoTimer); this.autoTimer = null;
+    await this.dictation.stop();
+    if (this.inflight) await this.inflight;
+    const k = this.editing, {content, html} = this.emStart;
+    try {
+      await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content, html, merge: true});
+      const sec = this.section(k); if (sec) { sec.content = content; sec.content_html = html; }
+      this.startEdit(k); this.emStart = {key: k, content, html};
+      this.api.notify('Alterações descartadas.');
+    } catch { this.saveState = 'error'; }
+  }
+  async emRetry() { await this.flushSave(); }
+  /** "Salvar" in the bar (and Ctrl+S): sends what is pending now and says how it went. */
+  async emSaveNow() {
+    const had = this.isDirty() || this.saveState === 'error';
+    const ok = await this.flushSave();
+    if (ok) this.api.notify(had ? 'Alterações salvas.' : 'Tudo já estava salvo.');
+    else if (this.saveState === 'empty') this.api.notify('Texto vazio não é salvo.');
+  }
+  emUndo() { this.rte?.undo(); this.rte?.focus(); }
+  emRedo() { this.rte?.redo(); this.rte?.focus(); }
+  async emToggleFull() {
+    try { if (document.fullscreenElement) await document.exitFullscreen(); else await (document.querySelector('.em') as HTMLElement | null)?.requestFullscreen(); } catch {}
+  }
+  @HostListener('document:fullscreenchange') emFullChange() { this.emFull = !!document.fullscreenElement && !!document.querySelector('.em'); }
+  emCanFull() { return !!document.fullscreenEnabled; }
+  async emToReading() {
+    if (!await this.emSafe()) return;
+    this.emNarr.stop();
+    const k = this.editing, rows = this.reviewRows().filter(s => s.id === k || this.text(s.id).trim());
+    const docs = rows.map(s => ({key: s.id, title: s.name, subtitle: 'Seção ' + this.secNum(s.id), num: this.secNum(s.id), text: s.id === k ? this.editText : this.text(s.id),
+      html: (s.id === k ? this.editHtml : this.richOf(s.id)) || undefined, status: {label: this.secLabel(s.id), css: this.secKind(s.id)}}));
+    this.reading.open(docs, Math.max(0, rows.findIndex(s => s.id === k)), this.evaluationId, this.editFromReading());
+  }
+  /** "Editar" in the reading mode: back to (or into) the edit mode on the section being read. Not offered read-only. */
+  private editFromReading(): ((k: string) => void) | null {
+    if (this.readOnly()) return null;
+    return k => { if (this.editFull && this.editing) this.emGo(k); else { this.select(k); this.openEditMode(k); } };
+  }
+  emZoomStep(d: number) { const z = this.EM_ZOOMS, i = z.indexOf(this.emZoom); this.emZoom = z[Math.max(0, Math.min(z.length - 1, (i < 0 ? 2 : i) + d))]; }
+  emTogglePanel(p: 'find' | 'versions' | 'listen' | 'ai') {
+    this.emPanel = this.emPanel === p ? '' : p;
+    if (this.emPanel === 'find') setTimeout(() => (document.getElementById('em-find-q') as HTMLInputElement | null)?.focus());
+    else this.rte?.clearFind();
+    if (this.emNarrow()) this.emTools = true;
+  }
+  // tools
+  async emCopy() {
+    const t = this.editText;
+    try { await navigator.clipboard.writeText(t); this.api.notify('Texto copiado.'); }
+    catch { this.api.notify('Não foi possível copiar. Selecione o texto e use Ctrl+C.'); }
+  }
+  /** Pastes what is copied (e.g. the ChatGPT answer) at the cursor, or over the selected text. */
+  async emPaste() {
+    let t = '';
+    try { t = await navigator.clipboard.readText(); } catch { this.api.notify('O navegador não liberou a área de transferência: clique no texto e use Ctrl+V.'); return; }
+    if (!t.trim()) { this.api.notify('Não há texto copiado.'); return; }
+    this.rte?.pasteText(t);
+  }
+  emDictate() { if (this.emDict) this.emDict.toggle(); else this.api.notify('Ditado por voz indisponível neste computador.'); }
+  emFindRun() { this.emFound = this.rte?.find(this.emFind.q, this.emFind) ?? 0; this.emFoundAt = this.rte?.foundAt ?? -1; }
+  emFindStep(d: number) { this.rte?.findStep(d); this.emFoundAt = this.rte?.foundAt ?? -1; }
+  emReplace() { this.rte?.replaceOne(this.emFind.q, this.emFind.by, this.emFind); this.emFound = this.rte?.foundCount ?? 0; this.emFoundAt = this.rte?.foundAt ?? -1; }
+  emReplaceAll() {
+    const n = this.rte?.replaceAll(this.emFind.q, this.emFind.by, this.emFind) ?? 0;
+    this.emFound = this.rte?.foundCount ?? 0; this.emFoundAt = this.rte?.foundAt ?? -1;
+    this.api.notify(n ? `${n} ${n === 1 ? 'ocorrência substituída' : 'ocorrências substituídas'} nesta seção. Ctrl+Z desfaz.` : 'Nada encontrado nesta seção.');
+  }
+  async emVersionRestored() {
+    this.emPanel = '';
+    await this.load(); this.changed.emit();
+    const k = this.editing; this.startEdit(k); this.emStart = {key: k, content: this.editText, html: this.editInitHtml};
+  }
+  emListen() {
+    const st = this.emNarr.state();
+    if (st === 'playing' || st === 'loading') { this.emNarr.pause(); return; }
+    if (st === 'paused') { this.emNarr.resume(); return; }
+    const el = this.rte?.element; if (!el) return;
+    this.reader.stop(); this.emNarr.load(segmentsOf(el)); this.emNarr.start(0);
+  }
+  // ---------- "Gerar com IA" (instruction + generation) and ChatGPT, in dialogs, from the section or the edit mode ----------
+  aiFor = ''; cgFor = '';
+  openAi(k: string) { if (this.isHand(k) || this.readOnly()) return; this.aiFor = k; setTimeout(() => { const el = document.getElementById('ai-instr') as HTMLTextAreaElement | null; if (!el) return; el.focus(); el.setSelectionRange(0, 0); el.scrollTop = 0; }); }
+  /** Saves what is being edited, generates with the instruction shown, and puts the new draft in the editor when it is open. */
+  async runAi() {
+    const k = this.aiFor; if (!k) return;
+    if (this.editing === k && !await this.emSafe()) return;
+    if (k === MANUAL_KEY) await this.generateConclusion();
+    else if (k === DEMAND_KEY) await this.generateDemand();
+    else await this.regenerate(k, true);
+    if (this.gen[k] === 'done') { this.aiFor = ''; this.refreshEditor(k); }
+  }
+  async openCg(k: string) {
+    if (this.isHand(k)) return;
+    if (this.editing === k && !await this.emSafe()) return;
+    if (await this.allowSectionAi()) { this.gptOpen = ''; this.cgFor = k; }
+  }
+  cgToAi() { const k = this.cgFor; this.cgFor = ''; this.openAi(k); }
+  async onCgSaved() { const k = this.cgFor; await this.load(); this.changed.emit(); this.refreshEditor(k); }
+  /** A new draft arrived for the section open in the edit mode: the editor shows it (the previous text is in Versões). */
+  private refreshEditor(k: string) {
+    if (!this.editFull || this.editing !== k) return;
+    this.startEdit(k); this.emStart = {key: k, content: this.editText, html: this.editInitHtml};
+  }
+  @HostListener('window:beforeunload', ['$event']) emBeforeUnload(e: BeforeUnloadEvent) {
+    if (this.editing && (this.isDirty() || this.saveState === 'saving' || this.saveState === 'error')) { e.preventDefault(); e.returnValue = ''; }
+  }
+  @HostListener('document:keydown', ['$event']) emKey(e: KeyboardEvent) {
+    if (!this.editFull || this.reading.doc()) return;
+    const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+    if (e.key === 'Escape') {
+      if (this.confirm.current()) return;   // an open dialog closes first
+      e.preventDefault(); e.stopPropagation();
+      if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return; }
+      if (this.aiFor || this.cgFor) { if (!this.generating) { this.aiFor = ''; this.cgFor = ''; } return; }
+      if (this.emWidthOpen) { this.emWidthOpen = false; this.emWidthPreview = ''; return; }
+      if (this.emPanel) { this.emPanel = ''; this.rte?.clearFind(); return; }
+      if (this.emNarrow() && (this.emSide || this.emTools)) { this.emSide = false; this.emTools = false; return; }
+      this.emClose(); return;
+    }
+    if (mod && k === 's') { e.preventDefault(); this.emSaveNow(); return; }
+    if (mod && (k === 'f' || k === 'h')) { e.preventDefault(); if (this.emPanel !== 'find') this.emTogglePanel('find'); else (document.getElementById('em-find-q') as HTMLInputElement | null)?.focus(); }
+  }
+
   openInstr(k: string) { this.sectionInstr = this.sectionInstr === k ? '' : k; this.editing = ''; }
   async regenerate(k: string, withInstruction = false, skipConfirm = false) {
     if (withInstruction) await this.dictation.stop();
@@ -666,16 +942,16 @@ export class EvaluationComponent implements OnDestroy {
       const name = this.available().find(x => x.id === k)?.name || 'esta seção';
       const instr = (this.instrDraft[k] || '').trim();
       const ok = await this.confirm.ask({tone: 'review',
-        title: withInstruction ? 'Regenerar com a sua instrução?' : 'Regenerar esta seção?',
+        title: withInstruction ? 'Gerar de novo com a sua instrução?' : 'Gerar esta seção de novo?',
         body: `O texto atual de "${name}" será substituído por uma nova versão gerada pela IA. Edições feitas nesta seção serão perdidas e ela volta para revisão.`,
         quote: withInstruction && instr ? {label: 'Instrução', text: instr.length > 400 ? instr.slice(0, 400) + '…' : instr} : undefined,
         facts: ['Usa só os dados desta seção no arquivo base', 'A versão anterior fica no histórico', 'O custo entra em Custo da IA desta avaliação'],
-        ok: withInstruction ? 'Regenerar com instrução' : 'Regenerar'});
+        ok: 'Gerar com IA'});
       if (!ok) return;
     }
     if (withInstruction && !await this.saveInstruction(k)) return;
     this.gen = {[k]: 'running'}; this.generating = true; this.generatingChange.emit(true);
-    try { await this.api.req('POST', `/evaluations/${this.evaluationId}/generate/${k}`, this.aiBody({notes: ''})); this.gen[k] = 'done'; await this.load(); this.sectionInstr = ''; this.api.notify('Seção regenerada. Revise o texto.'); }
+    try { await this.api.req('POST', `/evaluations/${this.evaluationId}/generate/${k}`, this.aiBody({notes: ''})); this.gen[k] = 'done'; await this.load(); this.sectionInstr = ''; this.api.notify('Rascunho gerado. Revise o texto.'); }
     catch { this.gen[k] = 'error'; }
     finally { this.generating = false; this.generatingChange.emit(false); this.changed.emit(); }
   }
@@ -780,7 +1056,7 @@ export class EvaluationComponent implements OnDestroy {
     setTimeout(() => this.onDocScroll());
   }
   /** Approving this one leaves nothing else to review. */
-  isLastPending(k: string) { return !this.available().some(s => s.id !== k && this.state(s.id) !== 'ap'); }
+  isLastPending(k: string) { return !this.available().some(s => s.id !== k && this.state(s.id) !== 'ap' && !this.isExcluded(s.id)); }
   showDocument() { if (!this.canWrite()) return; this.closeRefs(); this.step = 3; this.mode = 'documento'; setTimeout(() => this.renderPreview()); }
   /** quiet: refresh while editing (no "Montando…", same place, the edited section stays highlighted). */
   async renderPreview(quiet = false) {
@@ -947,7 +1223,7 @@ export class EvaluationComponent implements OnDestroy {
   /** Section whose "other ways to generate" menu is open; any click elsewhere or Esc closes it. */
   actMenu = '';
   @HostListener('document:click') closeActMenu() { this.actMenu = ''; this.secMenu = false; }
-  @HostListener('document:keydown.escape') escActMenu() { this.actMenu = ''; this.secMenu = false; }
+  @HostListener('document:keydown.escape') escActMenu() { this.actMenu = ''; this.secMenu = false; if (!this.editFull && !this.generating && !this.confirm.current()) { this.aiFor = ''; this.cgFor = ''; } }
   sectionImages(k: string): string[] { return this.fileBlock(k).filter(b => b.type === 'img').map(b => b.src); }
   /** "OpenAI API" in the panel: the same generation as the section's own buttons. */
   useApiFor(k: string) { if (k === MANUAL_KEY) this.generateConclusion(); else if (k === DEMAND_KEY) this.generateDemand(); else this.regenerate(k); }
@@ -990,6 +1266,19 @@ export class EvaluationComponent implements OnDestroy {
 
   /** Copies the section text ready to paste in Word: topic titles without "##", paragraphs separated by a blank line. */
   copied = ''; private copiedTimer: any;
+  /** Reading mode (display only): the section text, the base file's text, the previous evaluation, the conclusion sources. */
+  /** All sections with text, in order, so ← → in the reading mode goes through the report. */
+  readSection(k: string) {
+    const rows = this.reviewRows().filter(s => s.id === k || this.text(s.id).trim());
+    // status only as the system keeps it (approved, to review, pending); reading never changes it
+    const docs = rows.map(s => ({key: s.id, title: s.name, subtitle: 'Seção ' + this.secNum(s.id), num: this.secNum(s.id), text: this.text(s.id), html: this.richOf(s.id) || undefined,
+      status: {label: this.secLabel(s.id), css: this.secKind(s.id)}}));
+    this.reading.open(docs, Math.max(0, rows.findIndex(s => s.id === k)), this.evaluationId, this.editFromReading());
+  }
+  hasFileText(k: string) { return this.fileShown(k).some(b => b.type === 'p'); }
+  readFileText(k: string, name: string) { this.reading.open({title: name, subtitle: 'Texto presente no arquivo base', text: this.fileShown(k).filter(b => b.type === 'p').map(b => b.text).join('\n\n')}); }
+  readPrevious(k: string, name: string) { this.reading.open({title: name, subtitle: 'Avaliação anterior · ' + this.brDate(this.previous?.start_date || this.previous?.created_at), text: this.previous?.sections?.[k] || ''}); }
+  readSources() { this.reading.open({title: 'Textos das seções usados na conclusão', text: this.conclusionSources().map(t => '## ' + t.name + '\n\n' + t.text).join('\n\n')}); }
   async copyText(k: string) { await this.copy(k, this.paragraphs(this.text(k)).map(p => p.text).join('\n\n')); }
   /** Conclusão: every section text the conclusion is built from, each under its section name. */
   async copyAll() {

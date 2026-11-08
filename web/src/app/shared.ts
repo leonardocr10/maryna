@@ -10,7 +10,7 @@ export const SECTIONS = [
   {id: 'funcoes_executivas', name: 'Funções executivas'},
   {id: 'comportamento', name: 'Comportamento'},
   {id: 'personalidade', name: 'Bateria Fatorial da Personalidade'},
-  {id: 'comportamento_diva', name: 'Comportamento / DIVA'},
+  {id: 'comportamento_diva', name: 'Comportamento'},
   {id: 'conclusao', name: 'Conclusão'},
   {id: 'hipotese', name: 'Hipótese diagnóstica'},
   {id: 'recomendacoes', name: 'Indicações e recomendações'},
@@ -46,9 +46,10 @@ const ISO = /^\d{4}-\d{2}-\d{2}$/;
 export const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 export const brDate = (v: string) => { const s = String(v || '').slice(0, 10); return ISO.test(s) ? s.split('-').reverse().join('/') : ''; };
 
-export function ageText(birth: string, at?: string) {
+/** Age today from the birth date (never the report dates). */
+export function ageText(birth: string) {
   if (!ISO.test(birth || '')) return '';
-  const ref = ISO.test(at || '') ? at! : todayISO();
+  const ref = todayISO();
   const [by, bm, bd] = birth.split('-').map(Number), [ry, rm, rd] = ref.split('-').map(Number);
   const months = (ry - by) * 12 + rm - bm - (rd < bd ? 1 : 0);
   if (months < 0) return '';
@@ -56,10 +57,10 @@ export function ageText(birth: string, at?: string) {
   return `${Math.floor(months / 12)} anos`;
 }
 
-/** Whole years at the reference date (today when empty); null when the birth date is unknown. */
-export function ageYears(birth: string, at?: string): number | null {
+/** Whole years today; null when the birth date is unknown. */
+export function ageYears(birth: string): number | null {
   if (!ISO.test(birth || '')) return null;
-  const ref = ISO.test(at || '') ? at! : todayISO();
+  const ref = todayISO();
   const [by, bm, bd] = birth.split('-').map(Number), [ry, rm, rd] = ref.split('-').map(Number);
   const months = (ry - by) * 12 + rm - bm - (rd < bd ? 1 : 0);
   return months < 0 ? null : Math.floor(months / 12);

@@ -50,7 +50,7 @@ export class IdentityFormComponent implements AfterViewInit {
   @Input() showRequired = false;
   @Output() modelChange = new EventEmitter<Identity>();
   today = todayISO();
-  age() { return ageText(this.model.birth_date, this.model.end_date); }
+  age() { return ageText(this.model.birth_date); }
   sexOptions() { return withCurrent(SEX_OPTIONS, this.model.sex); }
   schoolingOptions() { return withCurrent(SCHOOLING_OPTIONS, this.model.schooling); }
   emit() { this.modelChange.emit({...this.model}); }

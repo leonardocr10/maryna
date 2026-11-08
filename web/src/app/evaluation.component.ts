@@ -205,7 +205,7 @@ export class EvaluationComponent implements OnDestroy {
   /** Sections this person needs. Percepção is for under 17 (text already written stays visible; unknown age: kept).
    * BFP and DIVA appear only when the base document has their field, even if old text exists. */
   applicable() {
-    const age = ageYears(this.idModel.birth_date, this.idModel.end_date);
+    const age = ageYears(this.idModel.birth_date);
     const found = this.placeable();
     const list = SECTIONS.filter(s =>
       !(this.inspection && OPTIONAL_SECTIONS.includes(s.id) && !found.has(s.id)) &&
@@ -348,7 +348,7 @@ export class EvaluationComponent implements OnDestroy {
   status() { return this.allApproved() ? STATUS.ap : this.autoDrafted() ? STATUS.rv : STATUS.rs; }
   summary() {
     const c = this.current; if (!c) return '';
-    return [ageText(c.birth_date, c.end_date), c.sex, c.schooling].filter(Boolean).join(' · ');
+    return [ageText(c.birth_date), c.sex, c.schooling].filter(Boolean).join(' · ');
   }
   warnings(k: string): string[] { try { return JSON.parse(this.section(k)?.source_summary || '[]'); } catch { return []; } }
   /** Manual evaluations never call the AI: the professional writes every section. */

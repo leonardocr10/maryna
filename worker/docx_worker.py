@@ -278,7 +278,12 @@ def section_titles(elements,markers):
  text=lambda e:e.get('text','') if e['type']=='p' else ' '.join(dict.fromkeys(x.strip() for row in e['rows'] for x in row if x.strip()))
  out={}
  for m in markers:
-  if m.get('section_start') is not None and m['section_start']>0:t=text(elements[m['section_start']-1])
+  if m.get('section_start') is not None and m['section_start']>0:
+   t=text(elements[m['section_start']-1])
+   # a second field in the same section (DIVA after the behaviour field) starts after the first field: it takes the
+   # section's own heading from the document, the last title above it
+   if clean(t).upper().startswith('INTERPRETA'):
+    t=next((text(elements[j]) for j in range(m['section_start']-2,-1,-1) if domain_of(text(elements[j]))),'')
   else:t=m['label']
   t=re.sub(r'\s*:\s*$','',clean(t))
   if t and len(t)<=80 and not t.upper().startswith('INTERPRETA'):out[m['key']]=t

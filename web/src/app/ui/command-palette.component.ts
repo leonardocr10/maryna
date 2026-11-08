@@ -74,7 +74,7 @@ export class CommandPaletteComponent {
 
   private evalRow(e: any): Row {
     const name = e.patient_name || 'Sem nome', parts = name.trim().split(/\s+/);
-    const st = STATUS[listStatus(e)], age = ageText(e.birth_date, e.end_date);
+    const st = STATUS[listStatus(e)], age = ageText(e.birth_date);
     return {kind: 'eval', id: e.id, title: name, sub: [st.label, age, e.start_date ? 'início ' + brDate(e.start_date) : 'criada ' + brDate(e.created_at)].filter(Boolean).join(' · '),
       tag: 'Avaliação', initials: ((parts[0]?.[0] || '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase()};
   }

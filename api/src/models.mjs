@@ -5,7 +5,7 @@ export const MODEL_SECTIONS = [
   ['demanda', 'Descrição da demanda'], ['anamnesis', 'Anamnese'], ['inteligencia', 'Habilidades intelectuais'],
   ['percepcao', 'Percepção'], ['memoria', 'Memória e aprendizagem'], ['atencao', 'Processos atencionais'],
   ['funcoes_executivas', 'Funções executivas'], ['comportamento', 'Comportamento'],
-  ['personalidade', 'Bateria Fatorial da Personalidade'], ['comportamento_diva', 'Comportamento / DIVA'],
+  ['personalidade', 'Bateria Fatorial da Personalidade'], ['comportamento_diva', 'Comportamento'],
   ['conclusao', 'Conclusão'], ['hipotese', 'Hipótese diagnóstica'], ['recomendacoes', 'Indicações e recomendações'],
 ];
 /** Behaviour sub-sections not every model has. */

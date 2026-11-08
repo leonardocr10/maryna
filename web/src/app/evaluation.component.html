@@ -302,6 +302,10 @@
             </div>
           </div>
 
+          <!-- Anamnese: API, ChatGPT plugin (MCP) or assisted copy and paste; the draft comes back for review -->
+          <nl-chatgpt-anamnesis *ngIf="cgOpen && s.id==='anamnesis' && aiOn()" [evaluationId]="evaluationId" [hasText]="!!text(s.id)" [readOnly]="readOnly()"
+            (useApi)="cgOpen=false; regenerate(s.id)" (saved)="load(); changed.emit()" (closed)="cgOpen=false"></nl-chatgpt-anamnesis>
+
           <div class="edbar">
             <span class="wc">{{words(editing===s.id ? editText : text(s.id))}} palavras</span>
             <!-- Read aloud with the local natural voice (Piper via the local API; Windows voice as fallback). No AI, nothing leaves the machine -->
@@ -318,6 +322,7 @@
               <button *ngIf="(section(s.id)?.version || 1) > 1" class="btn btn-secondary btn-sm" [class.on]="versionsOpen===s.id" (click)="versionsOpen = versionsOpen===s.id ? '' : s.id" [attr.aria-expanded]="versionsOpen===s.id"><nl-icon name="restore"/> Versões ({{(section(s.id)?.version || 1) - 1}})</button>
               <button *ngIf="text(s.id)" class="btn btn-secondary btn-sm" (click)="copyText(s.id)"><nl-icon [name]="copied===s.id ? 'check' : 'copy'"/> {{copied===s.id ? 'Copiado' : 'Copiar'}}</button>
               <ng-container *ngIf="!readOnly()">
+                <button *ngIf="s.id==='anamnesis' && aiOn()" class="btn btn-secondary btn-sm" [class.on]="cgOpen" [attr.aria-expanded]="cgOpen" (click)="cgOpen=!cgOpen" title="Gerar pela API, pelo plugin do ChatGPT ou por cópia e colagem"><nl-icon name="spark"/> Gerar anamnese pelo ChatGPT</button>
                 <button *ngIf="s.id!==MANUAL_KEY && !isHand(s.id) && aiOn()" class="btn btn-secondary btn-sm" [class.on]="gptOpen===s.id" [disabled]="gptLoading===s.id" (click)="openGpt(s.id)" title="Copia o pedido com as tabelas e a instrução desta seção e abre o ChatGPT"><nl-icon name="external"/> {{gptLoading===s.id ? 'Preparando…' : 'ChatGPT'}}</button>
                 <button *ngIf="s.id!==MANUAL_KEY && !isHand(s.id) && aiOn()" class="btn btn-secondary btn-sm" [class.on]="sectionInstr===s.id" (click)="openInstr(s.id)" [attr.aria-expanded]="sectionInstr===s.id"><nl-icon name="chat"/> Instrução</button>
                 <button class="btn btn-secondary btn-sm" [class.on]="editing===s.id" [disabled]="editing===s.id" (click)="startEdit(s.id)"><nl-icon name="edit"/> {{text(s.id) ? 'Editar' : 'Escrever'}}</button>

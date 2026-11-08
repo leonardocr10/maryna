@@ -72,6 +72,7 @@ Ditado por voz: o botão de microfone nos campos de texto (edição das seções
 - **Auditoria** (Configurações, administrador): quem abriu, criou, editou, aprovou, baixou ou excluiu, com filtros. Só a ação, nunca o conteúdo.
 - **Prazo de guarda** (Configurações > Dados e backup): laudos aprovados há mais de `RETENTION_YEARS` anos (padrão 5) aparecem para decisão; nada é apagado sozinho.
 - **Verificação em duas etapas:** em Minha conta, com aplicativo autenticador (TOTP). O administrador zera a de quem perder o celular.
+- **Anamnese pelo ChatGPT:** na seção Anamnese, **Gerar anamnese pelo ChatGPT** oferece a API (como hoje), o plugin MCP do ChatGPT (desligado por padrão; leitura e gravação por OAuth, exige HTTPS) ou cópia e colagem assistida. Sem chamada à API, dados pseudonimizados, rascunho salvo uma vez e nunca por cima de anamnese existente sem confirmação. Detalhes, instalação e riscos em `docs/CHATGPT_INTEGRACAO.md`.
 - **Validação da IA:** `npm --prefix api run validar:ia -- [modelo]` roda casos sintéticos (`api/scripts/validation-cases.mjs`) e confere números, categorias, gênero, extensão e termos proibidos; `--dry` só monta os pedidos. Chamada paga; relatório em `api/validacao/`.
 - **Esqueci minha senha:** sem serviço de e-mail, o pedido aparece para o administrador em Configurações > Usuários, que passa uma senha temporária.
 
@@ -93,6 +94,8 @@ Ditado por voz: o botão de microfone nos campos de texto (edição das seções
 - `GET /api/evaluations/:id/references` (tabelas que cada seção usa, as mesmas enviadas à IA)
 - `POST /api/evaluations/:id/generate/:key` (IA pela API; registra tokens e custo)
 - `POST /api/evaluations/:id/prompt/:key` (pedido pronto para o modo manual com ChatGPT)
+- `GET /api/chatgpt/config` · `POST /api/evaluations/:id/chatgpt-tasks` · `GET /api/evaluations/:id/chatgpt-tasks/current` · `POST /api/chatgpt-tasks/:task/result|apply|discard` · `DELETE /api/chatgpt/connection` (anamnese pelo ChatGPT)
+- Com `CHATGPT_MCP_ENABLED=true`: `POST /api/mcp` (MCP), `/api/oauth/register|authorize|token|revoke`, `/.well-known/oauth-protected-resource/api/mcp`, `/.well-known/oauth-authorization-server`
 - `PUT /api/evaluations/:id/sections/:key` body `{content,approve}`
 - `POST /api/evaluations/:id/preview` (DOCX com rascunhos atuais)
 - `POST /api/evaluations/:id/approve` body `{approveSections:true}` opcional · `POST /api/evaluations/:id/export`

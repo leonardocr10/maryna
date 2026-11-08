@@ -233,3 +233,67 @@ CREATE TABLE IF NOT EXISTS report_model_versions(
   created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
   UNIQUE(model_id,version)
 );
+-- Anamnesis written in ChatGPT (MCP plugin or copy and paste). The task holds no copy of the anamnesis file: the
+-- notes are read from the encrypted DOCX when the plugin asks for them. received_text is cleared by the hourly sweep.
+CREATE TABLE IF NOT EXISTS chatgpt_tasks(
+  id TEXT PRIMARY KEY,
+  code TEXT UNIQUE NOT NULL,
+  evaluation_id TEXT NOT NULL REFERENCES evaluations(id),
+  section_key TEXT NOT NULL DEFAULT 'anamnesis',
+  mode TEXT NOT NULL CHECK(mode IN ('mcp','paste')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing','draft_received','reviewed','error','expired','discarded')),
+  created_by TEXT NOT NULL REFERENCES users(id),
+  expires_at TEXT NOT NULL,
+  fetched_at TEXT NULL,
+  received_at TEXT NULL,
+  received_via TEXT NULL,
+  received_text TEXT NULL,
+  op_id TEXT NULL,
+  applied_at TEXT NULL,
+  applied_by TEXT NULL,
+  applied_version INTEGER NULL,
+  error TEXT NULL,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE INDEX IF NOT EXISTS chatgpt_tasks_eval ON chatgpt_tasks(evaluation_id,created_by);
+-- OAuth for the MCP plugin: only hashes of codes and tokens are stored.
+CREATE TABLE IF NOT EXISTS oauth_clients(
+  client_id TEXT PRIMARY KEY,
+  client_name TEXT NULL,
+  redirect_uris_json TEXT NOT NULL,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE TABLE IF NOT EXISTS oauth_requests(
+  id TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL,
+  redirect_uri TEXT NOT NULL,
+  state TEXT NULL,
+  code_challenge TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  resource TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE TABLE IF NOT EXISTS oauth_codes(
+  code_hash TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  redirect_uri TEXT NOT NULL,
+  code_challenge TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  resource TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT NULL
+);
+CREATE TABLE IF NOT EXISTS oauth_tokens(
+  token_hash TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK(kind IN ('access','refresh')),
+  client_id TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  scope TEXT NOT NULL,
+  resource TEXT NOT NULL,
+  token_version INTEGER NOT NULL DEFAULT 0,
+  expires_at TEXT NOT NULL,
+  revoked_at TEXT NULL,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);

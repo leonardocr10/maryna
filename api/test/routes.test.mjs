@@ -97,7 +97,7 @@ before(async () => {
     env: {...process.env, ADMIN_EMAIL: '', ADMIN_PASSWORD: '', TTS_PROVIDER: '', DICTATION_ENABLED: 'false', API_RATE_LIMIT: '100000', PORT: String(port), HOST: '127.0.0.1',
       DB_FILE: path.join(tmp, 'data.db'), STORAGE_DIR: path.join(tmp, 'storage'), JWT_SECRET: randomBytes(32).toString('hex'),
       FILE_ENCRYPTION_KEY: KEY, PYTHON_BIN: PYTHON, OPENAI_API_KEY: 'sk-test-sintetica', OPENAI_BASE_URL: `http://127.0.0.1:${fakeAI.address().port}/v1`,
-      AI_ENABLED: 'true', ALLOW_EXTERNAL_AI: 'true', TTS_WARMUP: 'false', BACKUP_DIR: path.join(tmp, 'backups'), BACKUP_AUTO: 'false', GENERATED_TEXT_RED: 'false'},
+      AI_ENABLED: 'true', ALLOW_EXTERNAL_AI: 'true', CHATGPT_MCP_ENABLED: 'true', PUBLIC_BASE_URL: base, TTS_WARMUP: 'false', BACKUP_DIR: path.join(tmp, 'backups'), BACKUP_AUTO: 'false', GENERATED_TEXT_RED: 'false'},
   });
   let stderr = '';
   server.stderr.on('data', d => stderr += d);
@@ -775,4 +775,138 @@ test('two-step verification: setup, login with code, no replay, admin reset', as
   assert.ok(ok.data.token);
   assert.equal((await api('POST', `/api/users/${u.id}/mfa/reset`, {token: tokens.admin})).data.mfa_enabled, false);
   assert.ok((await login('duas-etapas@exemplo.test', u.password)).data.token, 'password only after the reset');
+});
+
+// ---------- Anamnesis in ChatGPT: copy and paste, and the MCP plugin with OAuth ----------
+const CHATGPT_ANSWER = '## Motivo da avaliação\n\n[PACIENTE] foi trazido pela mãe, que relata sono agitado fictício desde o ano passado, com despertares frequentes descritos apenas por ela.\n\n## Sono\n\nSegundo a mãe, o sono é agitado; o pai, por sua vez, não observa alteração, e essa divergência entre os informantes permanece registrada.';
+const opId = () => 'op-' + randomBytes(8).toString('hex');
+
+test('ChatGPT copy and paste: prepared without any AI call, saved once as a draft with titles and names back', async () => {
+  const id = await withFiles();
+  const calls = aiRequests.length;
+  assert.equal((await api('POST', `/api/evaluations/${id}/chatgpt-tasks`, {token: tokens.assistant, body: {mode: 'paste'}})).status, 403);
+  const t = await api('POST', `/api/evaluations/${id}/chatgpt-tasks`, {token: tokens.psy, body: {mode: 'paste'}});
+  assert.equal(t.status, 201);
+  assert.equal(t.data.status, 'pending');
+  assert.match(t.data.text, /^FAZER TÓPICOS DE ANAMNESE/);
+  assert.ok(t.data.text.includes(ANAMNESIS_FACT), 'the notes go with the instruction');
+  assert.ok(!t.data.text.includes(PATIENT), 'the patient name is pseudonymised');
+  assert.equal(aiRequests.length, calls, 'no API call in the ChatGPT flow');
+  const short = await api('POST', `/api/chatgpt-tasks/${t.data.id}/result`, {token: tokens.psy, body: {text: 'Curto.', op_id: opId()}});
+  assert.equal(short.status, 409);
+  assert.equal((await api('POST', `/api/chatgpt-tasks/${t.data.id}/result`, {token: tokens.admin, body: {text: CHATGPT_ANSWER, op_id: opId()}})).status, 404, 'another account cannot use the task');
+  const op = opId();
+  const saved = await api('POST', `/api/chatgpt-tasks/${t.data.id}/result`, {token: tokens.psy, body: {text: CHATGPT_ANSWER.replace(/\n/g, '\r\n'), op_id: op}});
+  assert.equal(saved.status, 200);
+  assert.equal(saved.data.status, 'draft_received');
+  assert.equal(saved.data.applied, true);
+  assert.deepEqual([saved.data.shape.titles, saved.data.shape.paragraphs], [2, 2]);
+  const again = await api('POST', `/api/chatgpt-tasks/${t.data.id}/result`, {token: tokens.psy, body: {text: CHATGPT_ANSWER, op_id: op}});
+  assert.equal(again.data.duplicate, true, 'a retry with the same operation is not saved twice');
+  assert.equal((await api('POST', `/api/chatgpt-tasks/${t.data.id}/result`, {token: tokens.psy, body: {text: CHATGPT_ANSWER, op_id: opId()}})).status, 409);
+  const ev = await api('GET', `/api/evaluations/${id}`, {token: tokens.psy});
+  const s = ev.data.sections.find(x => x.section_key === 'anamnesis');
+  assert.equal(s.status, 'generated');
+  assert.ok(s.content.startsWith('## Motivo da avaliação\n\n' + PATIENT), 'titles kept and the name put back');
+  assert.equal(aiRequests.length, calls);
+});
+
+test('ChatGPT plugin: OAuth with PKCE, scoped MCP tools, isolation per account and no overwrite without confirmation', async () => {
+  const redirect = 'https://chatgpt.com/connector_platform_oauth_redirect';
+  const resource = base + '/api/mcp';
+  const prm = await api('GET', '/.well-known/oauth-protected-resource/api/mcp');
+  assert.equal(prm.data.resource, resource);
+  const asm = await api('GET', '/.well-known/oauth-authorization-server');
+  assert.equal(asm.data.issuer, base);
+  const unauth = await api('POST', '/api/mcp', {body: {jsonrpc: '2.0', id: 1, method: 'initialize', params: {}}});
+  assert.equal(unauth.status, 401);
+  assert.match(unauth.headers.get('www-authenticate'), /resource_metadata=".*oauth-protected-resource\/api\/mcp"/);
+  assert.equal((await api('POST', '/api/oauth/register', {body: {redirect_uris: ['https://outro.exemplo.test/cb']}})).status, 400, 'redirects only to ChatGPT');
+  const reg = await api('POST', '/api/oauth/register', {body: {client_name: 'ChatGPT', redirect_uris: [redirect], token_endpoint_auth_method: 'none'}});
+  assert.equal(reg.status, 201);
+  const client = reg.data.client_id;
+  const form = o => ({method: 'POST', headers: {'content-type': 'application/x-www-form-urlencoded'}, body: new URLSearchParams(o)});
+  const token = o => fetch(base + '/api/oauth/token', form({client_id: client, ...o}));
+
+  /** Authorize (consent by the signed-in account) and return {verifier, back} where back is the redirect to ChatGPT. */
+  async function authorize(jwt) {
+    const verifier = randomBytes(40).toString('base64url');
+    const q = new URLSearchParams({response_type: 'code', client_id: client, redirect_uri: redirect, code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256', state: 'estado-1', scope: 'anamnese.ler anamnese.salvar', resource});
+    const a = await fetch(base + '/api/oauth/authorize?' + q, {redirect: 'manual'});
+    assert.equal(a.status, 302);
+    const rid = new URL(a.headers.get('location')).searchParams.get('autorizar_chatgpt');
+    assert.equal((await api('GET', '/api/oauth/requests/' + rid)).status, 401, 'consent needs a NeuroLaudos sign-in');
+    assert.equal((await api('GET', '/api/oauth/requests/' + rid, {token: jwt})).data.can_approve, true);
+    const d = await api('POST', `/api/oauth/requests/${rid}/decision`, {token: jwt, body: {approve: true}});
+    return {verifier, back: new URL(d.data.redirect)};
+  }
+  const exchange = (back, verifier) => token({grant_type: 'authorization_code', code: back.searchParams.get('code'), redirect_uri: redirect, code_verifier: verifier, resource});
+  const mcp = (bearer, method, params) => api('POST', '/api/mcp', {token: bearer, body: {jsonrpc: '2.0', id: 1, method, params}});
+
+  // PKCE, single-use code (a replay revokes what the code issued), iss and state in the redirect
+  let {verifier, back} = await authorize(tokens.psy);
+  assert.equal(back.origin + back.pathname, redirect);
+  assert.equal(back.searchParams.get('state'), 'estado-1');
+  assert.equal(back.searchParams.get('iss'), base);
+  assert.equal((await exchange(back, verifier + 'x')).status, 400, 'wrong PKCE verifier');
+  const first = await (await exchange(back, verifier)).json();
+  assert.equal(first.token_type, 'Bearer');
+  assert.equal((await exchange(back, verifier)).status, 400, 'a code works once');
+  assert.equal((await mcp(first.access_token, 'tools/list', {})).status, 401, 'tokens of a replayed code are revoked');
+
+  ({verifier, back} = await authorize(tokens.psy));
+  const tok = await (await exchange(back, verifier)).json();
+  assert.equal((await mcp(tok.access_token, 'initialize', {protocolVersion: '2025-11-25'})).data.result.protocolVersion, '2025-11-25');
+  assert.equal((await mcp(tok.access_token, 'tools/list', {})).data.result.tools.length, 3);
+  // refresh rotates: the old refresh token stops working
+  const refreshed = await (await token({grant_type: 'refresh_token', refresh_token: tok.refresh_token})).json();
+  assert.ok(refreshed.access_token);
+  assert.equal((await token({grant_type: 'refresh_token', refresh_token: tok.refresh_token})).status, 400);
+  const access = refreshed.access_token;
+
+  const id = await withFiles();
+  const calls = aiRequests.length;
+  const task = await api('POST', `/api/evaluations/${id}/chatgpt-tasks`, {token: tokens.psy, body: {mode: 'mcp'}});
+  assert.equal(task.status, 201);
+  assert.ok(task.data.command.includes(task.data.code));
+  const call = (name, args, bearer = access) => mcp(bearer, 'tools/call', {name, arguments: args});
+  const got = (await call('obter_anamnese_pendente', {codigo: task.data.code.toLowerCase()})).data.result.structuredContent;
+  assert.ok(got.anotacoes_da_anamnese.includes(ANAMNESIS_FACT));
+  assert.ok(!JSON.stringify(got).includes(PATIENT), 'no patient name leaves through the plugin');
+  assert.match(got.instrucao_de_redacao, /^FAZER TÓPICOS DE ANAMNESE/);
+  assert.equal((await call('consultar_status_anamnese', {codigo: task.data.code})).data.result.structuredContent.status, 'processing');
+
+  // another account cannot read or save the psychologist's task
+  ({verifier, back} = await authorize(tokens.admin));
+  const adminTok = await (await exchange(back, verifier)).json();
+  const foreign = (await call('obter_anamnese_pendente', {codigo: task.data.code}, adminTok.access_token)).data.result;
+  assert.equal(foreign.isError, true);
+  assert.match(foreign.content[0].text, /não encontrada/);
+  assert.equal((await call('salvar_rascunho_anamnese', {codigo: task.data.code, texto: CHATGPT_ANSWER, id_operacao: opId()}, adminTok.access_token)).data.result.isError, true);
+
+  const op = opId();
+  assert.equal((await call('salvar_rascunho_anamnese', {codigo: task.data.code, texto: CHATGPT_ANSWER, id_operacao: op})).data.result.structuredContent.status, 'draft_received');
+  assert.equal((await call('salvar_rascunho_anamnese', {codigo: task.data.code, texto: CHATGPT_ANSWER, id_operacao: op})).data.result.structuredContent.gravacao_repetida, true);
+  const anamnesis = async () => (await api('GET', `/api/evaluations/${id}`, {token: tokens.psy})).data.sections.find(x => x.section_key === 'anamnesis').content;
+  assert.ok((await anamnesis()).includes(PATIENT));
+
+  // after the psychologist edits, a second plugin draft waits for her confirmation instead of overwriting
+  assert.equal((await api('PUT', `/api/evaluations/${id}/sections/anamnesis`, {token: tokens.psy, body: {content: 'Anamnese revisada pela psicóloga, fictícia.'}})).status, 200);
+  assert.equal((await call('consultar_status_anamnese', {codigo: task.data.code})).data.result.structuredContent.status, 'reviewed');
+  const t2 = await api('POST', `/api/evaluations/${id}/chatgpt-tasks`, {token: tokens.psy, body: {mode: 'mcp'}});
+  const r2 = (await call('salvar_rascunho_anamnese', {codigo: t2.data.code, texto: CHATGPT_ANSWER, id_operacao: opId()})).data.result.structuredContent;
+  assert.match(r2.mensagem, /confirmar a substituição/);
+  assert.equal(await anamnesis(), 'Anamnese revisada pela psicóloga, fictícia.', 'existing text untouched');
+  const current = (await api('GET', `/api/evaluations/${id}/chatgpt-tasks/current`, {token: tokens.psy})).data;
+  assert.equal(current.needs_confirmation, true);
+  assert.ok(current.received_text.includes(PATIENT));
+  assert.equal((await api('POST', `/api/chatgpt-tasks/${t2.data.id}/apply`, {token: tokens.psy, body: {}})).data.status, 'reviewed');
+  assert.ok((await anamnesis()).startsWith('## Motivo'));
+  const hist = await api('GET', `/api/evaluations/${id}/sections/anamnesis/history`, {token: tokens.psy});
+  assert.ok(JSON.stringify(hist.data).includes('Anamnese revisada pela psicóloga'), 'the replaced text stays in the versions');
+
+  assert.equal(aiRequests.length, calls, 'no API call in the plugin flow');
+  assert.equal((await api('DELETE', '/api/chatgpt/connection', {token: tokens.psy})).status, 200);
+  assert.equal((await mcp(access, 'tools/list', {})).status, 401, 'disconnecting revokes the tokens');
+  assert.equal((await api('DELETE', `/api/evaluations/${id}`, {token: tokens.psy})).status, 200, 'an evaluation with tasks can still be deleted');
 });

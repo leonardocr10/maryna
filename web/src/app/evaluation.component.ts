@@ -21,6 +21,7 @@ import {SectionVersionsComponent} from './ui/section-versions.component';
 import {DevolutivaComponent} from './ui/devolutiva.component';
 import {PlanComponent} from './ui/plan.component';
 import {DeliveryComponent} from './ui/delivery.component';
+import {ChatgptAnamnesisComponent} from './ui/chatgpt-anamnesis.component';
 import {AI_MODE_CONFIRM, CONCLUSION_GUIDANCE, HAND_ONLY, niceTitle, OPTIONAL_SECTIONS, PERCEPTION_MAX_AGE, SECTIONS, SECTION_STATE, STATUS, SectionState, ageText, ageYears, brDate, brl, int, words} from './shared';
 
 /** Section the AI only writes from the psychologist's own guidance (never in "Gerar laudo"). */
@@ -44,7 +45,7 @@ async function writeClipboard(text: string): Promise<boolean> {
 @Component({
   selector: 'nl-evaluation',
   standalone: true,
-  imports: [CommonModule, FormsModule, DropZoneComponent, IdentityFormComponent, IconComponent, FilterSelectComponent, DictateComponent, RichEditorComponent, ReviewPanelComponent, SectionVersionsComponent, DevolutivaComponent, PlanComponent, DeliveryComponent],
+  imports: [CommonModule, FormsModule, DropZoneComponent, IdentityFormComponent, IconComponent, FilterSelectComponent, DictateComponent, RichEditorComponent, ReviewPanelComponent, SectionVersionsComponent, DevolutivaComponent, PlanComponent, DeliveryComponent, ChatgptAnamnesisComponent],
   templateUrl: './evaluation.component.html',
   styleUrl: './evaluation.component.css',
 })
@@ -569,6 +570,8 @@ export class EvaluationComponent implements OnDestroy {
   // ---------- ChatGPT (manual mode) ----------
   // The request carries this section's own tables/text and the instruction, with names replaced by markers (API side).
   gptOpen = ''; gptText = ''; gptHidden = 0; gptLoading = ''; gptCopied = false;
+  /** Anamnese generation panel (API, ChatGPT plugin or copy and paste). */
+  cgOpen = false;
   /** Builds the request, copies it, opens ChatGPT and shows the panel to copy again or paste the answer back. */
   async openGpt(k: string) {
     if (this.gptLoading) return;

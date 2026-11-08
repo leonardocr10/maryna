@@ -15,6 +15,7 @@ import {PatientsComponent} from './patients.component';
 import {ModelsComponent} from './models.component';
 import {ReportsComponent} from './reports.component';
 import {LibraryComponent} from './library.component';
+import {ChatgptConsentComponent} from './ui/chatgpt-consent.component';
 
 type Screen = 'home' | 'evaluation' | 'new' | 'settings' | 'patients' | 'models' | 'library' | 'reports';
 const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 'models', 'library', 'reports'];
@@ -22,7 +23,7 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule, NewEvaluationComponent, EvaluationComponent, SettingsComponent, IconComponent, ConfirmDialogComponent, DashboardComponent, PatientsComponent, ModelsComponent, ReportsComponent, LibraryComponent],
+  imports: [CommonModule, FormsModule, NewEvaluationComponent, EvaluationComponent, SettingsComponent, IconComponent, ConfirmDialogComponent, DashboardComponent, PatientsComponent, ModelsComponent, ReportsComponent, LibraryComponent, ChatgptConsentComponent],
   template: `
 <!-- Theme switch, shared by the login screen and the top bar -->
 <ng-template #themeSwitch>
@@ -99,6 +100,8 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
   </section>
 </div>
 
+<!-- OAuth consent for the ChatGPT plugin (the request id survives the sign-in) -->
+<nl-chatgpt-consent *ngIf="oauthRequest && api.loggedIn() && api.me() && !mustChange()" [requestId]="oauthRequest" (done)="clearOauthRequest()"></nl-chatgpt-consent>
 <div *ngIf="api.loggedIn() && api.me() && !mustChange()" class="app" [class.nav-collapsed]="navCollapsed()">
   <aside class="nav" aria-label="Navegação principal">
     <button type="button" class="nav-brand" (click)="goHome()" title="NeuroLaudos IA">
@@ -280,6 +283,11 @@ export class AppComponent {
   selectedId = signal<string>(this.saved.id || '');
   search = '';
   generating = false; autoGenerate = false;
+  /** ?autorizar_chatgpt=<id> from the OAuth authorize redirect: kept for this tab and removed from the address bar. */
+  oauthRequest = (() => { try { const q = new URLSearchParams(location.search); const id = q.get('autorizar_chatgpt');
+    if (id && /^[A-Za-z0-9_-]{20,80}$/.test(id)) { sessionStorage.setItem('nl_oauth_request', id); q.delete('autorizar_chatgpt'); history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash); }
+    return sessionStorage.getItem('nl_oauth_request') || ''; } catch { return ''; } })();
+  clearOauthRequest() { this.oauthRequest = ''; try { sessionStorage.removeItem('nl_oauth_request'); } catch {} }
 
 
   constructor() {

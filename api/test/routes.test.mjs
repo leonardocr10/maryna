@@ -1009,8 +1009,12 @@ test('devolutiva schedule: spreadsheet imported once, each new evaluation adds a
   assert.equal(fromSheet.length, 2);
   assert.equal(fromSheet[0].status, 'feita'); assert.equal(fromSheet[0].delivery_date, '2026-09-02'); assert.equal(fromSheet[0].age, '9 anos');
   assert.equal(fromSheet[1].status, 'pendente'); assert.equal(fromSheet[1].tests_done_date, '2026-10-20');
+  assert.equal(fromSheet[0].readiness, 'Não'); assert.equal(fromSheet[1].readiness, 'Sim');
   let mine = list.rows.find(r => r.evaluation_id === id);
   assert.ok(mine, 'new evaluation has its row'); assert.equal(mine.patient, PATIENT); assert.equal(mine.status, 'pendente');
+  assert.equal(mine.readiness, 'Não');
+  assert.equal((await api('PUT', `/api/devolutiva-agenda/${mine.id}`, {token: tokens.psy, body: {readiness: 'talvez'}})).status, 400);
+  assert.equal((await api('PUT', `/api/devolutiva-agenda/${mine.id}`, {token: tokens.psy, body: {readiness: 'Sim'}})).data.readiness, 'Sim');
 
   // notes are editable; the date of an evaluation row only comes from the delivery
   const put = await api('PUT', `/api/devolutiva-agenda/${mine.id}`, {token: tokens.psy, body: {notes: 'Falta sessão familiar', delivery_date: '2026-01-01'}});

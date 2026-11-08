@@ -1,5 +1,6 @@
 // Devolutiva schedule ("agenda de devolutivas"): reads the clinic's spreadsheet (CSV with ";", exported by Excel) once.
 // Columns, by header: PACIENTE; IDADE; SUSPEITA DIAGNOSTICA; TESTE A SER APLICADO; INICIO; PRONTOS?; DEVOLUTIVA.
+// A row without a devolutiva date is "pendente", whatever text the DEVOLUTIVA column has ("retorna só em agosto").
 // The texts are kept exactly as typed; dates found in them ("FINALIZADO DIA 13/05/2026", "OK DIA 09/06/2026") are also
 // stored as ISO dates so the screen can sort and filter.
 
@@ -37,6 +38,34 @@ export function dateInText(v) {
 const key = h => String(h || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const clean = (v, max) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, max);
 
+/** Patient name for matching a spreadsheet row with an evaluation: no accents, case or extra spaces. */
+export const nameKey = v => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+/** Pairs spreadsheet rows (newest position first) with evaluations of the same patient name (newest first), one each.
+ *  `sheet`: [{id, patient_name, position}] not linked yet; `evals`: [{id, name, created_at}] not linked to a sheet row. */
+export function agendaLinks(sheet, evals) {
+  const free = new Map();
+  for (const e of [...evals].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))) {
+    const k = nameKey(e.name); if (!k) continue;
+    if (!free.has(k)) free.set(k, []); free.get(k).push(e.id);
+  }
+  const out = [];
+  for (const r of [...sheet].sort((a, b) => b.position - a.position)) {
+    const id = free.get(nameKey(r.patient_name))?.shift(); if (id) out.push({row: r.id, evaluation: id});
+  }
+  return out;
+}
+
+/** "Prontos?" is a Sim/Não choice. A free text from the spreadsheet ("pronto", "OK DIA 09/06") means Sim and is kept
+ *  in the notes (`moved`); empty means Não. */
+export function readiness(v) {
+  const text = clean(v, 160), k = key(text);
+  if (!text || k === 'NAO' || k === 'N') return {value: 'Não', moved: ''};
+  return {value: 'Sim', moved: k === 'SIM' || k === 'S' ? '' : text};
+}
+/** Notes with the old "Prontos?" text in front ("Prontos: pronto · notes"). */
+export const notesWithReadiness = (notes, moved, max = 600) => (moved ? ['Prontos: ' + moved, notes].filter(Boolean).join(' · ') : notes || '').slice(0, max);
+
 /** Spreadsheet rows to schedule records. Rows without a patient name are blank lines and are skipped. */
 export function agendaFromCsv(text) {
   const rows = parseCsv(text);
@@ -49,9 +78,9 @@ export function agendaFromCsv(text) {
   const out = [];
   for (const r of rows) {
     const patient = get(r, col.patient, 160); if (!patient) continue;
-    const tests = get(r, col.tests), delivery = get(r, col.delivery);
-    out.push({patient_name: patient, age_text: get(r, col.age, 40), notes: get(r, col.notes, 600), tests_text: tests,
-      tests_done_date: dateInText(tests), start_text: get(r, col.start, 120), readiness: get(r, col.ready, 160),
+    const tests = get(r, col.tests), delivery = get(r, col.delivery), ready = readiness(get(r, col.ready, 160));
+    out.push({patient_name: patient, age_text: get(r, col.age, 40), notes: notesWithReadiness(get(r, col.notes, 600), ready.moved), tests_text: tests,
+      tests_done_date: dateInText(tests), start_text: get(r, col.start, 120), readiness: ready.value,
       delivery_text: delivery, delivery_date: dateInText(delivery)});
   }
   return out;

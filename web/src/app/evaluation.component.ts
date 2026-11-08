@@ -353,18 +353,9 @@ export class EvaluationComponent implements OnDestroy {
   warnings(k: string): string[] { try { return JSON.parse(this.section(k)?.source_summary || '[]'); } catch { return []; } }
   /** Manual evaluations never call the AI: the professional writes every section. */
   aiOn() { return this.current?.ai_mode !== 'manual'; }
-  /** Manual evaluation: the AI is used only when the person picks it for one section, after confirming once per evaluation. */
-  private manualAiOk = '';
-  async allowSectionAi(): Promise<boolean> {
-    if (this.aiOn() || this.manualAiOk === this.evaluationId) return true;
-    if (!await this.confirm.ask({tone: 'review', title: 'Usar a IA nesta seção?',
-      body: 'Esta avaliação é manual. Os dados desta seção só vão para a IA porque você escolheu, com nomes, datas e contatos trocados por marcadores.',
-      facts: ['As outras seções continuam manuais', 'O texto da IA é rascunho: você revisa e aprova', 'A avaliação continua no modo Manual'], ok: 'Usar a IA'})) return false;
-    this.manualAiOk = this.evaluationId; return true;
-  }
-  /** Body of a section-level AI request: a manual evaluation says the person chose it. */
+  /** Body of a section-level AI request: in a manual evaluation, clicking the section's AI button is the person's choice. */
   aiBody(extra: any = {}) { return this.aiOn() ? extra : {...extra, manual_ai: true}; }
-  async toggleCg(k: string) { if (this.cgOpen === k) { this.cgOpen = ''; return; } if (await this.allowSectionAi()) { this.gptOpen = ''; this.cgOpen = k; } }
+  toggleCg(k: string) { if (this.cgOpen === k) { this.cgOpen = ''; return; } this.gptOpen = ''; this.cgOpen = k; }
   /** Closing "Cidade, data." line: what the evaluation saved, else what the base document says. */
   placeDate = '';
   placeInFile() { return this.inspection?.place_date || ''; }
@@ -960,7 +951,7 @@ export class EvaluationComponent implements OnDestroy {
   async openCg(k: string) {
     if (this.isHand(k)) return;
     if (this.editing === k && !await this.emSafe()) return;
-    if (await this.allowSectionAi()) { this.gptOpen = ''; this.cgFor = k; }
+    this.gptOpen = ''; this.cgFor = k;
   }
   cgToAi() { const k = this.cgFor; this.cgFor = ''; this.openAi(k); }
   async onCgSaved() { const k = this.cgFor; await this.load(); this.changed.emit(); this.refreshEditor(k); }
@@ -998,7 +989,6 @@ export class EvaluationComponent implements OnDestroy {
   async regenerate(k: string, withInstruction = false, skipConfirm = false) {
     if (withInstruction) await this.dictation.stop();
     if (!this.aiReady) { this.api.notify('Geração pela API desligada. Ative em Configurações.'); return; }
-    if (!await this.allowSectionAi()) return;
     if (!skipConfirm && this.state(k) !== 'pend') {
       const name = this.available().find(x => x.id === k)?.name || 'esta seção';
       const instr = (this.instrDraft[k] || '').trim();
@@ -1332,7 +1322,6 @@ export class EvaluationComponent implements OnDestroy {
   /** Builds the request, copies it, opens ChatGPT and shows the panel to copy again or paste the answer back. */
   async openGpt(k: string) {
     if (this.gptLoading) return;
-    if (!await this.allowSectionAi()) return;
     this.gptLoading = k;
     try {
       // An instruction typed but not saved yet must go in the request.

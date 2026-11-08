@@ -101,6 +101,22 @@ async function injectOpenTabs() {
   }
 }
 
+/** A NeuroLaudos IA address the person allowed (popup "Ativar neste site" or the address list): saved, registered and
+ *  the content script goes into its open tabs right away (no reinstall, a reload is enough). */
+async function enableOrigin(origin) {
+  if (!/^https?:\/\/[^/]+$/.test(origin || '') || origin === 'https://chatgpt.com' || DEFAULT_NL_ORIGINS.includes(origin)) return false;
+  if (!(await chrome.permissions.contains({origins: [origin + '/*']}))) return false;
+  const cfg = await settings();
+  if (!(cfg.extraOrigins || []).includes(origin)) await storage.set(SETTINGS_KEY, {...cfg, extraOrigins: [...(cfg.extraOrigins || []), origin]});
+  await registerOrigins();
+  let tabs = [];
+  try { tabs = await chrome.tabs.query({url: origin + '/*'}); } catch {}
+  for (const t of tabs) { try { await chrome.scripting.insertCSS({target: {tabId: t.id}, files: NL_CSS}); await chrome.scripting.executeScript({target: {tabId: t.id}, files: NL_SCRIPTS}); } catch {} }
+  return true;
+}
+// The popup can close while Chrome shows the permission prompt: the grant is handled here, whoever asked for it.
+chrome.permissions.onAdded.addListener(async p => { for (const o of p.origins || []) { try { await enableOrigin(new URL(o.replace('/*', '/')).origin); } catch {} } });
+
 // ---------- badge ----------
 async function badge(s) {
   try {
@@ -188,6 +204,7 @@ async function handle(msg, sender) {
       return {ok: true};
     }
     case 'settings.get': return {ok: true, settings: await settings()};
+    case 'origin.enable': return {ok: await enableOrigin(msg.origin)};
     case 'settings.set': {
       const next = {...(await settings()), ...(msg.settings || {})};
       await storage.set(SETTINGS_KEY, next);

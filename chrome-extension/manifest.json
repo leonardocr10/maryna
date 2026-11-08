@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "NeuroLaudos IA — Modo automático",
   "short_name": "NeuroLaudos Auto",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Gera rascunhos das seções com o ChatGPT e o plugin NeuroLaudos IA, de forma supervisionada. Nunca aprova textos nem autoriza por você.",
   "minimum_chrome_version": "116",
   "icons": {
@@ -27,11 +27,13 @@
     "storage",
     "scripting",
     "alarms",
-    "notifications"
+    "notifications",
+    "activeTab"
   ],
   "host_permissions": [
     "http://localhost:9091/*",
     "http://127.0.0.1:9091/*",
+    "https://66-94-100-166.sslip.io/*",
     "https://chatgpt.com/*"
   ],
   "optional_host_permissions": [
@@ -42,7 +44,8 @@
     {
       "matches": [
         "http://localhost:9091/*",
-        "http://127.0.0.1:9091/*"
+        "http://127.0.0.1:9091/*",
+        "https://66-94-100-166.sslip.io/*"
       ],
       "js": [
         "content/selectors.js",
@@ -77,6 +80,7 @@
       "matches": [
         "http://localhost:9091/*",
         "http://127.0.0.1:9091/*",
+        "https://66-94-100-166.sslip.io/*",
         "https://*/*"
       ]
     }

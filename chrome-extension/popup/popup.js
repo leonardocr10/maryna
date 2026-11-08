@@ -42,6 +42,32 @@ async function load() {
   }
 }
 
+/** The NeuroLaudos IA tab in front: one click enables the extension on its address (IP of the network, https...). */
+async function siteCard() {
+  const box = $('#site');
+  let tab;
+  try { [tab] = await chrome.tabs.query({active: true, currentWindow: true}); } catch {}
+  let origin = null;
+  try { origin = new URL(tab?.url || '').origin; } catch {}
+  if (!origin || !/^https?:/.test(origin) || origin === 'https://chatgpt.com') return;
+  const builtIn = ['http://localhost:9091', 'http://127.0.0.1:9091', 'https://66-94-100-166.sslip.io'].includes(origin);
+  const on = builtIn || await chrome.permissions.contains({origins: [origin + '/*']});
+  box.hidden = false;
+  if (on) { box.innerHTML = `<p class="muted">Ativa neste site: <b>${esc(origin)}</b></p>`; return; }
+  box.innerHTML = `<p style="margin:0 0 8px;font-size:13px">Esta aba (<b>${esc(origin)}</b>) é o NeuroLaudos IA? Ative a extensão neste endereço.</p><button class="btn pri" id="enable">Ativar neste site</button>`;
+  $('#enable').onclick = async () => {
+    // The request must run in the click; the worker finishes the setup even if this popup closes.
+    const ok = await chrome.permissions.request({origins: [origin + '/*']});
+    if (!ok) { say('Permissão não concedida. Nada foi alterado.'); return; }
+    await chrome.runtime.sendMessage({type: 'origin.enable', origin});
+    try { await chrome.tabs.reload(tab.id); } catch {}
+    say('Ativada. A página foi recarregada: clique em Modo automático.');
+    settings = (await chrome.runtime.sendMessage({type: 'settings.get'})).settings || settings;
+    siteCard();
+  };
+}
+siteCard();
+
 $('#add').onclick = async () => {
   let origin;
   try { const u = new URL($('#origin').value.trim()); if (!/^https?:$/.test(u.protocol)) throw 0; origin = u.origin; } catch { say('Endereço inválido. Use algo como https://neurolaudos.exemplo.com.br'); return; }

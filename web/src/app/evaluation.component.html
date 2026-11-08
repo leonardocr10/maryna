@@ -530,7 +530,10 @@
         <li>Clique em <b>Carregar sem compactação</b> e escolha a pasta que tem o arquivo <code>manifest.json</code>.</li>
         <li>Volte aqui, recarregue a página e clique em <b>Modo automático</b>.</li>
       </ol>
-      <div class="alert tip small"><nl-icon name="info"/><div><p>Antes de usar: entre no ChatGPT (chatgpt.com) e conecte o plugin <b>NeuroLaudos IA</b>. O método <b>ChatGPT — plugin (MCP)</b> precisa estar ligado neste NeuroLaudos IA.</p><p>A extensão nunca aprova textos, nunca substitui texto existente e nunca autoriza o plugin por você. Endereço diferente de localhost:9091? Adicione-o no ícone da extensão, em <b>Endereços do NeuroLaudos IA</b>.</p></div></div>
+      <div class="alert small" [class.warn]="!extDefaultOrigin()" [class.tip]="extDefaultOrigin()"><nl-icon name="alert"/><div>
+        <p><b>Já instalou e esta janela continua aparecendo?</b> Este NeuroLaudos IA está em <code>{{appOrigin}}</code>{{extDefaultOrigin() ? '' : ', um endereço que a extensão só usa com a sua permissão'}}. Clique no ícone da extensão (robô, na barra do Chrome; se não aparecer, no quebra-cabeça) e em <b>Ativar neste site</b>. A página recarrega sozinha.</p>
+      </div></div>
+      <div class="alert tip small"><nl-icon name="info"/><div><p>Antes de usar: entre no ChatGPT (chatgpt.com) e conecte o plugin <b>NeuroLaudos IA</b>. O método <b>ChatGPT — plugin (MCP)</b> precisa estar ligado neste NeuroLaudos IA.</p><p>A extensão nunca aprova textos, nunca substitui texto existente e nunca autoriza o plugin por você.</p></div></div>
       <div class="ah-acts"><button type="button" class="btn btn-secondary" (click)="autoHelp=false">Fechar</button><button type="button" class="btn btn-primary" (click)="reloadPage()">Já instalei, recarregar</button></div>
     </div>
   </div>

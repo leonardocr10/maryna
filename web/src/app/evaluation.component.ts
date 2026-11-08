@@ -1054,6 +1054,9 @@ export class EvaluationComponent implements OnDestroy {
   // ---------- "Aprovar todas": a modal with one check per section, its issues and a final confirmation ----------
   // ---------- Modo automático (Chrome extension) ----------
   autoHelp = false;
+  readonly appOrigin = location.origin;
+  /** Addresses where the extension runs without asking (manifest); any other needs "Ativar neste site". */
+  extDefaultOrigin() { return ['http://localhost:9091', 'http://127.0.0.1:9091', 'https://66-94-100-166.sslip.io'].includes(this.appOrigin); }
   /** The extension marks <html data-nlx-extension>; then its panel opens, otherwise the installation steps. */
   openAutoMode() { if (document.documentElement.hasAttribute('data-nlx-extension')) window.dispatchEvent(new CustomEvent('nlx-open-panel')); else this.autoHelp = true; }
   async copyExtUrl() { try { await navigator.clipboard.writeText('chrome://extensions'); this.api.notify('Endereço copiado. Cole na barra de endereço do Chrome.'); } catch { this.api.notify('Digite chrome://extensions na barra de endereço do Chrome.'); } }

@@ -35,7 +35,7 @@ Requisitos: Chrome 116 ou mais novo (Windows). No NeuroLaudos IA, o método **Ch
 
 ## Configuração
 
-- **Endereço do NeuroLaudos IA.** Já funcionam `http://localhost:9091` e `http://127.0.0.1:9091`. Para outro endereço (ex.: o https da clínica), clique no ícone da extensão > **Endereços do NeuroLaudos IA** > cole o endereço > **Adicionar**. O Chrome pede permissão só para esse endereço. Recarregue a aba do NeuroLaudos IA (F5).
+- **Endereço do NeuroLaudos IA.** Já funcionam `http://localhost:9091`, `http://127.0.0.1:9091` e `https://66-94-100-166.sslip.io` (produção). Em qualquer outro endereço (IP da rede, https), abra o NeuroLaudos IA, clique no ícone da extensão e em **Ativar neste site**: o Chrome pede permissão só para esse endereço e a página recarrega. Sem isso, o app continua mostrando "Instalar o Modo automático" mesmo com a extensão instalada. Para outro endereço (ex.: o https da clínica), clique no ícone da extensão > **Endereços do NeuroLaudos IA** > cole o endereço > **Adicionar**. O Chrome pede permissão só para esse endereço. Recarregue a aba do NeuroLaudos IA (F5).
 - **Configurações** (no mesmo popup): espera máxima pela resposta do ChatGPT (padrão 15 min, inclui o tempo da sua autorização), espera pelo rascunho no NeuroLaudos IA (120 s) e tentativas automáticas por seção antes de enviar a mensagem (1).
 - Esteja conectada no NeuroLaudos IA e no ChatGPT (chatgpt.com) antes de iniciar.
 

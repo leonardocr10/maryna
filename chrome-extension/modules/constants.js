@@ -5,7 +5,7 @@ export const STORAGE_KEY = 'nlauto.run';
 export const SETTINGS_KEY = 'nlauto.settings';
 
 /** Default NeuroLaudos IA addresses (iniciar.bat / ng serve). Others are added in the popup. */
-export const DEFAULT_NL_ORIGINS = ['http://localhost:9091', 'http://127.0.0.1:9091'];
+export const DEFAULT_NL_ORIGINS = ['http://localhost:9091', 'http://127.0.0.1:9091', 'https://66-94-100-166.sslip.io'];
 export const CHATGPT_URL = 'https://chatgpt.com/';
 export const PLUGIN_NAME = 'NeuroLaudos IA';
 

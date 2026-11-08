@@ -62,7 +62,8 @@
 
   <!-- Steps 1–3: card + side column -->
   <div *ngIf="step<3" class="stepwrap">
-    <div class="col-main">
+    <!-- step 1: Identificação on the left, Arquivos on the right -->
+    <div class="col-main" [class.two]="step===0">
 
       <!-- 1. Identificação -->
       <section *ngIf="step===0" class="card stepcard">
@@ -196,27 +197,6 @@
     </div>
 
     <!-- Side column -->
-    <aside class="sidecol">
-      <section class="card sbox">
-        <p class="label-caps">Progresso</p>
-        <p class="big"><b>{{approved()}}</b><span>de {{total()}} seções aprovadas</span></p>
-        <div class="progress" [class.full]="allApproved()"><span [style.width.%]="total() ? approved()/total()*100 : 0"></span></div>
-      </section>
-      <section class="card sline-card">
-        <button class="sline" (click)="costOpen=!costOpen" [attr.aria-expanded]="costOpen"><span class="label-caps">Custo da IA</span><b>{{brl(usage?.cost_brl||0)}} <nl-icon name="chevd" [class.up]="costOpen"/></b></button>
-        <div *ngIf="costOpen" class="fold-body">
-          <p class="mono tokens">{{int(usage?.total_tokens||0)}} tokens · {{usage?.calls||0}} chamadas</p>
-          <p class="note">Estimativa pela tabela de preços do modelo e câmbio do servidor. O valor exato fica no painel da OpenAI.</p>
-        </div>
-      </section>
-      <section class="card sline-card">
-        <button class="sline" (click)="filesOpen=!filesOpen" [attr.aria-expanded]="filesOpen"><span class="label-caps">Arquivos</span><b>{{docCount()}} de 2 <nl-icon name="chevd" [class.up]="filesOpen"/></b></button>
-        <div *ngIf="filesOpen" class="fold-body">
-          <button class="file-line" (click)="goStep(1)"><nl-icon [name]="docName('base') ? 'checkc' : 'doc'" [class.ok]="docName('base')"/><span class="mono">{{docName('base')||'Arquivo base'}}</span></button>
-          <button class="file-line" (click)="goStep(1)"><nl-icon [name]="docName('anamnesis') ? 'checkc' : 'doc'" [class.ok]="docName('anamnesis')"/><span class="mono">{{docName('anamnesis')||'Anamnese'}}</span></button>
-        </div>
-      </section>
-    </aside>
   </div>
 
   <!-- 4. Conferir e baixar -->
@@ -225,7 +205,6 @@
       <h2>Conferir seções</h2>
       <div class="head-tools">
         <button *ngIf="!readOnly()" class="btn btn-secondary btn-sm" (click)="openApproveAll()" [disabled]="allApproved()" [title]="allApproved() ? 'Todas já estão aprovadas' : 'Escolher as seções e aprovar'"><nl-icon name="check"/> Aprovar todas</button>
-        <button *ngIf="mode==='secoes'" type="button" class="btn btn-secondary btn-sm" (click)="setNavStyle(navStyle==='compacta' ? 'barra' : 'compacta')" [title]="navStyle==='compacta' ? 'Voltar para a barra com o nome de cada seção' : 'Usar a navegação compacta: seção atual, anterior/próxima e menu com todas'" [attr.aria-label]="navStyle==='compacta' ? 'Mostrar barra com nomes das seções' : 'Usar navegação compacta'"><nl-icon [name]="navStyle==='compacta' ? 'bars' : 'list'"/></button>
         <div class="seg" role="tablist" aria-label="Modo de visualização"><button type="button" role="tab" [attr.aria-selected]="mode==='secoes'" [class.on]="mode==='secoes'" (click)="setMode('secoes')"><nl-icon name="layers"/> Seções</button><button *ngIf="canWrite()" type="button" role="tab" [attr.aria-selected]="mode==='documento'" [class.on]="mode==='documento'" (click)="setMode('documento')"><nl-icon name="doc"/> Documento</button></div>
       </div>
     </div>
@@ -234,12 +213,15 @@
       <section *ngIf="!drafted() && !reviewRows().length" class="card card-pad"><p class="muted">Ainda não há textos. <button *ngIf="aiOn()" class="link" (click)="goStep(2)">Gerar com IA</button><ng-container *ngIf="!aiOn()">Use Escrever em cada seção.</ng-container></p></section>
       <div *ngIf="reviewRows().length" class="work">
         <!-- Navegação compacta (padrão): seção aberta em destaque, anterior/próxima, barra fina e menu "Todas as seções" -->
-        <nav *ngIf="navStyle==='compacta'" class="card secnav" aria-label="Seções da avaliação" (click)="$event.stopPropagation()">
+        <nav class="card secnav" aria-label="Seções da avaliação" (click)="$event.stopPropagation()">
           <div class="sn-mid">
             <div class="sn-head">
               <span class="label-caps">Seção {{secNum(cur())}} de {{reviewRows().length}}</span>
-              <span class="sn-title">{{curName()}}</span>
-              <span [class]="secBadge(cur())">{{secLabel(cur())}}</span>
+              <!-- progress summary (the section name is already in the card below); a click lists those sections -->
+              <span class="sn-legend">
+                <button *ngFor="let g of secGroups()" type="button" class="lg" [ngClass]="'lg-' + g.kind" (click)="secFilter=g.kind; secMenu=true" [title]="'Ver as seções: ' + g.label">
+                  <i aria-hidden="true"></i><b>{{secCount(g.kind)}}</b> {{secCount(g.kind)===1 ? g.one : g.label}}</button>
+              </span>
               <button type="button" class="btn btn-secondary btn-sm sn-all" (click)="secMenu=!secMenu" [attr.aria-expanded]="secMenu" aria-controls="sec-menu">Todas as seções <nl-icon [name]="secMenu ? 'chevu' : 'chevd'"/></button>
             </div>
             <div class="sn-bars" [style.grid-template-columns]="'repeat(' + reviewRows().length + ', minmax(0, 1fr))'">
@@ -253,6 +235,7 @@
               <span class="label-caps">Todas as seções ({{reviewRows().length}})</span>
               <div class="sn-filters" role="group" aria-label="Filtrar seções">
                 <button type="button" [class.on]="!secFilter" [attr.aria-pressed]="!secFilter" (click)="secFilter=''">Todas</button>
+                <button *ngIf="secCount('ok')" type="button" [class.on]="secFilter==='ok'" [attr.aria-pressed]="secFilter==='ok'" (click)="secFilter='ok'">Aprovadas {{secCount('ok')}}</button>
                 <button *ngIf="secCount('warn')" type="button" [class.on]="secFilter==='warn'" [attr.aria-pressed]="secFilter==='warn'" (click)="secFilter='warn'">Para revisar {{secCount('warn')}}</button>
                 <button *ngIf="secCount('idle')" type="button" [class.on]="secFilter==='idle'" [attr.aria-pressed]="secFilter==='idle'" (click)="secFilter='idle'">Pendentes {{secCount('idle')}}</button>
                 <button *ngIf="secCount('missing')" type="button" [class.on]="secFilter==='missing'" [attr.aria-pressed]="secFilter==='missing'" (click)="secFilter='missing'">Falta {{secCount('missing')}}</button>
@@ -266,13 +249,6 @@
         </nav>
 
         <!-- Modelo anterior (para voltar, use o botão ao lado de "Aprovar todas"): uma barra por seção com o nome embaixo -->
-        <nav *ngIf="navStyle==='barra'" class="card secstrip" aria-label="Seções da avaliação" [style.grid-template-columns]="'repeat(' + reviewRows().length + ', minmax(0, 1fr))'">
-          <button *ngFor="let s of reviewRows(); let i=index; trackBy: bySection" type="button" class="strip-item" [class.on]="cur()===s.id"
-            [ngClass]="'st-' + (isMissing(s.id) ? 'missing' : SECTION_STATE[state(s.id)].css)" (click)="select(s.id)" [attr.aria-current]="cur()===s.id ? 'true' : null"
-            [title]="(i+1) + '. ' + s.name + ' · ' + (isMissing(s.id) ? 'Falta no documento' : SECTION_STATE[state(s.id)].label)">
-            <span class="bar"></span><span class="nm">{{s.name}}</span>
-          </button>
-        </nav>
 
         <ng-container *ngFor="let s of reviewRows(); let i=index; trackBy: bySection">
         <!-- A section missing from the base document can still be drafted by hand; its text just does not go into the Word file -->

@@ -531,3 +531,21 @@ nl-rich-editor .rte-area { font: 14.5px/1.65 var(--font); color: var(--text); }
 .pp-sub { margin: 8px 0 2px 29px; font-size: 13px; color: var(--text-2); }
 .pp-sub .create-row { margin-top: 8px; }
 @media (max-width: 700px) { .pp-row { flex-wrap: wrap; } .pp-act { margin-left: 29px; } .pp-state { margin-left: 0; } .pp-sub { margin-left: 0; } }
+
+/* Section bar: progress summary instead of the current name */
+.sn-legend { display: flex; align-items: center; gap: 4px 14px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.lg { display: inline-flex; align-items: center; gap: 6px; padding: 2px 4px; border: 0; border-radius: 6px; background: none; font: 400 13px var(--font); color: var(--text-2); cursor: pointer; }
+.lg:hover { background: var(--chip); }
+.lg:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.lg b { font-weight: 700; color: var(--text); }
+.lg i { width: 9px; height: 9px; border-radius: 50%; background: var(--idle-dot); }
+.lg-ok i { background: var(--ok-dot); }
+.lg-warn i { background: var(--warn-dot); }
+.lg-missing { color: var(--danger); }
+.lg-missing b { color: var(--danger); }
+.lg-missing i { background: none; border: 1.5px dashed var(--danger); width: 10px; height: 10px; }
+
+/* Steps 1–2 without the side column; step 1 shows Identificação and Arquivos side by side */
+.stepwrap { grid-template-columns: minmax(0, 1fr); }
+.col-main.two { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); align-items: start; gap: 12px; }
+@media (max-width: 1100px) { .col-main.two { grid-template-columns: minmax(0, 1fr); } }

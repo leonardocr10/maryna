@@ -522,9 +522,7 @@ export class EvaluationComponent implements OnDestroy {
   // ---------- Conferir seções: navegação ----------
   // 'compacta' (padrão): a seção aberta em destaque, anterior/próxima, uma barra fina e o menu "Todas as seções".
   // 'barra': o modelo anterior, uma barra por seção com o nome embaixo. A escolha fica salva neste navegador.
-  navStyle: 'compacta' | 'barra' = (() => { try { return localStorage.getItem('nl-conf-nav') === 'barra' ? 'barra' : 'compacta'; } catch { return 'compacta'; } })();
-  secMenu = false; secFilter: '' | 'warn' | 'idle' | 'missing' = '';
-  setNavStyle(v: 'compacta' | 'barra') { this.navStyle = v; this.secMenu = false; try { localStorage.setItem('nl-conf-nav', v); } catch {} }
+  secMenu = false; secFilter: '' | 'ok' | 'warn' | 'idle' | 'missing' = '';
   secKind(k: string) { return this.isMissing(k) ? 'missing' : SECTION_STATE[this.state(k)].css; }
   secBadge(k: string) { return 'badge ' + (this.isMissing(k) ? 'danger' : SECTION_STATE[this.state(k)].css); }
   secLabel(k: string) { return this.isMissing(k) ? 'Falta no documento' : SECTION_STATE[this.state(k)].label; }
@@ -534,6 +532,11 @@ export class EvaluationComponent implements OnDestroy {
   neighbor(d: number) { return this.reviewRows()[this.curIndex() + d]; }
   stepSection(d: number) { const s = this.neighbor(d); if (s) { this.secMenu = false; this.select(s.id); } }
   pickSection(k: string) { this.secMenu = false; this.select(k); }
+  /** Progress summary of the section bar: only the kinds that have sections. */
+  secGroups() {
+    return ([{kind: 'ok', one: 'aprovada', label: 'aprovadas'}, {kind: 'warn', one: 'para revisar', label: 'para revisar'},
+      {kind: 'idle', one: 'pendente', label: 'pendentes'}, {kind: 'missing', one: 'falta no documento', label: 'faltam no documento'}] as {kind: 'ok' | 'warn' | 'idle' | 'missing'; one: string; label: string}[]).filter(g => this.secCount(g.kind));
+  }
   secCount(kind: string) { return this.reviewRows().filter(s => this.secKind(s.id) === kind).length; }
   secMenuRows() { return this.secFilter ? this.reviewRows().filter(s => this.secKind(s.id) === this.secFilter) : this.reviewRows(); }
   // ---------- Documento, modelo B: section texts beside the Word ----------

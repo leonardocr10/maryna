@@ -62,12 +62,13 @@ const newOpId = () => 'op-' + (crypto.randomUUID?.() || Math.random().toString(3
     <ng-container *ngIf="mcpTask(); else prepareMcp">
       <div class="code-row"><span class="caption">Código da tarefa</span><code class="code">{{task?.code}}</code><small>vale até {{until(task?.expires_at)}}</small></div>
       <ol class="steps">
-        <li>Abra o ChatGPT e, no campo de mensagem, digite <kbd>&#64;</kbd> e escolha <b>NeuroLaudos IA</b>.{{cfg?.connected ? '' : ' Na primeira vez, o ChatGPT pede para conectar: entre com a sua conta do NeuroLaudos e autorize.'}}</li>
+        <li>Abra o ChatGPT e, no campo de mensagem, digite <kbd>&#64;</kbd> e escolha <b>NeuroLaudos IA</b> na lista (ou use <b>Copiar &#64;NeuroLaudos IA</b> e cole no campo).{{cfg?.connected ? '' : ' Na primeira vez, o ChatGPT pede para conectar: entre com a sua conta do NeuroLaudos e autorize.'}}</li>
         <li>Cole o comando abaixo e envie.</li>
         <li>Quando o ChatGPT pedir para salvar no NeuroLaudos IA, confira e confirme. O rascunho aparece aqui sozinho.</li>
       </ol>
       <textarea class="input mono" readonly rows="4" [value]="task?.command || ''" aria-label="Comando para o ChatGPT" (focus)="$any($event.target).select()"></textarea>
       <div class="row">
+        <button class="btn btn-secondary btn-sm" (click)="copy('@NeuroLaudos IA', 'Copiado. No ChatGPT, cole e, se aparecer a lista, escolha NeuroLaudos IA.')"><nl-icon name="copy"/> Copiar &#64;NeuroLaudos IA</button>
         <button class="btn btn-secondary btn-sm" (click)="copy(task?.command || '', 'Comando copiado.')"><nl-icon name="copy"/> Copiar comando</button>
         <button class="btn btn-secondary btn-sm" (click)="openChatGpt()"><nl-icon name="external"/> Abrir ChatGPT</button>
         <span class="grow"></span>
@@ -174,7 +175,7 @@ export class ChatgptAnamnesisComponent implements OnInit, OnDestroy {
   cfg: {mcp_enabled: boolean; connected: boolean; task_hours: number} | null = null;
   method: Method = 'paste';
   task: Task | null = null;
-  pasteText = ''; hidden = 0; answer = ''; opId = ''; busy = false; sendImages = false;
+  pasteText = ''; hidden = 0; answer = ''; opId = ''; busy = false; sendImages = true;
   private poll: any;
 
   async ngOnInit() {

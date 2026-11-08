@@ -1,4 +1,4 @@
-import {Component, ElementRef, EventEmitter, Input, OnDestroy, Output, ViewChild, inject} from '@angular/core';
+import {Component, ElementRef, EventEmitter, HostListener, Input, OnDestroy, Output, ViewChild, inject} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {FormsModule} from '@angular/forms';
 import {renderAsync} from 'docx-preview';
@@ -82,7 +82,7 @@ export class EvaluationComponent implements OnDestroy {
   open = ''; editing = ''; editText = ''; sectionInstr = '';
   mode: 'secoes' | 'documento' = 'secoes'; previewLoading = false;
 
-  ngOnDestroy() { clearTimeout(this.idTimer); clearTimeout(this.instrSaveTimer); this.reader.stop(); if (this.autoTimer) { clearTimeout(this.autoTimer); this.autosave(this.editing); } }
+  ngOnDestroy() { this.paint('nl-find', []); this.paint('nl-find-on', []); this.paint('nl-target', []); clearTimeout(this.idTimer); clearTimeout(this.instrSaveTimer); this.reader.stop(); if (this.autoTimer) { clearTimeout(this.autoTimer); this.autosave(this.editing); } }
 
   // ---------- loading ----------
   async load(first = false) {
@@ -565,9 +565,14 @@ export class EvaluationComponent implements OnDestroy {
       this.api.notify(format === 'pdf' ? 'PDF baixado.' : 'Word baixado.');
     } catch {} finally { this.exporting = ''; }
   }
-  // Document preview zoom (50–150%) and page count from the rendered Word.
-  zoom = 0.8; pageCount = 0;
-  setZoom(d: number) { this.zoom = Math.min(1.5, Math.max(0.5, Math.round((this.zoom + d) * 10) / 10)); }
+  // Document preview zoom (50–150%, kept per browser), page count and the page at the top of the view.
+  zoom = EvaluationComponent.savedDocZoom(); pageCount = 0; pageAt = 1;
+  private static savedDocZoom() { try { const z = Number(localStorage.getItem('nl-doc-zoom')); if (z >= 0.5 && z <= 1.5) return z; } catch {} return 0.8; }
+  setZoom(d: number) {
+    this.zoom = Math.min(1.5, Math.max(0.5, Math.round((this.zoom + d) * 10) / 10));
+    try { localStorage.setItem('nl-doc-zoom', String(this.zoom)); } catch {}
+    setTimeout(() => this.onDocScroll());
+  }
   /** Approving this one leaves nothing else to review. */
   isLastPending(k: string) { return !this.available().some(s => s.id !== k && this.state(s.id) !== 'ap'); }
   showDocument() { if (!this.canWrite()) return; this.closeRefs(); this.step = 3; this.mode = 'documento'; setTimeout(() => this.renderPreview()); }
@@ -575,9 +580,143 @@ export class EvaluationComponent implements OnDestroy {
     const box = this.previewBox?.nativeElement; if (!box) return;
     if (!this.docName('base')) { box.innerHTML = ''; return; }
     this.previewLoading = true;
-    try { const data = await this.api.blob(`/evaluations/${this.evaluationId}/preview`); box.innerHTML = ''; await renderAsync(data, box, undefined, {className: 'docx', inWrapper: true, ignoreLastRenderedPageBreak: true}); this.pageCount = box.querySelectorAll('section.docx').length; }
+    const keep = this.docScroll?.nativeElement.scrollTop || 0;
+    try {
+      const data = await this.api.blob(`/evaluations/${this.evaluationId}/preview`);
+      box.innerHTML = ''; this.docIndex = null;
+      await renderAsync(data, box, undefined, {className: 'docx', inWrapper: true, ignoreLastRenderedPageBreak: true});
+      this.pageCount = box.querySelectorAll('section.docx').length;
+      // Back at the same place, unless a section asked to be shown; a search still typed runs again on the new text.
+      if (this.docScroll) this.docScroll.nativeElement.scrollTop = keep;
+      if (this.findQuery.trim()) this.runFind(false);
+      if (this.docJump) { const k = this.docJump; this.docJump = ''; setTimeout(() => this.jumpToSection(k)); }
+      setTimeout(() => this.onDocScroll());
+    }
     catch {} finally { this.previewLoading = false; }
   }
+
+  // ---------- Document view: find, go to a section ----------
+  // Search ignores accents, case and extra spaces, and finds words split across pieces of formatting.
+  // Highlights use the CSS Custom Highlight API, so the rendered Word is never changed.
+  @ViewChild('docScroll') docScroll?: ElementRef<HTMLDivElement>;
+  @ViewChild('findBox') findBox?: ElementRef<HTMLInputElement>;
+  findQuery = ''; findHits: Range[] = []; findAt = -1;
+  /** Section opened through "Ver no documento" (for the way back), and one waiting for the preview to finish. */
+  docFrom = ''; private docJump = '';
+  private docIndex: {text: string; map: ({node: Text; off: number} | null)[]} | null = null;
+
+  private static fold(c: string) { return /\s/.test(c) ? ' ' : (c.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()[0] ?? c); }
+  private static foldText(s: string) {
+    let t = '';
+    for (let i = 0; i < s.length; i++) { const f = EvaluationComponent.fold(s[i]); if (f === ' ' && (!t || t.endsWith(' '))) continue; t += f; }
+    return t.trim();
+  }
+  /** The whole document text, folded, with where each character came from; paragraphs and cells stay apart. */
+  private buildIndex() {
+    const box = this.previewBox?.nativeElement; if (!box) return null;
+    let text = ''; const map: ({node: Text; off: number} | null)[] = []; let block: Element | null = null;
+    const walk = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode() as Text | null; n; n = walk.nextNode() as Text | null) {
+      const parent = n.parentElement; if (!parent || parent.closest('style, script')) continue;
+      const b = parent.closest('p, td, th, li, h1, h2, h3, h4, h5, h6');
+      if (b !== block) { if (text && !text.endsWith('\n')) { text += '\n'; map.push(null); } block = b; }
+      for (let i = 0; i < n.data.length; i++) {
+        const f = EvaluationComponent.fold(n.data[i]);
+        if (f === ' ' && (!text || text.endsWith(' ') || text.endsWith('\n'))) continue;
+        text += f; map.push({node: n, off: i});
+      }
+    }
+    return {text, map};
+  }
+  private rangesOf(q: string, limit = 1000): Range[] {
+    const idx = this.docIndex ??= this.buildIndex(), fq = EvaluationComponent.foldText(q);
+    if (!idx || !fq) return [];
+    const out: Range[] = [];
+    for (let i = idx.text.indexOf(fq); i >= 0 && out.length < limit; i = idx.text.indexOf(fq, i + fq.length)) {
+      const a = idx.map[i], z = idx.map[i + fq.length - 1];
+      if (!a || !z) continue;
+      const r = document.createRange(); r.setStart(a.node, a.off); r.setEnd(z.node, z.off + 1); out.push(r);
+    }
+    return out;
+  }
+  private paint(name: string, ranges: Range[]) {
+    const reg = (globalThis as any).CSS?.highlights, H = (globalThis as any).Highlight;
+    if (!reg || !H) return;
+    if (ranges.length) reg.set(name, new H(...ranges)); else reg.delete(name);
+  }
+  private show(r: Range) {
+    // Scrolls only the document area (both rectangles are on screen, so the zoom does not matter).
+    const sc = this.docScroll?.nativeElement, at = r.getBoundingClientRect();
+    if (sc) { const box = sc.getBoundingClientRect(); sc.scrollTop += at.top - box.top - box.height / 3; if (at.left < box.left || at.right > box.right) sc.scrollLeft += at.left - box.left - 24; }
+    // Browsers without highlights: the match is selected instead.
+    if (!(globalThis as any).CSS?.highlights) { const sel = getSelection(); sel?.removeAllRanges(); sel?.addRange(r); }
+  }
+  /** Runs the search; with scroll=false (document rendered again) it keeps the current match without moving. */
+  runFind(scroll = true) {
+    this.findHits = this.rangesOf(this.findQuery);
+    this.findAt = !this.findHits.length ? -1 : scroll ? 0 : Math.min(Math.max(this.findAt, 0), this.findHits.length - 1);
+    this.paint('nl-find', this.findHits); this.paint('nl-find-on', this.findAt >= 0 ? [this.findHits[this.findAt]] : []);
+    if (scroll && this.findAt >= 0) this.show(this.findHits[this.findAt]);
+  }
+  findStep(dir: 1 | -1) {
+    if (!this.findHits.length) { this.runFind(); return; }
+    this.findAt = (this.findAt + dir + this.findHits.length) % this.findHits.length;
+    this.paint('nl-find-on', [this.findHits[this.findAt]]); this.show(this.findHits[this.findAt]);
+  }
+  clearFind() { this.findQuery = ''; this.findHits = []; this.findAt = -1; this.paint('nl-find', []); this.paint('nl-find-on', []); }
+  onFindKey(e: KeyboardEvent) {
+    if (e.key === 'Enter') { e.preventDefault(); this.findStep(e.shiftKey ? -1 : 1); }
+    else if (e.key === 'Escape') { e.preventDefault(); this.clearFind(); }
+  }
+  /** Ctrl+F in the document view goes to this search (it ignores accents); a second Ctrl+F opens the browser's. */
+  @HostListener('document:keydown', ['$event']) onDocKey(e: KeyboardEvent) {
+    if (this.step !== 3 || this.mode !== 'documento' || !(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'f') return;
+    const el = this.findBox?.nativeElement; if (!el || document.activeElement === el) return;
+    e.preventDefault(); el.focus(); el.select();
+  }
+  /** Page shown in the upper third of the scroll area. */
+  onDocScroll() {
+    const sc = this.docScroll?.nativeElement, pages = this.previewBox?.nativeElement.querySelectorAll('section.docx');
+    if (!sc || !pages?.length) return;
+    const mark = sc.getBoundingClientRect().top + sc.getBoundingClientRect().height / 3; let at = 1;
+    pages.forEach((p, i) => { if (p.getBoundingClientRect().top <= mark) at = i + 1; });
+    this.pageAt = at;
+  }
+  sectionName(k: string) { return this.reviewRows().find(s => s.id === k)?.name || ''; }
+  docSections() { return this.reviewRows().filter(s => !this.isMissing(s.id)).map(s => ({label: s.name, value: s.id})); }
+  /** First words of the section text as they go into the Word; the section name as a fallback. */
+  private anchorsOf(k: string): string[] {
+    const out: string[] = [], ps = this.paragraphs(this.text(k));
+    const p = ps.find(x => !x.title && x.text.trim().split(/\s+/).length >= 4) || ps[0];
+    const cut = (t: string) => t.length > 70 ? t.slice(0, 70).replace(/\s+\S*$/, '') : t;
+    if (p) out.push(cut(p.text.trim()));
+    // No text yet: what the base document already has in this section (paragraphs and table cells, in order).
+    for (const b of this.fileBlock(k)) {
+      const ts: string[] = b.type === 'p' ? [b.text] : b.type === 'table' ? (b.grid || []).flat().map((c: any) => c?.text) : [];
+      for (const t of ts) if (t?.trim() && t.trim().length >= 4 && out.length < 16) out.push(cut(t.trim()));
+    }
+    const name = this.sectionName(k); if (name) out.push(name);
+    return out;
+  }
+  /** Goes to the first piece of the section found only once in the document (a table header like "Teste" repeats in every section). */
+  jumpToSection(k: string) {
+    let first: Range | null = null;
+    for (const a of this.anchorsOf(k)) {
+      const hits = this.rangesOf(a, 2);
+      if (hits.length === 1) { first = hits[0]; break; }
+      first ??= hits[0] || null;
+    }
+    if (first) { this.paint('nl-target', [first]); this.show(first); return; }
+    this.paint('nl-target', []);
+    this.api.notify('Não achei o texto desta seção no documento. Confira se ela já tem texto.');
+  }
+  /** From a section: opens the document already at that section's text. */
+  viewInDocument(k: string) {
+    if (!this.canWrite()) return;
+    if (this.isMissing(k)) { this.api.notify('Esta seção não entra no Word: o arquivo base não tem o lugar dela.'); return; }
+    this.docFrom = k; this.docJump = k; this.setMode('documento');
+  }
+  backToSection() { const k = this.docFrom; this.docFrom = ''; this.paint('nl-target', []); this.setMode('secoes'); if (k) this.select(k); }
   // ---------- ChatGPT (manual mode) ----------
   // The request carries this section's own tables/text and the instruction, with names replaced by markers (API side).
   gptOpen = ''; gptText = ''; gptHidden = 0; gptLoading = ''; gptCopied = false;

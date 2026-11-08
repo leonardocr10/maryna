@@ -322,6 +322,7 @@
               <button *ngIf="s.id===MANUAL_KEY && conclusionSources().length" class="btn btn-secondary btn-sm" (click)="copyAll()" title="Copia os textos de todas as seções usadas na conclusão"><nl-icon [name]="copied==='__all' ? 'check' : 'copy'"/> {{copied==='__all' ? 'Copiado' : 'Copiar tudo'}}</button>
               <button *ngIf="previous?.sections?.[s.id]" class="btn btn-secondary btn-sm" [class.on]="prevOpen===s.id" (click)="prevOpen = prevOpen===s.id ? '' : s.id" [attr.aria-expanded]="prevOpen===s.id"><nl-icon name="calendar"/> Avaliação anterior</button>
               <button *ngIf="(section(s.id)?.version || 1) > 1" class="btn btn-secondary btn-sm" [class.on]="versionsOpen===s.id" (click)="versionsOpen = versionsOpen===s.id ? '' : s.id" [attr.aria-expanded]="versionsOpen===s.id"><nl-icon name="restore"/> Versões ({{(section(s.id)?.version || 1) - 1}})</button>
+              <button *ngIf="canWrite() && !isMissing(s.id)" class="btn btn-secondary btn-sm" (click)="viewInDocument(s.id)" title="Abre o documento já no lugar desta seção"><nl-icon name="eye"/> Ver no documento</button>
               <button *ngIf="text(s.id)" class="btn btn-secondary btn-sm" (click)="copyText(s.id)"><nl-icon [name]="copied===s.id ? 'check' : 'copy'"/> {{copied===s.id ? 'Copiado' : 'Copiar'}}</button>
               <ng-container *ngIf="!readOnly()">
                 <button *ngIf="s.id!==MANUAL_KEY && !isHand(s.id)" class="btn btn-secondary btn-sm" [class.on]="cgOpen===s.id" [attr.aria-expanded]="cgOpen===s.id" (click)="toggleCg(s.id)" title="Gerar pela API, pelo plugin do ChatGPT ou por cópia e colagem"><nl-icon name="external"/> ChatGPT</button>
@@ -380,15 +381,27 @@
 
     <section [hidden]="mode!=='documento'" class="card docview">
       <div class="doctool">
-        <span class="pg">{{pageCount ? (pageCount===1 ? '1 página' : pageCount + ' páginas') : 'Prévia do Word'}}</span>
+        <span class="pg">{{pageCount ? (pageCount===1 ? '1 página' : 'Página ' + pageAt + ' de ' + pageCount) : 'Prévia do Word'}}</span>
         <span class="legend">Textos atuais, inclusive os ainda não aprovados</span>
         <span class="sp"></span>
         <div class="zoom" aria-label="Zoom"><button type="button" (click)="setZoom(-0.1)" aria-label="Diminuir zoom">−</button><span>{{(zoom*100).toFixed(0)}}%</span><button type="button" (click)="setZoom(0.1)" aria-label="Aumentar zoom">+</button></div>
-        <button class="btn btn-secondary btn-sm" (click)="setMode('secoes')"><nl-icon name="edit"/> Voltar às seções</button>
+        <button *ngIf="docFrom" class="btn btn-secondary btn-sm" (click)="backToSection()"><nl-icon name="chevl"/> Voltar a {{sectionName(docFrom)}}</button>
+        <button *ngIf="!docFrom" class="btn btn-secondary btn-sm" (click)="setMode('secoes')"><nl-icon name="edit"/> Voltar às seções</button>
         <button *ngIf="canWrite()" class="btn btn-secondary btn-sm" [class.half]="!allApproved()" [disabled]="exporting==='pdf'" (click)="download('pdf')"><nl-icon name="pdf"/> {{exporting==='pdf' ? 'Gerando PDF…' : 'Baixar PDF'}}</button>
         <button *ngIf="canWrite()" class="btn btn-primary btn-sm" [class.half]="!allApproved()" (click)="download()"><nl-icon name="download"/> Baixar Word</button>
       </div>
-      <div class="docscroll">
+      <div class="docfind">
+        <label class="find" [class.none]="findQuery.trim() && !findHits.length">
+          <nl-icon name="search"/>
+          <input #findBox type="search" [(ngModel)]="findQuery" (ngModelChange)="runFind()" (keydown)="onFindKey($event)" placeholder="Pesquisar no documento (Ctrl+F)" aria-label="Pesquisar no documento" autocomplete="off">
+          <span class="count" aria-live="polite">{{findQuery.trim() ? (findHits.length ? (findAt+1) + ' de ' + findHits.length : 'Nada encontrado') : ''}}</span>
+          <button type="button" [disabled]="!findHits.length" (click)="findStep(-1)" aria-label="Resultado anterior" title="Anterior (Shift+Enter)"><nl-icon name="chevu"/></button>
+          <button type="button" [disabled]="!findHits.length" (click)="findStep(1)" aria-label="Próximo resultado" title="Próximo (Enter)"><nl-icon name="chevd"/></button>
+        </label>
+        <nl-filter-select *ngIf="docSections().length" size="sm" [searchable]="true" ariaLabel="Ir para a seção" placeholder="Ir para a seção" icon="list"
+          [options]="docSections()" value="" (valueChange)="$event && jumpToSection($event)"></nl-filter-select>
+      </div>
+      <div #docScroll class="docscroll" (scroll)="onDocScroll()">
         <p *ngIf="previewLoading" class="caption center">Montando o documento…</p>
         <p *ngIf="!docName('base')" class="caption center">Envie o arquivo base para ver o documento.</p>
         <div #previewBox class="doc" [style.zoom]="zoom"></div>

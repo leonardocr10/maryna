@@ -1,1 +1,6 @@
 /* Global styles: tokens and base components live in tokens.css. */
+
+/* Search and "Ver no documento" in the Word preview (CSS Custom Highlight API: the rendered document is not changed). */
+::highlight(nl-find) { background-color: #ffe58a; color: #000; }
+::highlight(nl-find-on) { background-color: #ff9d2e; color: #000; }
+::highlight(nl-target) { background-color: #b9e6d3; color: #000; }

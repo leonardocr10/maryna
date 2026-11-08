@@ -188,6 +188,15 @@ textarea.draft.editing { resize: vertical; min-height: 180px; field-sizing: cont
 .zoom button { width: 30px; height: 30px; border: 0; background: var(--card); color: var(--text); font-size: 16px; cursor: pointer; }
 .zoom button:hover { background: var(--chip); }
 .zoom span { min-width: 48px; text-align: center; font: 600 12.5px var(--mono); color: var(--text); }
+.docfind { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 14px; border-bottom: 1px solid var(--divider); }
+.find { display: flex; align-items: center; gap: 6px; flex: 1 1 320px; max-width: 520px; height: 32px; padding: 0 4px 0 10px; border: 1px solid var(--border-card); border-radius: var(--radius-sm); background: var(--card); color: var(--text-3); }
+.find:focus-within { border-color: var(--primary); }
+.find.none { border-color: var(--danger, #c0392b); }
+.find input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; font-size: 13px; }
+.find .count { font: 600 12px var(--mono); white-space: nowrap; }
+.find button { width: 26px; height: 26px; display: grid; place-items: center; border: 0; border-radius: 4px; background: transparent; color: var(--text); cursor: pointer; }
+.find button:hover:not(:disabled) { background: var(--chip); }
+.find button:disabled { opacity: .35; cursor: default; }
 .docscroll { background: var(--track); height: calc(calc(100vh / var(--zoom, 1)) - 300px); min-height: 520px; overflow: auto; padding: 28px 16px; }
 .doc ::ng-deep .docx-wrapper { background: transparent; padding: 0; display: flex; flex-direction: column; align-items: center; gap: 24px; }
 .doc ::ng-deep .docx-wrapper > section.docx { box-shadow: 0 2px 14px rgba(0,0,0,.12); margin: 0; }

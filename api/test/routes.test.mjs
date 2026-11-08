@@ -988,6 +988,15 @@ test('ChatGPT for any section: only its own tables, conclusion guidance kept, im
   const d = db(); const row = d.prepare('SELECT notes,include_images FROM chatgpt_tasks WHERE id=?').get(conc.data.id); d.close();
   assert.equal(row.notes, 'Orientação sintética: destacar memória preservada.');
   assert.equal(row.include_images, 1);
+  // conclusion: a text written by hand counts like an AI one; a section excluded from the document stays out
+  await api('PUT', `/api/evaluations/${id}/sections/inteligencia`, {token: tokens.psy, body: {content: 'Texto sintético escrito à mão pela psicóloga sobre raciocínio verbal.'}});
+  const concPaste = await api('POST', `/api/evaluations/${id}/chatgpt-tasks`, {token: tokens.psy, body: {mode: 'paste', section: 'conclusao', notes: 'Orientação sintética.'}});
+  assert.equal(concPaste.status, 201, JSON.stringify(concPaste.data));
+  assert.match(concPaste.data.text, /escrito à mão pela psicóloga/);
+  await api('PUT', `/api/evaluations/${id}/excluded-sections`, {token: tokens.psy, body: {key: 'inteligencia'}});
+  const concNone = await api('POST', `/api/evaluations/${id}/chatgpt-tasks`, {token: tokens.psy, body: {mode: 'paste', section: 'conclusao', notes: 'Orientação sintética.'}});
+  assert.ok(concNone.status === 409 || !concNone.data.text?.includes('escrito à mão'), 'excluded section left out');
+  await api('PUT', `/api/evaluations/${id}/excluded-sections`, {token: tokens.psy, body: {key: 'inteligencia', exclude: false}});
   assert.equal(aiRequests.length, calls, 'no API call');
 });
 

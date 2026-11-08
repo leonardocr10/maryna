@@ -8,7 +8,7 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import {randomUUID} from 'node:crypto';
-import {chatgptCommand} from './prompts.mjs';
+import {chatgptCommand, CHATGPT_IMAGES_NOTE} from './prompts.mjs';
 import {TASK_MODES, TASK_STATUS, OPEN_STATUSES, newTaskCode, normalizeCode, validOpId, normalizeAnswer, answerProblems, answerShape, pastePackage, taskStatus} from './chatgpt.mjs';
 import {SCOPES, ACCESS_TTL_S, REFRESH_TTL_S, CODE_TTL_S, REQUEST_TTL_S, newSecret, hashSecret, pkceOk, publicBase, mcpResource, protectedResourceMetadata, authServerMetadata, challenge, redirectHosts, validRedirect, grantedScopes, redirectWith} from './oauth.mjs';
 import {handleMessage, ToolError, IMAGES} from './mcp.mjs';
@@ -318,7 +318,7 @@ export function mountChatGpt(app, deps, cfg = chatgptConfig()) {
         return {
           codigo: t.code, secao: nameOf(t.section_key), instrucao_de_redacao: m.instruction, formato: m.format,
           rotulo_dos_dados: m.dataLabel, dados_da_secao: m.data, dados_pessoais_trocados_por_marcadores: m.hidden,
-          imagens_anexadas: images.length, expira_em: t.expires_at,
+          imagens_anexadas: images.length, ...(images.length ? {sobre_as_imagens: CHATGPT_IMAGES_NOTE} : {}), expira_em: t.expires_at,
           proximo_passo: 'Redija o texto completo da seção seguindo a instrução e chame salvar_rascunho com este código, o texto final e um id_operacao novo.',
           ...(images.length ? {[IMAGES]: images} : {}),
         };

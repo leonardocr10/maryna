@@ -302,7 +302,7 @@ const AI_SECTION_KEYS=SECTION_KEYS.filter(k=>k!=='hipotese');
 /** Fixed parts of the base document under a heading box (worker fixed_blocks), rewritten by hand only. */
 const FIXED_KEY_RE=/^fixo_[a-z0-9_]{2,60}$/;
 const isSectionKey=k=>SECTION_KEYS.includes(k)||FIXED_KEY_RE.test(String(k));
-const SECTION_NAMES={demanda:'Descrição da demanda',anamnesis:'Anamnese',inteligencia:'Habilidades intelectuais',percepcao:'Percepção',memoria:'Memória e aprendizagem',atencao:'Processos atencionais',funcoes_executivas:'Funções executivas',comportamento:'Comportamento',personalidade:'Bateria Fatorial da Personalidade',comportamento_diva:'Comportamento / DIVA',conclusao:'Conclusão',hipotese:'Hipótese diagnóstica',recomendacoes:'Indicações e recomendações'};
+const SECTION_NAMES={demanda:'Descrição da demanda',anamnesis:'Anamnese',inteligencia:'Habilidades intelectuais',percepcao:'Percepção',memoria:'Memória e aprendizagem',atencao:'Processos atencionais',funcoes_executivas:'Funções executivas',comportamento:'Comportamento',personalidade:'Bateria Fatorial da Personalidade',comportamento_diva:'Comportamento',conclusao:'Conclusão',hipotese:'Hipótese diagnóstica',recomendacoes:'Indicações e recomendações'};
 function excludedSections(e){try{const v=JSON.parse(e.excluded_sections||'[]');return Array.isArray(v)?v.filter(k=>SECTION_NAMES[k]):[]}catch{return []}}
 function createdSections(e){try{const v=JSON.parse(e.created_sections||'[]');return Array.isArray(v)?v.filter(k=>SECTION_NAMES[k]):[]}catch{return []}}
 // Behaviour sub-sections not every base document has; old text in them is skipped, not an export error.
@@ -315,7 +315,7 @@ function sectionElements(base,key){const m=base.markers.find(x=>x.key===key);con
 function resultTables(base){const at=k=>base.markers.find(m=>m.key===k)?.index;return base.elements.slice((at('anamnesis')??0)+1,at('conclusao')??base.elements.length).filter(x=>x.type==='table')}
 const forAI=({grid,...element})=>element; // display-only layout stays out of the (paid) request
 // Only the part of the base document a section needs is sent (data minimisation).
-function sourceFor(key,base,ana,sections){
+function sourceFor(key,base,ana,sections,{created=[],excluded=[]}={}){
  const els=base.elements,markers=base.markers,anamnesis=ana.elements.filter(x=>x.type==='p'&&x.text).map(x=>x.text);
  const at=k=>markers.find(m=>m.key===k)?.index;
  if(key==='anamnesis')return {relato_da_entrevista:anamnesis};
@@ -328,9 +328,10 @@ function sourceFor(key,base,ana,sections){
   // Rule: a section is written only from its own topic (its tables and text in the base document), never from other sections or the anamnesis.
   return {trecho_da_secao:sectionElements(base,key).map(forAI)};
  }
- // The conclusion reads only the texts already written for the result sections (not demand, anamnesis or raw tables);
- // hidden BFP/DIVA text (no field in the base document) is left out.
- if(key==='conclusao'){const textos=Object.fromEntries(INTERPRETATION_KEYS.filter(k=>sections[k]?.trim()&&(!OPTIONAL_KEYS.includes(k)||at(k)!==undefined)).map(k=>[SECTION_NAMES[k],sections[k]]));if(!Object.keys(textos).length)throw fail(409,'Escreva ou gere os textos das seções antes da conclusão.');return {textos_das_secoes:textos}}
+ // The conclusion reads every text already saved for the result sections, by the AI or by hand (not demand, anamnesis or
+ // raw tables), as the screen lists them: BFP/DIVA only with a field or title in the document (or created by the
+ // psychologist), and never a section excluded from the document.
+ if(key==='conclusao'){const shown=k=>!OPTIONAL_KEYS.includes(k)||at(k)!==undefined||!!base.title_ranges?.[k]||created.includes(k);const textos=Object.fromEntries(INTERPRETATION_KEYS.filter(k=>sections[k]?.trim()&&shown(k)&&!excluded.includes(k)).map(k=>[SECTION_NAMES[k],sections[k]]));if(!Object.keys(textos).length)throw fail(409,'Escreva ou gere os textos das seções antes da conclusão.');return {textos_das_secoes:textos}}
  const results=resultTables(base).map(forAI);
  return {identificacao:identification,anamnese:sections.anamnesis||anamnesis,interpretacoes:Object.fromEntries(INTERPRETATION_KEYS.filter(k=>sections[k]).map(k=>[k,sections[k]])),conclusao:sections.conclusao||null,tabelas_de_resultados:results};
 }
@@ -413,7 +414,7 @@ async function loadFiles(e){const [docs]=await pool.execute('SELECT * FROM docum
 function privacyPrefs(e){try{return JSON.parse(e.privacy_json||'{}')}catch{return {}}}
 function privacyTerms(e,files){const demanda=files.base.markers.find(m=>m.key==='demanda')?.index??20;return detectTerms({patientName:e.patient_name,birthDate:e.birth_date,baseLines:files.base.elements.slice(0,demanda).filter(x=>x.type==='p').map(x=>x.text),anamnesisLines:files.anamnesis.elements.filter(x=>x.type==='p'&&x.text).map(x=>x.text)})}
 function privacyMap(e,files){const p=privacyPrefs(e);return buildMap(privacyTerms(e,files),{extra:p.extra||[],ignored:p.ignored||[]})}
-async function buildRequest(e,key,notes){if(key==='hipotese')throw fail(409,'A hipótese diagnóstica é escrita pela psicóloga; a IA não redige diagnóstico.');const files=await loadFiles(e);const entries=privacyMap(e,files);const [current]=await pool.execute('SELECT section_key,content FROM sections WHERE evaluation_id=?',[e.id]);const done=Object.fromEntries(current.map(x=>[x.section_key,x.content]));const source=sourceFor(key,files.base,files.anamnesis,done);// The conclusion is never generated automatically: it needs the psychologist's own guidance, sent as (redacted) notes.
+async function buildRequest(e,key,notes){if(key==='hipotese')throw fail(409,'A hipótese diagnóstica é escrita pela psicóloga; a IA não redige diagnóstico.');const files=await loadFiles(e);const entries=privacyMap(e,files);const [current]=await pool.execute('SELECT section_key,content FROM sections WHERE evaluation_id=?',[e.id]);const done=Object.fromEntries(current.map(x=>[x.section_key,x.content]));const source=sourceFor(key,files.base,files.anamnesis,done,{created:createdSections(e),excluded:excludedSections(e)});// The conclusion is never generated automatically: it needs the psychologist's own guidance, sent as (redacted) notes.
 let guidance=notes||'';if(key==='conclusao'){guidance=String(notes||customInstructions(e).conclusao||CONCLUSION_GUIDANCE).trim()}
 // An instruction the psychologist wrote leads: defaults only fill what it does not say, and nothing is rewritten against it.
 const customText=key==='conclusao'?'':customInstructions(e)[key];

@@ -573,7 +573,7 @@ test('devolutiva: only from the approved report, pseudonymised, approved before 
 });
 
 // ---- Consent, plan, sessions, backup, retention ----
-test('a manual evaluation never calls the AI; switching back to AI allows it', async () => {
+test('a manual evaluation calls the AI only for a section the person picks; switching back to AI allows it', async () => {
   const id = await withFiles();
   assert.equal((await api('PUT', `/api/evaluations/${id}/mode`, {token: tokens.assistant, body: {mode: 'manual'}})).status, 403);
   assert.equal((await api('PUT', `/api/evaluations/${id}/mode`, {token: tokens.psy, body: {mode: 'outro'}})).status, 400);
@@ -587,6 +587,13 @@ test('a manual evaluation never calls the AI; switching back to AI allows it', a
   assert.equal(aiRequests.length, calls);
   // the professional still writes the section by hand
   assert.ok([200, 201].includes((await api('PUT', `/api/evaluations/${id}/sections/anamnesis`, {token: tokens.psy, body: {content: 'Texto escrito à mão, fictício.'}})).status));
+  // a section the person explicitly chose goes to the AI (API, ChatGPT request or ChatGPT task); nothing else does
+  assert.equal((await api('POST', `/api/evaluations/${id}/generate/anamnesis`, {token: tokens.psy, body: {manual_ai: true}})).status, 200);
+  assert.equal(aiRequests.length, calls + 1, 'only the chosen section');
+  assert.equal((await api('POST', `/api/evaluations/${id}/prompt/anamnesis`, {token: tokens.psy, body: {manual_ai: true}})).status, 200);
+  assert.equal((await api('POST', `/api/evaluations/${id}/chatgpt-tasks`, {token: tokens.psy, body: {mode: 'paste'}})).status, 409);
+  assert.equal((await api('POST', `/api/evaluations/${id}/chatgpt-tasks`, {token: tokens.psy, body: {mode: 'mcp', manual_ai: true}})).status, 201);
+  assert.equal((await api('GET', `/api/evaluations/${id}`, {token: tokens.psy})).data.evaluation.ai_mode, 'manual', 'the evaluation stays manual');
   await api('PUT', `/api/evaluations/${id}/mode`, {token: tokens.psy, body: {mode: 'ai'}});
   assert.equal((await api('POST', `/api/evaluations/${id}/generate/anamnesis`, {token: tokens.psy, body: {}})).status, 200);
 });

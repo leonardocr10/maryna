@@ -60,7 +60,7 @@
               <button type="button" [attr.aria-pressed]="aiOn()" [disabled]="readOnly()" (click)="setAiMode('ai')"><nl-icon name="spark"/> Com IA</button>
               <button type="button" [attr.aria-pressed]="!aiOn()" [disabled]="readOnly()" (click)="setAiMode('manual')"><nl-icon name="edit"/> Manual</button>
             </div>
-            <small>{{aiOn() ? 'A IA redige rascunhos das seções para você revisar.' : 'A IA fica desligada: nada é enviado à OpenAI. O sistema só lê os arquivos e você escreve cada seção.'}}</small>
+            <small>{{aiOn() ? 'A IA redige rascunhos das seções para você revisar.' : 'Nada é gerado automaticamente: você escreve cada seção e, se quiser, usa a IA só na seção que escolher.'}}</small>
           </div>
         </div>
       </section>
@@ -95,7 +95,7 @@
         <section *ngIf="!aiOn()" class="card stepcard">
           <div class="card-head"><h2>Escrita manual</h2></div>
           <div class="card-body">
-            <p class="muted">Nesta avaliação a IA está desligada e nada é enviado à OpenAI. O sistema só lê os arquivos enviados; você escreve cada seção em Conferir e baixar, com as tabelas de referência ao lado.</p>
+            <p class="muted">Nesta avaliação nada é gerado automaticamente. O sistema só lê os arquivos enviados; você escreve cada seção em Conferir e baixar, com as tabelas de referência ao lado. Se quiser, use Gerar com IA ou ChatGPT numa seção específica: só ela vai para a IA.</p>
             <div class="row-actions"><button class="btn btn-primary" [disabled]="!docsReady()" (click)="goStep(3)">Ir para as seções <nl-icon name="chevr"/></button></div>
           </div>
         </section>
@@ -241,7 +241,7 @@
           <div *ngFor="let w of warnings(s.id)" class="alert warn small"><nl-icon name="info"/><div><p>{{w}}</p></div></div>
 
           <!-- Conclusão: the psychologist's guidance comes first -->
-          <div *ngIf="s.id===MANUAL_KEY && !readOnly() && editing!==s.id && aiOn()" class="ed-instr">
+          <div *ngIf="s.id===MANUAL_KEY && !readOnly() && editing!==s.id" class="ed-instr">
             <label [for]="'guide-'+s.id">Suas orientações para a conclusão</label>
             <small class="hint">A IA junta os textos das seções de resultados (sem a descrição da demanda e sem a anamnese) seguindo esta orientação. Complete ou mude como quiser, por exemplo dizendo quais características citar no final.</small>
             <nl-dictate [evaluationId]="evaluationId"><textarea [id]="'guide-'+s.id" class="input" rows="5" [(ngModel)]="instrDraft[s.id]" placeholder="Ex.: Integrar os achados de atenção e funções executivas com as queixas escolares; destacar memória preservada; mencionar que os dados são compatíveis com a hipótese que será descrita na Hipótese Diagnóstica."></textarea></nl-dictate>
@@ -263,8 +263,8 @@
           <p *ngIf="editing!==s.id && ((s.id===DEMAND_KEY && demandIsFromFile()) || (s.id!==DEMAND_KEY && fromFile(s.id)))" class="footnote from-file">Texto do arquivo enviado, sem alteração e sem IA.</p>
           <div *ngIf="editing===s.id" class="ed-editbar">
             <span>{{autoSaving ? 'Salvando…' : autoSaved ? 'Salvo automaticamente às ' + autoSaved + '.' : 'Editando o texto. Salva sozinho a cada pausa.'}}</span>
-            <button *ngIf="aiOn()" class="link" (click)="openGpt(s.id)" title="Copia o pedido e abre o ChatGPT">Abrir no ChatGPT</button>
-            <button *ngIf="aiOn()" class="link" (click)="pasteAnswer()">Colar resposta</button>
+            <button class="link" (click)="openGpt(s.id)" title="Copia o pedido e abre o ChatGPT">Abrir no ChatGPT</button>
+            <button class="link" (click)="pasteAnswer()">Colar resposta</button>
             <nl-filter-select *ngIf="snippetsFor(s.id).length" size="sm" [searchable]="true" ariaLabel="Inserir texto-padrão" placeholder="Inserir texto-padrão"
               [options]="snippetsFor(s.id)" value="" (valueChange)="insertSnippet($event)"></nl-filter-select>
             <button class="btn btn-secondary btn-sm" (click)="closeEdit()">{{autoSaved ? 'Fechar' : 'Cancelar'}}</button>
@@ -303,7 +303,7 @@
           </div>
 
           <!-- Anamnese: API, ChatGPT plugin (MCP) or assisted copy and paste; the draft comes back for review -->
-          <nl-chatgpt-anamnesis *ngIf="cgOpen && s.id==='anamnesis' && aiOn()" [evaluationId]="evaluationId" [hasText]="!!text(s.id)" [readOnly]="readOnly()"
+          <nl-chatgpt-anamnesis *ngIf="cgOpen && s.id==='anamnesis'" [manual]="!aiOn()" [evaluationId]="evaluationId" [hasText]="!!text(s.id)" [readOnly]="readOnly()"
             (useApi)="cgOpen=false; regenerate(s.id)" (saved)="load(); changed.emit()" (closed)="cgOpen=false"></nl-chatgpt-anamnesis>
 
           <div class="edbar">
@@ -322,13 +322,13 @@
               <button *ngIf="(section(s.id)?.version || 1) > 1" class="btn btn-secondary btn-sm" [class.on]="versionsOpen===s.id" (click)="versionsOpen = versionsOpen===s.id ? '' : s.id" [attr.aria-expanded]="versionsOpen===s.id"><nl-icon name="restore"/> Versões ({{(section(s.id)?.version || 1) - 1}})</button>
               <button *ngIf="text(s.id)" class="btn btn-secondary btn-sm" (click)="copyText(s.id)"><nl-icon [name]="copied===s.id ? 'check' : 'copy'"/> {{copied===s.id ? 'Copiado' : 'Copiar'}}</button>
               <ng-container *ngIf="!readOnly()">
-                <button *ngIf="s.id==='anamnesis' && aiOn()" class="btn btn-secondary btn-sm" [class.on]="cgOpen" [attr.aria-expanded]="cgOpen" (click)="cgOpen=!cgOpen" title="Gerar pela API, pelo plugin do ChatGPT ou por cópia e colagem"><nl-icon name="spark"/> Gerar anamnese pelo ChatGPT</button>
-                <button *ngIf="s.id!==MANUAL_KEY && !isHand(s.id) && aiOn()" class="btn btn-secondary btn-sm" [class.on]="gptOpen===s.id" [disabled]="gptLoading===s.id" (click)="openGpt(s.id)" title="Copia o pedido com as tabelas e a instrução desta seção e abre o ChatGPT"><nl-icon name="external"/> {{gptLoading===s.id ? 'Preparando…' : 'ChatGPT'}}</button>
-                <button *ngIf="s.id!==MANUAL_KEY && !isHand(s.id) && aiOn()" class="btn btn-secondary btn-sm" [class.on]="sectionInstr===s.id" (click)="openInstr(s.id)" [attr.aria-expanded]="sectionInstr===s.id"><nl-icon name="chat"/> Instrução</button>
+                <button *ngIf="s.id==='anamnesis'" class="btn btn-secondary btn-sm" [class.on]="cgOpen" [attr.aria-expanded]="cgOpen" (click)="toggleCg()" title="Gerar pela API, pelo plugin do ChatGPT ou por cópia e colagem"><nl-icon name="spark"/> Gerar anamnese pelo ChatGPT</button>
+                <button *ngIf="s.id!==MANUAL_KEY && !isHand(s.id)" class="btn btn-secondary btn-sm" [class.on]="gptOpen===s.id" [disabled]="gptLoading===s.id" (click)="openGpt(s.id)" title="Copia o pedido com as tabelas e a instrução desta seção e abre o ChatGPT"><nl-icon name="external"/> {{gptLoading===s.id ? 'Preparando…' : 'ChatGPT'}}</button>
+                <button *ngIf="s.id!==MANUAL_KEY && !isHand(s.id)" class="btn btn-secondary btn-sm" [class.on]="sectionInstr===s.id" (click)="openInstr(s.id)" [attr.aria-expanded]="sectionInstr===s.id"><nl-icon name="chat"/> Instrução</button>
                 <button class="btn btn-secondary btn-sm" [class.on]="editing===s.id" [disabled]="editing===s.id" (click)="startEdit(s.id)"><nl-icon name="edit"/> {{text(s.id) ? 'Editar' : 'Escrever'}}</button>
                 <button *ngIf="s.id===DEMAND_KEY && demandInFile() && !demandIsFromFile()" class="btn btn-secondary btn-sm" (click)="useFileDemand()"><nl-icon name="doc"/> Usar o texto do arquivo</button>
-                <button *ngIf="s.id===DEMAND_KEY && aiOn()" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="generateDemand()"><nl-icon name="spark"/> {{gen[s.id]==='running'?'Gerando…':'Gerar com IA'}}</button>
-                <button *ngIf="s.id!==MANUAL_KEY && s.id!==DEMAND_KEY && !isHand(s.id) && aiOn()" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="regenerate(s.id)"><nl-icon [name]="text(s.id) ? 'restore' : 'spark'"/> {{gen[s.id]==='running'?'Gerando…':text(s.id)?'Regenerar':'Gerar com IA'}}</button>
+                <button *ngIf="s.id===DEMAND_KEY" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="generateDemand()"><nl-icon name="spark"/> {{gen[s.id]==='running'?'Gerando…':'Gerar com IA'}}</button>
+                <button *ngIf="s.id!==MANUAL_KEY && s.id!==DEMAND_KEY && !isHand(s.id)" class="btn btn-secondary btn-sm" [disabled]="generating" (click)="regenerate(s.id)"><nl-icon [name]="text(s.id) ? 'restore' : 'spark'"/> {{gen[s.id]==='running'?'Gerando…':text(s.id)?'Regenerar':'Gerar com IA'}}</button>
               </ng-container>
             </div>
           </div>

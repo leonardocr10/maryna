@@ -233,6 +233,18 @@ export class EvaluationComponent implements OnDestroy {
   warnings(k: string): string[] { try { return JSON.parse(this.section(k)?.source_summary || '[]'); } catch { return []; } }
   /** Manual evaluations never call the AI: the professional writes every section. */
   aiOn() { return this.current?.ai_mode !== 'manual'; }
+  /** Manual evaluation: the AI is used only when the person picks it for one section, after confirming once per evaluation. */
+  private manualAiOk = '';
+  async allowSectionAi(): Promise<boolean> {
+    if (this.aiOn() || this.manualAiOk === this.evaluationId) return true;
+    if (!await this.confirm.ask({tone: 'review', title: 'Usar a IA nesta seção?',
+      body: 'Esta avaliação é manual. Os dados desta seção só vão para a IA porque você escolheu, com nomes, datas e contatos trocados por marcadores.',
+      facts: ['As outras seções continuam manuais', 'O texto da IA é rascunho: você revisa e aprova', 'A avaliação continua no modo Manual'], ok: 'Usar a IA'})) return false;
+    this.manualAiOk = this.evaluationId; return true;
+  }
+  /** Body of a section-level AI request: a manual evaluation says the person chose it. */
+  aiBody(extra: any = {}) { return this.aiOn() ? extra : {...extra, manual_ai: true}; }
+  async toggleCg() { if (this.cgOpen) { this.cgOpen = false; return; } if (await this.allowSectionAi()) this.cgOpen = true; }
   /** Closing "Cidade, data." line: what the evaluation saved, else what the base document says. */
   placeDate = '';
   placeInFile() { return this.inspection?.place_date || ''; }
@@ -470,9 +482,9 @@ export class EvaluationComponent implements OnDestroy {
   }
   openInstr(k: string) { this.sectionInstr = this.sectionInstr === k ? '' : k; this.editing = ''; }
   async regenerate(k: string, withInstruction = false, skipConfirm = false) {
-    if (!this.aiOn()) { this.api.notify('Avaliação manual: a IA está desligada. Mude para Com IA em Identificação.'); return; }
     if (withInstruction) await this.dictation.stop();
     if (!this.aiReady) { this.api.notify('Geração pela API desligada. Ative em Configurações.'); return; }
+    if (!await this.allowSectionAi()) return;
     if (!skipConfirm && this.state(k) !== 'pend') {
       const name = this.available().find(x => x.id === k)?.name || 'esta seção';
       const instr = (this.instrDraft[k] || '').trim();
@@ -486,12 +498,11 @@ export class EvaluationComponent implements OnDestroy {
     }
     if (withInstruction && !await this.saveInstruction(k)) return;
     this.gen = {[k]: 'running'}; this.generating = true; this.generatingChange.emit(true);
-    try { await this.api.req('POST', `/evaluations/${this.evaluationId}/generate/${k}`, {notes: ''}); this.gen[k] = 'done'; await this.load(); this.sectionInstr = ''; this.api.notify('Seção regenerada. Revise o texto.'); }
+    try { await this.api.req('POST', `/evaluations/${this.evaluationId}/generate/${k}`, this.aiBody({notes: ''})); this.gen[k] = 'done'; await this.load(); this.sectionInstr = ''; this.api.notify('Seção regenerada. Revise o texto.'); }
     catch { this.gen[k] = 'error'; }
     finally { this.generating = false; this.generatingChange.emit(false); this.changed.emit(); }
   }
   async generateConclusion() {
-    if (!this.aiOn()) return;
     await this.dictation.stop();
     const text = (this.instrDraft[MANUAL_KEY] || '').trim();
     if (text.length < 10) { this.api.notify('Escreva suas orientações para a conclusão (o que você concluiu e quer destacar).'); return; }
@@ -575,11 +586,12 @@ export class EvaluationComponent implements OnDestroy {
   /** Builds the request, copies it, opens ChatGPT and shows the panel to copy again or paste the answer back. */
   async openGpt(k: string) {
     if (this.gptLoading) return;
+    if (!await this.allowSectionAi()) return;
     this.gptLoading = k;
     try {
       // An instruction typed but not saved yet must go in the request.
       if (k !== MANUAL_KEY && !await this.saveInstruction(k)) return;
-      const r = await this.api.req('POST', `/evaluations/${this.evaluationId}/prompt/${k}`, k === MANUAL_KEY ? {notes: (this.instrDraft[k] || '').trim()} : {});
+      const r = await this.api.req('POST', `/evaluations/${this.evaluationId}/prompt/${k}`, this.aiBody(k === MANUAL_KEY ? {notes: (this.instrDraft[k] || '').trim()} : {}));
       this.gptOpen = k; this.gptText = r.text; this.gptHidden = r.hidden || 0;
       this.gptCopied = await writeClipboard(r.text);
       const w = window.open('https://chatgpt.com/', 'chatgpt');

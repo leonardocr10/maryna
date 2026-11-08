@@ -11,7 +11,7 @@ Alternativa à geração pela API, que continua igual. Na seção **Anamnese**, 
 Nada lê ou automatiza a página do ChatGPT (nem login, nem digitação, nem extração da resposta). O DOCX original não é alterado: as anotações são lidas do arquivo criptografado quando necessárias e não são copiadas para a tarefa.
 
 ## Regras comuns
-- Só em avaliações **Com IA** e só para psicólogas(os) e administradores.
+- Só para psicólogas(os) e administradores. Em avaliação **Manual**, o painel também funciona, mas só por escolha da pessoa naquela seção, com confirmação.
 - Os dados vão **pseudonimizados**, como no pedido manual existente: nomes, datas e contatos viram marcadores (`[PACIENTE]`, `[PESSOA_1]`...). Os nomes voltam ao salvar.
 - As anotações seguem a ordem do Word, parágrafo por parágrafo (tabelas em Markdown), para não misturar pai, mãe, madrasta e paciente.
 - Instrução padrão e formato: `api/src/prompts.mjs` (`CHATGPT_ANAMNESIS_INSTRUCTION`, `CHATGPT_ANAMNESIS_FORMAT`, `chatgptCommand`, `MCP_SERVER_INSTRUCTIONS`).

@@ -144,6 +144,8 @@ export class ChatgptAnamnesisComponent implements OnInit, OnDestroy {
   @Input() evaluationId = '';
   @Input() hasText = false;
   @Input() readOnly = false;
+  /** Manual evaluation: requests say the person chose the AI for this section. */
+  @Input() manual = false;
   @Output() useApi = new EventEmitter<void>();
   @Output() saved = new EventEmitter<void>();
   @Output() closed = new EventEmitter<void>();
@@ -181,7 +183,7 @@ export class ChatgptAnamnesisComponent implements OnInit, OnDestroy {
     if (this.busy) return;
     this.busy = true;
     try {
-      const r = await this.api.req<Task>('POST', `/evaluations/${this.evaluationId}/chatgpt-tasks`, {mode});
+      const r = await this.api.req<Task>('POST', `/evaluations/${this.evaluationId}/chatgpt-tasks`, {mode, ...(this.manual ? {manual_ai: true} : {})});
       this.task = r; this.method = mode;
       if (mode === 'paste') { this.pasteText = r.text || ''; this.hidden = r.hidden || 0; this.answer = ''; this.opId = ''; }
       const text = mode === 'mcp' ? r.command || '' : this.pasteText;

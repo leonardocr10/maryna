@@ -31,7 +31,7 @@ export function chatgptConfig(env = process.env) {
 }
 
 /**
- * deps: pool, auth, role, wrap, fail, audit(req,action,evaluationId), evaluation(id), requireAiMode(e),
+ * deps: pool, auth, role, wrap, fail, audit(req,action,evaluationId), evaluation(id), requireAiMode(e, req),
  * anamnesisForChatGpt(e) -> {notes, genderRule, hidden}  (pseudonymised text of the anamnesis DOCX),
  * restoreFor(e) -> async text => text with the placeholders put back, version.
  */
@@ -66,7 +66,7 @@ export function mountChatGpt(app, deps, cfg = chatgptConfig()) {
   async function openEvaluation(t) {
     const e = await evaluation(t.evaluation_id);
     if (e.status === 'approved') throw new ToolError('A avaliação já foi aprovada e está travada. Nada foi salvo.');
-    try { requireAiMode(e); } catch (err) { throw new ToolError(err.message); }
+    // The mode was checked when the task was created (manual evaluations only by the person's explicit choice).
     return e;
   }
 
@@ -141,7 +141,7 @@ export function mountChatGpt(app, deps, cfg = chatgptConfig()) {
   app.post('/api/evaluations/:id/chatgpt-tasks', auth, writer, wrap(async (req, res) => {
     const e = await evaluation(req.params.id);
     if (e.status === 'approved') throw fail(409, 'Avaliação aprovada: travada');
-    requireAiMode(e);
+    requireAiMode(e, req);
     const mode = String(req.body?.mode || '');
     if (!TASK_MODES.includes(mode)) throw fail(400, 'Método inválido');
     if (mode === 'mcp' && !cfg.mcp) throw fail(409, 'A integração com o plugin do ChatGPT está desligada neste computador. Use a cópia e colagem assistida.');

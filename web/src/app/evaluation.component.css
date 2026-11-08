@@ -456,9 +456,6 @@ nl-rich-editor .rte-area { font: 14.5px/1.65 var(--doc-font); color: var(--text)
 .edmain { min-width: 0; display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
 .ed-label { margin: 0; font-size: 16px; font-weight: 600; color: var(--text); }
 .draft.empty { min-height: 104px; }
-.draft.can-write { cursor: text; }
-.draft.can-write:hover { border-color: var(--primary-border-2, var(--primary)); }
-.draft.can-write:focus-visible { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--ring); }
 .act-n { min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--chip); font-size: 11px; text-align: center; color: var(--text-2); }
 .act-why { margin: 6px 0 0; font-size: 12.5px; line-height: 1.4; color: var(--text-3); text-align: right; }
 .edbar { margin-top: 0; }

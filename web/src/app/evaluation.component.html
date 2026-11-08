@@ -707,7 +707,7 @@
   <div class="modal ai-modal cg-modal" role="dialog" aria-modal="true" [attr.aria-label]="'ChatGPT: ' + sectionName(cgFor)">
     <nl-chatgpt-anamnesis [manual]="!aiOn()" [evaluationId]="evaluationId" [sectionKey]="cgFor" [sectionName]="sectionName(cgFor)"
       [notes]="cgFor===MANUAL_KEY ? (instrDraft[cgFor] || '') : ''" [images]="sectionImages(cgFor)" [hasTables]="!!refCount(cgFor)" (copyTables)="copyTablesImage(cgFor)"
-      [hasText]="!!text(cgFor)" [readOnly]="readOnly()"
+      [hasText]="!!text(cgFor)" [readOnly]="readOnly()" [apiEnabled]="aiReady"
       (useApi)="cgToAi()" (saved)="onCgSaved()" (closed)="cgFor=''"></nl-chatgpt-anamnesis>
   </div>
 </div>

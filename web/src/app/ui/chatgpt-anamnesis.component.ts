@@ -34,9 +34,9 @@ const newOpId = () => 'op-' + (crypto.randomUUID?.() || Math.random().toString(3
     <span *ngIf="task" [class]="'badge ' + badge()">{{task.status_label}}</span>
     <button class="x" (click)="closed.emit()" aria-label="Fechar">×</button></div>
 
-  <fieldset class="methods" [disabled]="busy">
+  <fieldset class="methods" [class.two]="!apiEnabled" [disabled]="busy">
     <legend>Método de geração</legend>
-    <label><input type="radio" name="cg-method" value="api" [(ngModel)]="method"> <span><b>OpenAI API</b><small>Geração atual, pelo servidor (custo por uso).</small></span></label>
+    <label *ngIf="apiEnabled"><input type="radio" name="cg-method" value="api" [(ngModel)]="method"> <span><b>OpenAI API</b><small>Geração atual, pelo servidor (custo por uso).</small></span></label>
     <label [class.off]="!cfg?.mcp_enabled"><input type="radio" name="cg-method" value="mcp" [(ngModel)]="method" [disabled]="!cfg?.mcp_enabled"> <span><b>ChatGPT — plugin (MCP)</b><small>{{cfg?.mcp_enabled ? 'O ChatGPT busca os dados desta seção e devolve o rascunho para cá, com sua autorização.' : 'Desligado neste computador (veja Configurações necessárias no README).'}}</small></span></label>
     <label><input type="radio" name="cg-method" value="paste" [(ngModel)]="method"> <span><b>ChatGPT — cópia e colagem assistida</b><small>Você cola o texto preparado no ChatGPT e cola a resposta aqui.</small></span></label>
   </fieldset>
@@ -52,7 +52,7 @@ const newOpId = () => 'op-' + (crypto.randomUUID?.() || Math.random().toString(3
   <div *ngIf="task?.status==='error'" class="alert danger small"><nl-icon name="alert"/><div><p>{{task?.error || 'A tarefa terminou com erro.'}} Prepare uma nova.</p></div></div>
 
   <!-- Current API generation (unchanged) -->
-  <div *ngIf="method==='api'" class="pane">
+  <div *ngIf="method==='api' && apiEnabled" class="pane">
     <p class="hint">Gera o texto pela API da OpenAI, como hoje{{hasText ? ', substituindo o texto atual (que fica em Versões)' : ''}}.</p>
     <div class="row"><button class="btn btn-primary btn-sm" [disabled]="readOnly" (click)="useApi.emit()"><nl-icon name="spark"/> Gerar pela API</button></div>
   </div>
@@ -125,6 +125,7 @@ nl-icon{--ico-size:16px}
 .cg-head .x{margin-left:auto;width:28px;height:28px;border:0;background:none;border-radius:6px;font-size:18px;color:var(--text-3);cursor:pointer}
 .cg-head .x:hover{background:var(--chip)}
 .methods{border:0;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.methods.two{grid-template-columns:repeat(2,minmax(0,1fr))}
 .methods legend{font-size:13px;font-weight:600;color:var(--text);margin-bottom:6px;padding:0}
 .methods label{display:flex;gap:8px;align-items:flex-start;padding:10px;border:1px solid var(--border-card);border-radius:var(--radius-sm);background:var(--card);cursor:pointer}
 .methods label.off{opacity:.6;cursor:not-allowed}
@@ -166,6 +167,8 @@ export class ChatgptAnamnesisComponent implements OnInit, OnDestroy {
   @Output() copyTables = new EventEmitter<void>();
   @Input() hasText = false;
   @Input() readOnly = false;
+  /** OpenAI API generation switched on and configured in Settings; otherwise the option is not listed. */
+  @Input() apiEnabled = true;
   /** Manual evaluation: requests say the person chose the AI for this section. */
   @Input() manual = false;
   @Output() useApi = new EventEmitter<void>();

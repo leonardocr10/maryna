@@ -54,7 +54,8 @@ test('every section follows the same writing standard, with reference length ins
   assert.doesNotMatch(promptFor('anamnesis'), /até \d+ palavras/);
   assert.match(depthRule('anamnesis', false), /proporcional/);
   assert.match(promptFor('anamnesis'), /"## Título do tópico"/);
-  assert.match(promptFor('recomendacoes'), /"Psicoterapia: \.\.\."/);
+  assert.match(promptFor('recomendacoes'), /"## Psicoterapia"/);
+  assert.match(promptFor('recomendacoes'), /texto da Conclusão/);
 });
 
 test('a clinic guide replaces the default guide of that instrument only', async () => {

@@ -409,7 +409,7 @@
             <button class="btn btn-secondary" [disabled]="!neighbour(s.id, -1)" (click)="select(neighbour(s.id, -1))"><nl-icon name="chevl"/> {{neighbourName(s.id, -1) || 'Início'}}</button>
             <span class="ai-note"><b>Seção {{i+1}} de {{reviewRows().length}}</b><small *ngIf="state(s.id)==='gen' && aiOn()">Rascunho de IA · só entra no Word depois de aprovado</small></span>
             <button *ngIf="neighbour(s.id, 1)" class="btn btn-secondary" (click)="select(neighbour(s.id, 1))">{{state(s.id)==='gen' && !readOnly() ? 'Pular' : neighbourName(s.id, 1)}} <nl-icon name="chevr"/></button>
-            <button *ngIf="!readOnly() && state(s.id)==='gen' && !isMissing(s.id) && editing!==s.id" class="btn btn-primary" (click)="approveAndNext(s.id)"><nl-icon name="check"/> {{isLastPending(s.id) ? 'Aprovar' : 'Aprovar e próxima'}}</button>
+            <button *ngIf="!readOnly() && state(s.id)==='gen' && !isMissing(s.id) && editing!==s.id" class="btn btn-primary" [disabled]="!!approving" (click)="approveAndNext(s.id)"><nl-icon name="check"/> {{approving===s.id ? 'Aprovando…' : isLastPending(s.id) ? 'Aprovar' : 'Aprovar e próxima'}}</button>
           </div>
         </section>
         </ng-container>

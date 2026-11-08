@@ -17,7 +17,7 @@ Você está trabalhando no software de auxílio à elaboração de laudos neurop
 7. Não usar os arquivos `templates/*PRIVADO*` em testes automatizados ou commits. Criar fixtures 100% sintéticas.
 8. API OpenAI via backend; jamais colocar chave no frontend. Verificar se o modelo existe na conta API em runtime, sem presumir disponibilidade a partir do ChatGPT Web.
 9. Valide document integrity: hash do original antes/depois, diff XML para garantir mudanças limitadas, teste de renderização e comparação visual.
-10. Cada seção é gerada/regenerada (também com instrução) somente com os dados do próprio tópico: o trecho dela no DOCX-base (tabelas e textos). Interpretações não recebem anamnese nem outras seções. Exceções por natureza: Descrição da demanda e Anamnese usam a anamnese; Conclusão usa os textos das seções de resultados; Recomendações usam as seções escritas; a Devolutiva usa só os textos aprovados do laudo (nunca tabelas nem anamnese) e é um documento separado.
+10. Cada seção é gerada/regenerada (também com instrução) somente com os dados do próprio tópico: o trecho dela no DOCX-base (tabelas e textos). Interpretações não recebem anamnese nem outras seções. Exceções por natureza: Descrição da demanda e Anamnese usam a anamnese; Conclusão usa os textos das seções de resultados; Recomendações usam o texto da Conclusão (encaminhamentos em tópicos); a Devolutiva usa só os textos aprovados do laudo (nunca tabelas nem anamnese) e é um documento separado.
 11. Ao concluir cada entrega, rodar testes e relatar os itens realmente prontos e os bloqueios de produção.
 
 ## Prompts da IA

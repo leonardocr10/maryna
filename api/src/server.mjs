@@ -332,6 +332,8 @@ function sourceFor(key,base,ana,sections,{created=[],excluded=[]}={}){
  // raw tables), as the screen lists them: BFP/DIVA only with a field or title in the document (or created by the
  // psychologist), and never a section excluded from the document.
  if(key==='conclusao'){const shown=k=>!OPTIONAL_KEYS.includes(k)||at(k)!==undefined||!!base.title_ranges?.[k]||created.includes(k);const textos=Object.fromEntries(INTERPRETATION_KEYS.filter(k=>sections[k]?.trim()&&shown(k)&&!excluded.includes(k)).map(k=>[SECTION_NAMES[k],sections[k]]));if(!Object.keys(textos).length)throw fail(409,'Escreva ou gere os textos das seções antes da conclusão.');return {textos_das_secoes:textos}}
+ // Recommendations come from the conclusion text (referrals in topics); the patient's part of the header gives age and schooling.
+ if(key==='recomendacoes'){if(!sections.conclusao?.trim())throw fail(409,'Escreva ou gere a Conclusão antes das recomendações.');return {identificacao:identification,conclusao:sections.conclusao}}
  const results=resultTables(base).map(forAI);
  return {identificacao:identification,anamnese:sections.anamnesis||anamnesis,interpretacoes:Object.fromEntries(INTERPRETATION_KEYS.filter(k=>sections[k]).map(k=>[k,sections[k]])),conclusao:sections.conclusao||null,tabelas_de_resultados:results};
 }

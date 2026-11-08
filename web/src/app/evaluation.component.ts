@@ -650,7 +650,7 @@ export class EvaluationComponent implements OnDestroy {
   sourceLabel(k: string) {
     if (k === DEMAND_KEY || k === 'anamnesis') return 'escrita a partir da anamnese';
     if (k === MANUAL_KEY) return 'escrita a partir das seções de resultados';
-    if (k === 'recomendacoes') return 'escrita a partir das seções do laudo';
+    if (k === 'recomendacoes') return 'encaminhamentos em tópicos a partir da Conclusão';
     if (this.isFixed(k)) return 'texto do arquivo base; pode ser reescrito à mão';
     if (this.isHand(k)) return 'escrita pela psicóloga, sem IA';
     return 'escrita a partir das tabelas do arquivo base';
@@ -1030,18 +1030,24 @@ export class EvaluationComponent implements OnDestroy {
     }
     return out;
   }
+  /** Section being approved: its button shows "Aprovando…" and ignores more clicks. */
+  approving = '';
   async approveAndNext(k: string) {
+    if (this.approving) return;
     const issues = this.finalCheck([k]);
     if (issues.length && !await this.confirm.ask({tone: 'review', title: 'Conferir antes de aprovar', facts: issues, ok: 'Aprovar mesmo assim', cancel: 'Voltar e revisar'})) return;
+    this.approving = k;
     try {
       await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content: this.text(k), approve: true});
-      await this.load(); this.changed.emit();
+      // the next section opens at once; the full reload and the list refresh follow without holding the screen
+      this.sections = this.sections.map(s => s.section_key === k ? {...s, status: 'approved'} : s);
+      this.load().then(() => this.changed.emit());
       const list = this.available(), i = list.findIndex(s => s.id === k);
       const next = [...list.slice(i + 1), ...list.slice(0, i)].find(s => !this.done(s.id) && !this.isExcluded(s.id));
       if (this.refOpen) { if (next && this.refCount(next.id)) this.refOpen = next.id; else this.closeRefs(); }
       this.open = next?.id || ''; this.editing = ''; this.sectionInstr = '';
       if (!next && this.allApproved()) this.api.notify('Todas as seções aprovadas. Já dá para baixar o Word.');
-    } catch {}
+    } catch {} finally { this.approving = ''; }
   }
   // ---------- "Aprovar todas": a modal with one check per section, its issues and a final confirmation ----------
   approveOpen = false; apmSel: Record<string, boolean> = {}; apmReviewed = false; apmBusy = false;

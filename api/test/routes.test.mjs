@@ -997,6 +997,14 @@ test('ChatGPT for any section: only its own tables, conclusion guidance kept, im
   const concNone = await api('POST', `/api/evaluations/${id}/chatgpt-tasks`, {token: tokens.psy, body: {mode: 'paste', section: 'conclusao', notes: 'Orientação sintética.'}});
   assert.ok(concNone.status === 409 || !concNone.data.text?.includes('escrito à mão'), 'excluded section left out');
   await api('PUT', `/api/evaluations/${id}/excluded-sections`, {token: tokens.psy, body: {key: 'inteligencia', exclude: false}});
+  // recommendations: built from the conclusion text only (no other section, table or anamnesis)
+  await api('PUT', `/api/evaluations/${id}/sections/conclusao`, {token: tokens.psy, body: {content: 'Conclusão sintética: fragilidade atencional com impacto escolar.'}});
+  const rec = await api('POST', `/api/evaluations/${id}/chatgpt-tasks`, {token: tokens.psy, body: {mode: 'paste', section: 'recomendacoes'}});
+  assert.equal(rec.status, 201, JSON.stringify(rec.data));
+  assert.match(rec.data.text, /fragilidade atencional com impacto escolar/);
+  assert.match(rec.data.text, /## Psicoterapia/);
+  assert.ok(!rec.data.text.includes('escrito à mão pela psicóloga'), 'no other section text');
+  assert.ok(!rec.data.text.includes('sono agitado'), 'no anamnesis');
   assert.equal(aiRequests.length, calls, 'no API call');
 });
 

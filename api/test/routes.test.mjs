@@ -990,3 +990,46 @@ test('ChatGPT for any section: only its own tables, conclusion guidance kept, im
   assert.equal(row.include_images, 1);
   assert.equal(aiRequests.length, calls, 'no API call');
 });
+
+test('devolutiva schedule: spreadsheet imported once, each new evaluation adds a row, delivery fills the date', async () => {
+  const csv = '﻿PACIENTE;IDADE;SUSPEITA DIAGNOSTICA;TESTE A SER APLICADO;INICIO;PRONTOS?;DEVOLUTIVA\r\n' +
+    'Paciente Planilha Um;9;;FINALIZADO DIA 10/08/2026;CONVENIO X;;OK DIA 02/09/2026\r\n' +
+    'Paciente Planilha Dois;30;FALTA FORMULARIOS;FINALIZADO DIA 20/10/2026;;pronto;\r\n;;;;;;\r\n';
+  const send = (token, text = csv) => { const form = new FormData(); form.append('file', new Blob([text]), 'agenda.csv'); return api('POST', '/api/devolutiva-agenda/import', {token, form}); };
+  assert.equal((await api('POST', '/api/devolutiva-agenda/import')).status, 401);
+  assert.equal((await send(tokens.assistant)).status, 403);
+  const first = await send(tokens.psy);
+  assert.equal(first.status, 201); assert.equal(first.data.imported, 2); assert.equal(first.data.with_date, 1);
+  assert.equal((await send(tokens.psy)).status, 409, 'second import refused');
+
+  const id = await withFiles();
+  let list = (await api('GET', '/api/devolutiva-agenda', {token: tokens.assistant})).data;
+  assert.equal(list.imported, true);
+  const fromSheet = list.rows.filter(r => r.source === 'import');
+  assert.equal(fromSheet.length, 2);
+  assert.equal(fromSheet[0].status, 'feita'); assert.equal(fromSheet[0].delivery_date, '2026-09-02'); assert.equal(fromSheet[0].age, '9 anos');
+  assert.equal(fromSheet[1].status, 'pendente'); assert.equal(fromSheet[1].tests_done_date, '2026-10-20');
+  let mine = list.rows.find(r => r.evaluation_id === id);
+  assert.ok(mine, 'new evaluation has its row'); assert.equal(mine.patient, PATIENT); assert.equal(mine.status, 'pendente');
+
+  // notes are editable; the date of an evaluation row only comes from the delivery
+  const put = await api('PUT', `/api/devolutiva-agenda/${mine.id}`, {token: tokens.psy, body: {notes: 'Falta sessão familiar', delivery_date: '2026-01-01'}});
+  assert.equal(put.status, 200); assert.equal(put.data.notes, 'Falta sessão familiar'); assert.equal(put.data.delivery_date, null);
+  assert.equal((await api('PUT', `/api/devolutiva-agenda/${mine.id}`, {token: tokens.assistant, body: {notes: 'x'}})).status, 403);
+  const sheetPut = await api('PUT', `/api/devolutiva-agenda/${fromSheet[1].id}`, {token: tokens.psy, body: {delivery_date: '2026-11-03'}});
+  assert.equal(sheetPut.data.delivery_date, '2026-11-03');
+
+  const ev = `/api/evaluations/${id}`;
+  await api('PUT', ev + '/sections/anamnesis', {token: tokens.psy, body: {content: 'Anamnese sintética.'}});
+  await api('PUT', ev + '/sections/inteligencia', {token: tokens.psy, body: {content: 'Interpretação sintética.'}});
+  await api('PUT', ev + '/sections/conclusao', {token: tokens.psy, body: {content: 'Conclusão sintética.'}});
+  assert.equal((await api('POST', ev + '/approve', {token: tokens.psy, body: {approveSections: true}})).status, 200);
+  assert.equal((await api('PUT', ev + '/delivery', {token: tokens.psy, body: {date: '2026-11-05', delivered_to: 'Responsável', mode: 'presencial'}})).status, 200);
+  list = (await api('GET', '/api/devolutiva-agenda', {token: tokens.psy})).data;
+  mine = list.rows.find(r => r.evaluation_id === id);
+  assert.equal(mine.delivery_date, '2026-11-05'); assert.equal(mine.status, 'feita');
+
+  assert.equal((await api('DELETE', ev, {token: tokens.psy})).status, 200);
+  list = (await api('GET', '/api/devolutiva-agenda', {token: tokens.psy})).data;
+  assert.ok(!list.rows.some(r => r.evaluation_id === id), 'row leaves with the evaluation');
+});

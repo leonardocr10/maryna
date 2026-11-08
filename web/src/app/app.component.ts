@@ -159,7 +159,7 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
         <nl-evaluation *ngIf="screen()==='evaluation' && selectedId()" [id]="selectedId()" [autoGenerate]="autoGenerate"
           (changed)="load()" (deleted)="onDeleted()" (generatingChange)="generating=$event" (back)="goHome()"></nl-evaluation>
         <nl-models *ngIf="screen()==='models'"></nl-models>
-        <nl-devolutivas *ngIf="screen()==='devolutivas'"></nl-devolutivas>
+        <nl-devolutivas *ngIf="screen()==='devolutivas'" (openEvaluation)="open($event)"></nl-devolutivas>
         <nl-library *ngIf="screen()==='library'"></nl-library>
         <nl-reports *ngIf="screen()==='reports'" [evaluations]="evaluations()"></nl-reports>
         } @loading (minimum 0ms) { <p class="muted" style="padding:24px">Carregando…</p> }

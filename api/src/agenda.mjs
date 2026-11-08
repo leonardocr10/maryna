@@ -58,6 +58,6 @@ export function agendaFromCsv(text) {
 }
 
 /** "feita" (date reached), "agendada" (future date) or "pendente" (no date yet). */
-export function agendaStatus(deliveryDate, today = new Date().toISOString().slice(0, 10)) {
+export function agendaStatus(deliveryDate, today = new Date().toLocaleDateString('sv-SE')) {
   return !deliveryDate ? 'pendente' : deliveryDate <= today ? 'feita' : 'agendada';
 }

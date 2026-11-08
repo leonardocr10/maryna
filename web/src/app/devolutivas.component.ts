@@ -1,215 +1,180 @@
-import {Component, OnInit, inject} from '@angular/core';
+import {Component, EventEmitter, OnInit, Output, inject} from '@angular/core';
 import {CommonModule} from '@angular/common';
 import {FormsModule} from '@angular/forms';
 import {Api} from './api.service';
+import {brDate, fold, todayISO} from './shared';
 import {IconComponent} from './ui/icon.component';
+import {PagerComponent} from './ui/pager.component';
 
-interface Appointment {
-  id: string;
-  patient: string;
-  age: string;
-  tests: string;
-  start: string;
-  readiness: string;
-  deliveryText: string;
-  date: Date | null;
+type AgendaStatus = 'pendente' | 'agendada' | 'feita';
+interface AgendaRow {
+  id: string; source: 'import' | 'evaluation'; evaluation_id: string | null; evaluation_status: string | null;
+  patient: string; age: string; notes: string; tests: string; tests_done_date: string | null; start: string; readiness: string;
+  delivery_text: string; delivery_date: string | null; status: AgendaStatus;
 }
+type Filter = 'all' | AgendaStatus;
+const STATUS_LABEL: Record<AgendaStatus, {label: string; css: string}> = {
+  pendente: {label: 'Pendente', css: 'warn'}, agendada: {label: 'Agendada', css: 'idle'}, feita: {label: 'Feita', css: 'ok'}};
 
-interface DayGroup {
-  key: string;
-  title: string;
-  date: Date | null;
-  appointments: Appointment[];
-}
-
-type AgendaFilter = 'all' | 'upcoming' | 'week' | 'past' | 'undated';
-
-function parseDate(value: string | null): Date | null {
-  if (!value) return null;
-  const date = new Date(value + 'T12:00:00');
-  return isNaN(date.getTime()) ? null : date;
-}
-
-function dateKey(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
-
-function startOfDay(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
+/** "Devolutivas": the clinic's spreadsheet (imported once) plus one row per evaluation created in the app.
+ *  For evaluation rows the end of testing and the devolutiva date come from the evaluation ("Entrega" in the report). */
 @Component({
   selector: 'nl-devolutivas',
   standalone: true,
-  imports: [CommonModule, FormsModule, IconComponent],
+  imports: [CommonModule, FormsModule, IconComponent, PagerComponent],
   template: `
-<header class="pagehead">
+<div class="pagehead">
   <span class="hicon"><nl-icon name="calendar"/></span>
-  <div><h1>Devolutivas</h1><p>Agenda salva no sistema, do mês atual em diante.</p></div>
-  <span class="grow"></span>
-  <label class="btn btn-primary import" for="agenda-csv"><nl-icon name="upload"/> Importar CSV</label>
-  <input id="agenda-csv" class="file-input" type="file" accept=".csv,text/csv" (change)="importFile($event)">
-</header>
+  <div><h1>Devolutivas</h1><p>Fim da testagem e data da devolutiva de cada paciente. Cada avaliação nova entra aqui sozinha.</p></div>
+  <ng-container *ngIf="loaded && !imported && canWrite()">
+    <label class="btn btn-primary" for="agenda-csv" [class.disabled]="importing"><nl-icon name="upload"/> {{importing ? 'Importando…' : 'Importar planilha (CSV)'}}</label>
+    <input id="agenda-csv" class="file-input" type="file" accept=".csv,text/csv" [disabled]="importing" (change)="importFile($event)">
+  </ng-container>
+</div>
 
-<div class="privacy-note"><nl-icon name="shield"/><span>Importar uma vez cria a tabela; novas planilhas atualizam os registros. Exibe apenas o mês atual em diante.</span></div>
+<div class="kpis">
+  <div class="card card-raised kpi"><span class="kpi-icon"><nl-icon name="table"/></span><div><div class="kpi-label">Registros</div><div class="kpi-value">{{rows.length}}</div><div class="kpi-sub">{{fromEval()}} de avaliações do sistema</div></div></div>
+  <div class="card card-raised kpi"><span class="kpi-icon warn"><nl-icon name="clock"/></span><div><div class="kpi-label">Pendentes</div><div class="kpi-value">{{count('pendente')}}</div><div class="kpi-sub">Sem data de devolutiva</div></div></div>
+  <div class="card card-raised kpi"><span class="kpi-icon review"><nl-icon name="calendar"/></span><div><div class="kpi-label">Agendadas</div><div class="kpi-value">{{count('agendada')}}</div><div class="kpi-sub">Data marcada a partir de amanhã</div></div></div>
+  <div class="card card-raised kpi"><span class="kpi-icon ok"><nl-icon name="check"/></span><div><div class="kpi-label">Feitas no mês</div><div class="kpi-value">{{doneThisMonth()}}</div><div class="kpi-sub">{{count('feita')}} no total</div></div></div>
+</div>
 
-<div *ngIf="error" class="alert danger" role="alert"><nl-icon name="alert"/><span>{{error}}</span></div>
-<div *ngIf="warning" class="alert tip" role="status"><nl-icon name="info"/><span>{{warning}}</span></div>
-
-<ng-container *ngIf="appointments.length; else emptyState">
-  <section class="summary" aria-label="Resumo da agenda">
-    <div><span>Registros</span><b>{{appointments.length}}</b></div>
-    <div><span>Próximos 7 dias</span><b>{{weekCount}}</b></div>
-    <div><span>Sem data identificada</span><b>{{undatedCount}}</b></div>
-
-  </section>
-
-  <div class="controls">
-    <label class="search"><nl-icon name="search"/><input class="input" type="search" [(ngModel)]="query" placeholder="Buscar nome, teste ou registro" aria-label="Buscar na agenda"></label>
-    <div class="filters" role="group" aria-label="Filtrar devolutivas">
-      <button *ngFor="let option of filterOptions" type="button" [class.active]="filter===option.id" [attr.aria-pressed]="filter===option.id" (click)="filter=option.id">{{option.label}}</button>
-    </div>
+<section class="card">
+  <div class="listhead"><h2>Agenda de devolutivas <span>({{filtered().length}})</span></h2></div>
+  <div class="filters">
+    <div class="search-box"><nl-icon name="search"/><input class="input" [value]="query" (input)="query=$any($event.target).value;page=1" placeholder="Buscar paciente, convênio ou observação…" aria-label="Buscar na agenda de devolutivas"></div>
+    <button *ngFor="let f of filters" type="button" class="fchip" [class.on]="filter===f.id" [attr.aria-pressed]="filter===f.id" (click)="filter=f.id;page=1">{{f.label}} <b>{{f.id==='all' ? rows.length : count(f.id)}}</b></button>
   </div>
+  <div class="tablewrap">
+    <table class="tbl">
+      <thead><tr><th>Paciente</th><th>Idade</th><th>Fim da testagem</th><th>Convênio / início</th><th>Prontos?</th><th>Observações</th><th>Devolutiva</th></tr></thead>
+      <tbody>
+        <tr *ngFor="let r of pageRows(); trackBy: byId" tabindex="0" [class.sel]="sel?.id===r.id" (click)="select(r)" (keydown.enter)="select(r)">
+          <td><b>{{r.patient}}</b><small *ngIf="r.source==='evaluation'" class="src"><nl-icon name="clipboard"/> Avaliação no sistema</small></td>
+          <td>{{r.age || '—'}}</td>
+          <td>{{r.tests_done_date ? brDate(r.tests_done_date) : (r.tests || '—')}}</td>
+          <td>{{r.start || '—'}}</td>
+          <td>{{r.readiness || '—'}}</td>
+          <td class="notes">{{r.notes || '—'}}</td>
+          <td><span [class]="'badge '+label(r).css">{{label(r).label}}</span><small class="dt">{{r.delivery_date ? brDate(r.delivery_date) : r.delivery_text}}</small></td>
+        </tr>
+      </tbody>
+    </table>
+    <p *ngIf="!filtered().length" class="empty-row">{{rows.length ? 'Nenhum registro encontrado.' : emptyText()}}</p>
+  </div>
+  <nl-pager *ngIf="filtered().length" [total]="filtered().length" [page]="page" [perPage]="per" noun="registros" (pageChange)="page=$event" (perPageChange)="per=$event"></nl-pager>
+</section>
 
-  <p *ngIf="!groups().length" class="no-results">Nenhuma devolutiva corresponde a esse filtro.</p>
-  <section *ngFor="let group of groups()" class="day-group">
-    <header class="day-head"><h2>{{group.title}}</h2><span>{{group.appointments.length}} {{group.appointments.length===1 ? 'registro' : 'registros'}}</span></header>
-    <article *ngFor="let appointment of group.appointments" class="appointment">
-      <div class="date-mark"><nl-icon [name]="appointment.date ? 'calendar' : 'clock'"/><span>{{appointment.date ? formatDate(appointment.date) : 'Sem data'}}</span></div>
-      <div class="patient"><h3>{{appointment.patient}}</h3><span *ngIf="appointment.age">{{appointment.age}} anos</span></div>
-      <div class="details">
-        <span *ngIf="appointment.tests"><b>Testes</b> {{appointment.tests}}</span>
-        <span *ngIf="appointment.start"><b>Início</b> {{appointment.start}}</span>
-        <span *ngIf="appointment.readiness"><b>Prontidão</b> {{appointment.readiness}}</span>
-        <span *ngIf="appointment.deliveryText"><b>Registro</b> {{appointment.deliveryText}}</span>
-      </div>
-    </article>
-  </section>
-</ng-container>
-
-<ng-template #emptyState>
-  <section class="empty-state">
-    <nl-icon name="table"/>
-    <h2>Importe a planilha de devolutivas</h2>
-    <p>Selecione um CSV separado por ponto e vírgula com as colunas de paciente, idade, testes, início, prontidão e devolutiva.</p>
-    <label class="btn btn-primary" for="agenda-csv"><nl-icon name="upload"/> Selecionar CSV</label>
-  </section>
-</ng-template>`,
+<!-- Record panel: notes and status columns are editable; the date only on spreadsheet rows (evaluations use "Entrega"). -->
+<div *ngIf="sel" class="overlay" (click)="sel=null"></div>
+<aside *ngIf="sel" class="card side" role="dialog" aria-modal="true" [attr.aria-label]="'Devolutiva de ' + sel.patient" (keydown.escape)="sel=null">
+  <div class="shead"><div><h3>{{sel.patient}}</h3><small>{{sel.age || 'Idade não informada'}} · {{sel.source==='evaluation' ? 'avaliação no sistema' : 'da planilha'}}</small></div>
+    <button class="link close" (click)="sel=null" aria-label="Fechar">×</button></div>
+  <dl>
+    <dt>Fim da testagem</dt><dd>{{sel.tests_done_date ? brDate(sel.tests_done_date) : (sel.source==='evaluation' ? 'Preencha a data de término na identificação da avaliação' : sel.tests || '—')}}</dd>
+    <dt *ngIf="sel.source==='import' && sel.delivery_text">Na planilha</dt><dd *ngIf="sel.source==='import' && sel.delivery_text">{{sel.delivery_text}}</dd>
+  </dl>
+  <label class="fld">Data da devolutiva
+    <input *ngIf="sel.source==='import'" class="input" type="date" [(ngModel)]="draft.delivery_date" [disabled]="!canWrite()">
+    <span *ngIf="sel.source==='evaluation'" class="ro">{{sel.delivery_date ? brDate(sel.delivery_date) : 'Ainda não registrada'}}</span>
+  </label>
+  <p *ngIf="sel.source==='evaluation'" class="caption">A data entra sozinha quando a entrega é registrada no laudo aprovado (Entrega).</p>
+  <label class="fld">Convênio / início<input class="input" [(ngModel)]="draft.start" maxlength="120" [disabled]="!canWrite()"></label>
+  <label class="fld">Prontos?<input class="input" [(ngModel)]="draft.readiness" maxlength="160" [disabled]="!canWrite()"></label>
+  <label class="fld">Observações<textarea class="input" rows="3" [(ngModel)]="draft.notes" maxlength="600" [disabled]="!canWrite()"></textarea></label>
+  <div class="acts">
+    <button *ngIf="sel.evaluation_id" class="btn btn-sm" (click)="openEvaluation.emit(sel.evaluation_id)"><nl-icon name="external"/> Abrir avaliação</button>
+    <span class="grow"></span>
+    <button *ngIf="canWrite()" class="btn btn-primary btn-sm" [disabled]="saving || !changed()" (click)="save()"><nl-icon name="save"/> {{saving ? 'Salvando…' : 'Salvar'}}</button>
+  </div>
+</aside>`,
   styles: [`
-:host{display:block;max-width:1180px;margin:0 auto}
-nl-icon{--ico-size:17px}
-.pagehead{display:flex;align-items:center;gap:12px;padding:18px 4px 14px}
-.hicon{width:42px;height:42px;display:grid;place-items:center;border-radius:8px;background:var(--primary-soft);color:var(--primary-text);--ico-size:21px}
-.pagehead h1{font-size:22px;font-weight:650;line-height:1.2}.pagehead p{font-size:13px;color:var(--text-3);margin-top:4px}
-.grow{flex:1}.import{display:inline-flex;align-items:center;gap:8px;cursor:pointer}.file-input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
-.pagehead:has(.file-input:focus-visible) .import,.empty-state:has(.file-input:focus-visible) .btn{outline:2px solid var(--primary);outline-offset:2px}
-.privacy-note{display:flex;align-items:flex-start;gap:9px;padding:11px 13px;margin:2px 0 16px;border:1px solid var(--primary-border);border-radius:6px;background:var(--primary-soft-2);color:var(--primary-text);font-size:12.5px;line-height:1.45}
-.privacy-note nl-icon{flex:none;margin-top:1px}
-.alert{display:flex;align-items:flex-start;gap:9px;padding:10px 12px;border-radius:6px;margin:10px 0;font-size:13px}.alert nl-icon{flex:none}.danger{background:var(--danger-bg);color:var(--danger)}.tip{background:var(--warn-bg);color:var(--warn-fg)}
-.summary{display:flex;align-items:stretch;gap:0;border-bottom:1px solid var(--divider);margin-bottom:14px}
-.summary>div{display:flex;flex-direction:column;gap:3px;padding:9px 22px 12px 4px;margin-right:20px;border-right:1px solid var(--divider)}
-.summary>div span{font-size:12px;color:var(--text-3)}.summary>div b{font-size:19px;font-weight:650;color:var(--text)}
-.clear{margin:auto 0 auto auto;width:36px;height:36px;display:grid;place-items:center;border:1px solid var(--border-card);border-radius:6px;background:var(--card);color:var(--text-2);cursor:pointer}.clear:hover{background:var(--chip)}
-.controls{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
-.search{position:relative;display:flex;align-items:center;flex:0 1 340px;min-width:190px}.search nl-icon{position:absolute;left:11px;color:var(--text-3)}.search input{padding-left:36px;height:38px}
-.filters{display:flex;gap:3px;padding:3px;border:1px solid var(--border-card);border-radius:7px;background:var(--card);overflow:auto;max-width:100%}
-.filters button{flex:none;border:0;border-radius:5px;background:transparent;color:var(--text-2);padding:7px 10px;font:500 12.5px var(--font);cursor:pointer;white-space:nowrap}
-.filters button:hover{background:var(--chip)}.filters button.active{background:var(--primary);color:var(--on-primary);font-weight:600}
-.day-group{margin:0 0 20px}.day-head{display:flex;align-items:baseline;gap:10px;padding:8px 2px;border-bottom:1px solid var(--divider)}.day-head h2{font-size:14px;font-weight:650;text-transform:capitalize}.day-head span{font-size:12px;color:var(--text-3)}
-.appointment{display:grid;grid-template-columns:145px minmax(160px,.8fr) minmax(240px,1.8fr);gap:14px;align-items:start;padding:13px 10px;border-bottom:1px solid var(--divider);background:var(--bg)}
-.appointment:hover{background:var(--card)}.date-mark{display:flex;align-items:center;gap:7px;color:var(--primary-text);font-size:12.5px;font-weight:600}.date-mark nl-icon{flex:none}
-.patient{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 9px;min-width:0}.patient h3{font-size:14px;font-weight:600;overflow-wrap:anywhere}.patient span{font-size:12px;color:var(--text-3)}
-.details{display:flex;flex-direction:column;gap:4px;color:var(--text-2);font-size:12.5px;line-height:1.4;overflow-wrap:anywhere}.details b{color:var(--text-3);font-weight:600;margin-right:4px}
-.empty-state{min-height:320px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:32px 18px;color:var(--text-2)}.empty-state>nl-icon{--ico-size:32px;color:var(--primary);margin-bottom:14px}.empty-state h2{font-size:18px;font-weight:650;color:var(--text)}.empty-state p{max-width:450px;margin:8px 0 18px;font-size:13px;line-height:1.5;color:var(--text-3)}
-.no-results{padding:24px;text-align:center;color:var(--text-3);font-size:13px}
-@media(max-width:760px){.pagehead{flex-wrap:wrap}.pagehead .grow{display:none}.pagehead .import{margin-left:auto}.summary>div{padding-right:12px;margin-right:12px}.controls{align-items:stretch;flex-direction:column}.search{flex:auto;width:100%}.filters{width:100%}.appointment{grid-template-columns:minmax(0,1fr) auto;gap:8px 12px}.date-mark{grid-column:1/-1}.details{grid-column:1/-1}.patient{grid-column:1/-1}.filters button{padding-inline:8px}}
-@media(max-width:420px){.summary>div{padding-right:8px;margin-right:8px}.summary>div span{font-size:11px}.summary>div b{font-size:17px}}
+:host{display:block}
+.file-input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+.pagehead label.btn{cursor:pointer}.pagehead label.btn.disabled{opacity:.6;pointer-events:none}
+.pagehead:has(.file-input:focus-visible) label.btn{outline:2px solid var(--primary);outline-offset:2px}
+.tbl td b{display:block;font-weight:600}
+.src{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--primary-text);--ico-size:13px;margin-top:2px}
+.dt{display:block;font-size:12px;color:var(--text-3);margin-top:3px}
+.notes{max-width:260px;color:var(--text-2);font-size:12.5px}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.18);z-index:40}
+.side{position:fixed;top:72px;right:20px;bottom:20px;width:min(380px,calc(100vw - 40px));z-index:41;padding:18px;overflow:auto;display:flex;flex-direction:column;gap:12px}
+.shead{display:flex;align-items:flex-start;gap:10px}.shead>div{flex:1}.shead h3{font-size:16px;font-weight:650}.shead small{font-size:12px;color:var(--text-3)}
+.close{font-size:22px;line-height:1;background:none;border:0;cursor:pointer;color:var(--text-2)}
+dl{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:13px}dt{color:var(--text-3)}dd{margin:0}
+.fld{display:flex;flex-direction:column;gap:5px;font-size:12.5px;font-weight:600;color:var(--text-2)}
+.ro{font-weight:400;font-size:13.5px;color:var(--text)}
+.acts{display:flex;align-items:center;gap:8px;margin-top:auto;padding-top:6px}.grow{flex:1}
 `],
 })
 export class DevolutivasComponent implements OnInit {
   private api = inject(Api);
-  appointments: Appointment[] = [];
-  query = '';
-  filter: AgendaFilter = 'upcoming';
-  error = '';
-  warning = '';
-  filterOptions: {id: AgendaFilter; label: string}[] = [
-    {id: 'all', label: 'Todas'}, {id: 'upcoming', label: 'Próximas'}, {id: 'week', label: '7 dias'},
-    {id: 'undated', label: 'Sem data'},
-  ];
-
-  constructor() {}
+  @Output() openEvaluation = new EventEmitter<string>();
+  rows: AgendaRow[] = [];
+  imported = false; loaded = false; importing = false; saving = false;
+  query = ''; filter: Filter = 'pendente'; page = 1; per = 25;
+  sel: AgendaRow | null = null;
+  draft = {delivery_date: '', start: '', readiness: '', notes: ''};
+  readonly filters: {id: Filter; label: string}[] = [
+    {id: 'pendente', label: 'Pendentes'}, {id: 'agendada', label: 'Agendadas'}, {id: 'feita', label: 'Feitas'}, {id: 'all', label: 'Todas'}];
+  readonly brDate = brDate;
 
   ngOnInit() { this.load(); }
+  canWrite() { const r = this.api.me()?.role; return r === 'admin' || r === 'psychologist'; }
 
   async load() {
-    this.error = '';
-    try {
-      const rows: any[] = await this.api.req('GET', '/agenda-devolutivas');
-      this.appointments = rows.map(r => ({
-        id: r.id, patient: r.patient, age: r.age, tests: r.tests, start: r.start,
-        readiness: r.readiness, deliveryText: r.deliveryText, date: parseDate(r.date),
-      }));
-    } catch (error) {
-      this.error = error instanceof Error ? error.message : 'Não foi possível carregar a agenda.';
-    }
+    try { const r = await this.api.req<{imported: boolean; rows: AgendaRow[]}>('GET', '/devolutiva-agenda'); this.rows = r.rows; this.imported = r.imported; }
+    catch {} finally { this.loaded = true; }
   }
 
-  get weekCount() {
-    const today = startOfDay(new Date()), lastDay = new Date(today);
-    lastDay.setDate(lastDay.getDate() + 7);
-    return this.appointments.filter(item => item.date && item.date >= today && item.date <= lastDay).length;
-  }
-
-  get undatedCount() { return this.appointments.filter(item => !item.date).length; }
-
-  async importFile(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    input.value = '';
-    if (!file) return;
-    this.error = ''; this.warning = '';
+  async importFile(ev: Event) {
+    const input = ev.target as HTMLInputElement, file = input.files?.[0]; input.value = '';
+    if (!file || this.importing) return;
+    this.importing = true;
     try {
       const fd = new FormData(); fd.append('file', file);
-      const result: any = await this.api.req('POST', '/agenda-devolutivas/import', fd);
-      this.warning = `Importados ${result.imported} registros.`;
-      if (result.skipped_old) this.warning += ` ${result.skipped_old} anterior(es) ao mês atual foram ignorados.`;
-      await this.load();
-    } catch (error) {
-      this.error = error instanceof Error ? error.message : 'Não foi possível importar o CSV.';
-    }
+      const r = await this.api.req<{imported: number; with_date: number}>('POST', '/devolutiva-agenda/import', fd);
+      this.api.notify(`Planilha importada: ${r.imported} pacientes, ${r.with_date} com data de devolutiva.`);
+      this.filter = 'all'; await this.load();
+    } catch {} finally { this.importing = false; }
   }
 
-  filteredRows() {
-    const today = startOfDay(new Date()), lastDay = new Date(today);
-    lastDay.setDate(lastDay.getDate() + 7);
-    const query = this.query.trim().toLocaleLowerCase('pt-BR');
-    return this.appointments.filter(item => {
-      if (this.filter === 'undated' && item.date) return false;
-      if (this.filter === 'upcoming' && (!item.date || item.date < today)) return false;
-      if (this.filter === 'week' && (!item.date || item.date < today || item.date > lastDay)) return false;
-      const searchable = [item.patient, item.age, item.tests, item.start, item.readiness, item.deliveryText].join(' ').toLocaleLowerCase('pt-BR');
-      return !query || searchable.includes(query);
-    }).sort((a, b) => (a.date?.getTime() ?? Infinity) - (b.date?.getTime() ?? Infinity) || a.patient.localeCompare(b.patient, 'pt-BR'));
-  }
+  label(r: AgendaRow) { return STATUS_LABEL[r.status]; }
+  count(s: AgendaStatus) { return this.rows.filter(r => r.status === s).length; }
+  fromEval() { return this.rows.filter(r => r.source === 'evaluation').length; }
+  doneThisMonth() { const m = todayISO().slice(0, 7); return this.rows.filter(r => r.status === 'feita' && r.delivery_date?.startsWith(m)).length; }
+  emptyText() { return this.imported || !this.canWrite() ? 'Nenhum registro ainda. Cada avaliação criada entra aqui.' : 'Importe a planilha de devolutivas (uma vez só). Depois, cada avaliação criada entra aqui sozinha.'; }
+  byId(_: number, r: AgendaRow) { return r.id; }
 
-  groups(): DayGroup[] {
-    const grouped = new Map<string, DayGroup>();
-    for (const appointment of this.filteredRows()) {
-      const key = appointment.date ? dateKey(appointment.date) : 'undated';
-      let group = grouped.get(key);
-      if (!group) {
-        group = {
-          key, date: appointment.date,
-          title: appointment.date ? appointment.date.toLocaleDateString('pt-BR', {weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'}) : 'Sem data definida',
-          appointments: [],
-        };
-        grouped.set(key, group);
-      }
-      group.appointments.push(appointment);
-    }
-    return [...grouped.values()].sort((a, b) => (a.date?.getTime() ?? Infinity) - (b.date?.getTime() ?? Infinity));
+  /** Pending first by end of testing (oldest waiting longest); dated rows by devolutiva date, most recent first. */
+  filtered() {
+    const q = fold(this.query.trim());
+    return this.rows.filter(r => (this.filter === 'all' || r.status === this.filter) &&
+      (!q || fold([r.patient, r.start, r.readiness, r.notes, r.tests, r.delivery_text].join(' ')).includes(q)))
+      .sort((a, b) => {
+        const rank = (r: AgendaRow) => r.status === 'pendente' ? 0 : r.status === 'agendada' ? 1 : 2;
+        if (rank(a) !== rank(b)) return rank(a) - rank(b);
+        if (a.status === 'pendente') return (a.tests_done_date || '9999').localeCompare(b.tests_done_date || '9999');
+        if (a.status === 'agendada') return (a.delivery_date || '').localeCompare(b.delivery_date || '');
+        return (b.delivery_date || '').localeCompare(a.delivery_date || '');
+      });
   }
+  pageRows() { const f = this.filtered(); const last = Math.max(1, Math.ceil(f.length / this.per)); if (this.page > last) this.page = last; return f.slice((this.page - 1) * this.per, this.page * this.per); }
 
-  formatDate(date: Date) { return date.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit', year: 'numeric'}); }
+  select(r: AgendaRow) { this.sel = r; this.draft = {delivery_date: r.delivery_date || '', start: r.start, readiness: r.readiness, notes: r.notes}; }
+  changed() {
+    const s = this.sel; if (!s) return false;
+    return this.draft.start !== s.start || this.draft.readiness !== s.readiness || this.draft.notes !== s.notes || (s.source === 'import' && this.draft.delivery_date !== (s.delivery_date || ''));
+  }
+  async save() {
+    const s = this.sel; if (!s || this.saving) return;
+    this.saving = true;
+    try {
+      const body: any = {start: this.draft.start, readiness: this.draft.readiness, notes: this.draft.notes};
+      if (s.source === 'import') body.delivery_date = this.draft.delivery_date || null;
+      const r = await this.api.req<AgendaRow>('PUT', `/devolutiva-agenda/${s.id}`, body);
+      this.rows = this.rows.map(x => x.id === r.id ? r : x); this.select(r);
+      this.api.notify('Registro salvo.');
+    } catch {} finally { this.saving = false; }
+  }
 }

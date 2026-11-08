@@ -47,7 +47,6 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
     <path class="w1" d="M0 0 H880 C760 220 760 420 860 600 C900 700 880 800 820 900 H0z"/>
     <path class="w2" d="M0 760 C300 660 600 700 900 820 V900 H0z"/>
   </svg>
-  <div class="login-theme"><ng-container *ngTemplateOutlet="themeSwitch"></ng-container></div>
   <section class="pitch">
     <div class="bar"></div>
     <h1>NeuroLaudos IA</h1>
@@ -174,7 +173,6 @@ nl-icon{--ico-size:16px}
 .login{position:relative;display:grid;grid-template-columns:1fr minmax(420px,42%);min-height:calc(100vh / var(--zoom, 1));background:var(--sidebar-deep);overflow:hidden}
 .login-waves{position:absolute;inset:0;width:100%;height:100%}
 .login-waves .w1{fill:var(--sidebar-bg)}.login-waves .w2{fill:var(--sidebar-active);opacity:.35}
-.login-theme{position:absolute;top:20px;right:24px;z-index:2;display:flex;align-items:center}
 .pitch{position:relative;z-index:1;color:var(--sidebar-text);padding:clamp(72px,calc(13vh / var(--zoom, 1)),180px) 64px 48px clamp(40px,calc(7vw / var(--zoom, 1)),160px);max-width:760px}
 .pitch .bar{width:96px;height:6px;border-radius:var(--radius-pill);background:var(--brand-mint);margin-bottom:36px}
 .pitch h1{font-size:clamp(40px,calc(4.4vw / var(--zoom, 1)),64px);line-height:1;font-weight:700;letter-spacing:-.01em}

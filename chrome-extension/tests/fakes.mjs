@@ -35,7 +35,7 @@ export function makeEnv(opts = {}) {
       case 'nl.openModal': if (nl.notEligible.includes(msg.key)) return {ok: true, notEligible: true, reason: 'Texto fixo do arquivo'}; openModal = msg.key; return {ok: true, modal: view(msg.key)};
       case 'nl.modalInfo': return {ok: true, modal: view(msg.key)};
       case 'nl.prepare': { const code = newCode(); nl.tasks[msg.key] = {code, status: 'pending'}; return {ok: true, modal: view(msg.key)}; }
-      case 'nl.command': { const t = nl.tasks[msg.key]; return {ok: true, command: `Utilize o plugin NeuroLaudos IA para buscar a tarefa pendente da seção "${msg.key}" identificada pelo código ${t.code}. Ao concluir, salve como rascunho.`}; }
+      case 'nl.command': { const t = nl.tasks[msg.key]; return {ok: true, command: `@NeuroLaudos IA Utilize o plugin NeuroLaudos IA para buscar a tarefa pendente da seção "${msg.key}" identificada pelo código ${t.code}. Ao concluir, salve como rascunho.`}; }
       case 'nl.waitStatus': { clock += msg.chunkMs || 1000; return {ok: true, modal: view(msg.key)}; }
       case 'nl.closeModal': openModal = null; return {ok: true};
       case 'nl.simCheck': return {ok: true, checks: [{name: 'Seção aberta', ok: true}]};

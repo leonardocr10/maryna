@@ -241,7 +241,7 @@ export class AutomationManager {
   async stepPlugin(s, idx, it) {
     const s2 = await this.env.state.load();
     const r = await this.cg(s2, {cmd: 'cg.selectPlugin', name: PLUGIN_NAME, trustManual: !!it.pluginManual}, LIMITS.pluginMenu + LIMITS.pluginChip + 8000);
-    await this.env.state.log(`${it.name}: plugin ${PLUGIN_NAME} ${r.manual ? 'marcado como selecionado por você' : 'selecionado e conferido'}.`);
+    await this.env.state.log(`${it.name}: plugin ${PLUGIN_NAME} ${r.manual ? 'marcado como selecionado por você' : r.how === 'chip' || r.how === 'picker' ? 'escolhido na lista do ChatGPT' : 'mencionado como @' + PLUGIN_NAME}.`);
   }
 
   async stepInsert(s, idx, it) {
@@ -252,7 +252,7 @@ export class AutomationManager {
       command = r.command; this.commands.set(it.key, command);
       await this.env.activate(s.chatTabId);
     }
-    await this.cg(s, {cmd: 'cg.insert', text: command, code: it.code}, 15000);
+    await this.cg(s, {cmd: 'cg.insert', text: command, code: it.code, name: PLUGIN_NAME}, 15000);
   }
 
   async stepSend(s, idx, it) {

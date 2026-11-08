@@ -49,45 +49,75 @@
     return false;
   }
 
+  const textOf = c => c.innerText ?? c.value ?? '';
+  /** Pastes like Ctrl+V (the editor's own paste handling); falls back to the browser's insert command. */
+  async function pasteText(c, text) {
+    placeCaretAtEnd(c);
+    const before = textOf(c);
+    try {
+      const dt = new DataTransfer(); dt.setData('text/plain', text);
+      c.dispatchEvent(new ClipboardEvent('paste', {clipboardData: dt, bubbles: true, cancelable: true}));
+    } catch {}
+    const want = norm(text).slice(-12);
+    if (await waitFor(() => textOf(c) !== before && norm(textOf(c)).includes(want), {timeout: 800})) return true;
+    insertText(c, text);
+    return !!(await waitFor(() => norm(textOf(c)).includes(want), {timeout: 1500}));
+  }
+
+  /**
+   * Starts the message with "@NeuroLaudos IA". When ChatGPT opens its plugin list, the real option is clicked;
+   * when it does not, the mention stays as text (as the person does by hand). Success is still decided only by
+   * NeuroLaudos IA receiving the draft.
+   */
   async function selectPlugin(name, trustManual) {
     const c = composer();
     if (!c) return fail(loginShown() ? 'cg_not_logged' : 'cg_composer');
-    if (chipPresent(name)) return {ok: true, already: true};
-    if (trustManual) return {ok: true, manual: true};
+    if (chipPresent(name)) return {ok: true, how: 'chip'};
+    if (trustManual) return {ok: true, manual: true, how: 'manual'};
     clearEditor(c);
-    insertText(c, '@');
-    const menu = await waitFor(() => pickerOptions().length ? true : null, {timeout: LIMITS.pluginMenu});
-    insertText(c, name.split(' ')[0]);
-    const opt = await waitFor(() => pluginOption(name), {timeout: LIMITS.pluginMenu});
-    if (!opt) { clearEditor(c); return fail(menu ? 'cg_plugin_missing' : 'cg_plugin_select', menu ? 'opção não encontrada no seletor' : 'o seletor @ não abriu'); }
-    click(opt);
-    const ok = await waitFor(() => chipPresent(name), {timeout: LIMITS.pluginChip});
-    if (!ok) { clearEditor(c); return fail('cg_plugin_select', 'seleção não confirmada na interface'); }
-    return {ok: true};
+    if (!await pasteText(c, '@' + name)) return fail('cg_insert', 'a menção @' + name + ' não entrou no campo');
+    const opt = await waitFor(() => pluginOption(name), {timeout: 2500});
+    if (opt) {
+      click(opt);
+      const r = await waitFor(() => chipPresent(name) ? 'chip' : !norm(textOf(c)).includes('@' + norm(name).split(' ')[0]) ? 'picker' : null, {timeout: 2500});
+      if (r) return {ok: true, how: r};
+      return {ok: true, how: 'text'};
+    }
+    return {ok: true, how: 'text'};
   }
 
   // ---------- message ----------
-  async function insert(text, code) {
+  async function insert(text, code, name) {
     const c = composer();
     if (!c) return fail('cg_composer');
-    placeCaretAtEnd(c);
-    const before = norm(c.innerText || c.value || '');
-    insertText(c, (before ? ' ' : '') + text);
-    const ok = await waitFor(() => (c.innerText || c.value || '').includes(code), {timeout: 4000});
+    // The command already starts with the mention placed in the previous step: the rest is pasted after it.
+    let rest = String(text);
+    const mention = '@' + (name || 'NeuroLaudos IA');
+    if (rest.startsWith(mention)) rest = rest.slice(mention.length).trimStart();
+    if (!await pasteText(c, (norm(textOf(c)) ? ' ' : '') + rest)) return fail('cg_insert');
+    const ok = await waitFor(() => textOf(c).includes(code), {timeout: 4000});
     return ok ? {ok: true} : fail('cg_insert');
   }
 
+  /** Sends with Enter, like a person; the send button is the fallback. */
   async function sendMessage(code) {
-    const btn = await waitFor(() => { const b = sendBtn(); return b && !b.disabled && b.getAttribute('aria-disabled') !== 'true' ? b : null; }, {timeout: LIMITS.sendReady});
-    if (!btn) return fail('cg_send', 'botão enviar indisponível');
+    const c = composer();
+    if (!c) return fail('cg_composer');
     const n = userMsgs();
-    click(btn);
-    const ok = await waitFor(() => {
+    const acked = () => {
       const u = document.querySelectorAll(CG.userMsg);
       if (u.length > n && (u[u.length - 1].textContent || '').includes(code)) return true;
-      return streaming() && u.length > n ? true : null;
-    }, {timeout: LIMITS.sendAck});
-    return ok ? {ok: true} : fail('cg_send');
+      return (streaming() && u.length > n) || (!textOf(c).includes(code) && u.length > n) ? true : null;
+    };
+    // An open suggestion list would take the Enter: close it first.
+    if (pickerOptions().length) { NLX.DOM.key(c, 'Escape', {keyCode: 27, which: 27}); await NLX.DOM.sleep(200); }
+    c.focus(); placeCaretAtEnd(c);
+    NLX.DOM.key(c, 'Enter', {keyCode: 13, which: 13});
+    if (await waitFor(acked, {timeout: 2500})) return {ok: true, how: 'enter'};
+    const btn = await waitFor(() => { const b = sendBtn(); return b && !b.disabled && b.getAttribute('aria-disabled') !== 'true' ? b : null; }, {timeout: LIMITS.sendReady});
+    if (!btn) return fail('cg_send', 'Enter não enviou e o botão enviar não apareceu');
+    click(btn);
+    return (await waitFor(acked, {timeout: LIMITS.sendAck})) ? {ok: true, how: 'button'} : fail('cg_send');
   }
 
   // ---------- state of the answer ----------
@@ -168,7 +198,7 @@
       switch (msg.cmd) {
         case 'cg.ping': { const c = composer(); return {ok: true, ready: !!c && !loginShown(), loggedIn: !loginShown(), composer: !!c, hasMessages: allMsgs().length > 0}; }
         case 'cg.selectPlugin': return selectPlugin(msg.name, msg.trustManual);
-        case 'cg.insert': return insert(msg.text, msg.code);
+        case 'cg.insert': return insert(msg.text, msg.code, msg.name);
         case 'cg.send': return sendMessage(msg.code);
         case 'cg.wait': return waitAnswer(Math.min(Math.max(msg.chunkMs || 30000, 1000), 60000));
         case 'cg.probe': return probe(msg.name);

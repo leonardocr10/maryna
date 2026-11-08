@@ -40,8 +40,8 @@
   };
 
   const CG = {
-    composer: ['#prompt-textarea[contenteditable="true"]', 'div#prompt-textarea', 'div.ProseMirror[contenteditable="true"]', 'textarea#prompt-textarea', 'form textarea[name="prompt-textarea"]'],
-    send: ['button[data-testid="send-button"]', 'button#composer-submit-button', 'button[aria-label="Enviar prompt"]', 'button[aria-label="Send prompt"]', 'button[aria-label*="Enviar" i]', 'button[aria-label*="Send" i]'],
+    composer: ['#prompt-textarea[contenteditable="true"]', 'div#prompt-textarea', 'div.ProseMirror[contenteditable="true"]', 'textarea#prompt-textarea', 'form textarea[name="prompt-textarea"]', 'form [contenteditable="true"][role="textbox"]', 'main [contenteditable="true"]', 'form textarea'],
+    send: ['button[data-testid="send-button"]', 'button#composer-submit-button', 'button[data-testid="composer-submit-button"]', 'button[aria-label="Enviar prompt"]', 'button[aria-label="Send prompt"]', 'button[aria-label*="Enviar" i]', 'button[aria-label*="Send" i]'],
     stop: ['button[data-testid="stop-button"]', 'button[aria-label*="Parar" i]', 'button[aria-label*="Stop" i]'],
     userMsg: '[data-message-author-role="user"]',
     assistantMsg: '[data-message-author-role="assistant"]',

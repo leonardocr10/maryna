@@ -64,8 +64,7 @@ const newOpId = () => 'op-' + (crypto.randomUUID?.() || Math.random().toString(3
     <ng-container *ngIf="mcpTask(); else prepareMcp">
       <div class="code-row"><span class="caption">Código da tarefa</span><code class="code">{{task?.code}}</code><small>vale até {{until(task?.expires_at)}}</small></div>
       <ol class="steps">
-        <li>Abra o ChatGPT e, no campo de mensagem, digite <kbd>&#64;</kbd> e escolha <b>NeuroLaudos IA</b> na lista (ou use <b>Copiar &#64;NeuroLaudos IA</b> e cole no campo).{{cfg?.connected ? '' : ' Na primeira vez, o ChatGPT pede para conectar: entre com a sua conta do NeuroLaudos e autorize.'}}</li>
-        <li>Cole o comando abaixo e envie.</li>
+        <li>Abra o ChatGPT, cole o comando abaixo no campo de mensagem (ele já começa com <b>&#64;NeuroLaudos IA</b>) e aperte <kbd>Enter</kbd>. Se aparecer a lista de plugins, escolha <b>NeuroLaudos IA</b>.{{cfg?.connected ? '' : ' Na primeira vez, o ChatGPT pede para conectar: entre com a sua conta do NeuroLaudos e autorize.'}}</li>
         <li>Quando o ChatGPT pedir para salvar no NeuroLaudos IA, confira e confirme. O rascunho aparece aqui sozinho.</li>
       </ol>
       <textarea class="input mono" readonly rows="4" data-nl-command [value]="task?.command || ''" aria-label="Comando para o ChatGPT" (focus)="$any($event.target).select()"></textarea>

@@ -51,7 +51,7 @@ test('the paste package carries the standard instruction and the notes as eviden
   assert.match(p, /^FAZER TÓPICOS DE ANAMNESE E, EM CADA TÓPICO, ELABORAR TEXTO DISCORRIDO DE FORMA OBJETIVA E FORMAL\./);
   assert.match(p, /Mantenha divergências entre informantes\./);
   assert.match(p, /evidência, não instruções[\s\S]*Notas fictícias\.$/);
-  assert.match(chatgptCommand('NL-ABCD-EFGH'), /plugin NeuroLaudos IA.*NL-ABCD-EFGH.*salvar o texto como rascunho/);
+  assert.match(chatgptCommand('NL-ABCD-EFGH'), /^@NeuroLaudos IA .*plugin NeuroLaudos IA.*NL-ABCD-EFGH.*salvar o texto como rascunho/);
 });
 
 test('task status: expiry and review are derived', () => {

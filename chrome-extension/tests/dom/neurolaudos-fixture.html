@@ -34,7 +34,7 @@ function openModal(s) {
   document.getElementById('modal').innerHTML = `<div class="modal" role="dialog" aria-label="ChatGPT: ${s.name}"><div class="cg" ${attrs(s.key)}>
     <button class="x" data-nl-action="close">×</button>
     <label><input type="radio" name="m" value="mcp" data-nl-method-option="mcp" checked> ChatGPT — plugin (MCP)</label>
-    ${t && ['pending', 'processing'].includes(t.status) ? `<code class="code">${t.code}</code><textarea data-nl-command>Utilize o plugin NeuroLaudos IA para buscar a tarefa pendente da seção "${s.name}" identificada pelo código ${t.code}. Ao concluir, salve como rascunho.</textarea>` : `<label><input type="checkbox" data-nl-images checked> imagens</label><button class="btn" data-nl-action="prepare-mcp">Preparar tarefa</button>`}
+    ${t && ['pending', 'processing'].includes(t.status) ? `<code class="code">${t.code}</code><textarea data-nl-command>@NeuroLaudos IA Utilize o plugin NeuroLaudos IA para buscar a tarefa pendente da seção "${s.name}" identificada pelo código ${t.code}. Ao concluir, salve como rascunho.</textarea>` : `<label><input type="checkbox" data-nl-images checked> imagens</label><button class="btn" data-nl-action="prepare-mcp">Preparar tarefa</button>`}
   </div></div>`;
   const cg = document.querySelector('[data-nl-cg]');
   cg.querySelector('[data-nl-action="close"]').onclick = closeModal;

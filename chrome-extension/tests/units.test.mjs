@@ -50,7 +50,7 @@ test('validator: codes and commands', () => {
   assert.ok(!isTaskCode('NL-7KQ2-M9X0'));   // 0 is not in the alphabet
   assert.ok(!isTaskCode('NL-2026-1159'));   // evaluation number, not a task code (contains 0 and 1)
   assert.equal(codeIn('... código NL-7KQ2-M9XD. Ao concluir'), 'NL-7KQ2-M9XD');
-  const cmd = 'Utilize o plugin NeuroLaudos IA para buscar a tarefa pendente identificada pelo código NL-7KQ2-M9XD.';
+  const cmd = '@NeuroLaudos IA Utilize o plugin NeuroLaudos IA para buscar a tarefa pendente identificada pelo código NL-7KQ2-M9XD.';
   assert.ok(checkCommand(cmd, 'NL-7KQ2-M9XD').ok);
   assert.match(checkCommand(cmd, 'NL-AAAA-BBBB').reason, /não contém/);
   assert.match(checkCommand(cmd + ' NL-AAAA-BBBB', 'NL-7KQ2-M9XD').reason, /outro código/);

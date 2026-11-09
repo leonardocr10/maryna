@@ -72,12 +72,13 @@
           <small class="sec-note">{{idSaving ? 'Salvando…' : locked() ? 'Travada (avaliação aprovada)' : !canWrite() ? 'Somente leitura para o seu papel' : 'Salva automaticamente · campos em branco usam o arquivo base'}}</small></div>
         <nl-identity-form [model]="idModel" (modelChange)="onIdentity($event)" [disabled]="readOnly()" [showRequired]="!readOnly()"></nl-identity-form>
         <div class="place-row">
-          <label for="place-date" class="mlabel">Local e data (final do laudo)</label>
+          <label for="place-date" class="mlabel">Local e data (final do laudo){{placeInFile() ? ' *' : ''}}</label>
           <div class="place-in">
-            <input id="place-date" class="input" [(ngModel)]="placeDate" (blur)="savePlaceDate()" (keyup.enter)="savePlaceDate()" [disabled]="readOnly()" [placeholder]="placeInFile() || 'Ex.: Uberlândia, 30 de outubro de 2026.'" maxlength="120">
+            <input id="place-date" class="input" [class.need]="placeMissing()" [attr.aria-required]="placeInFile() ? 'true' : null" [attr.aria-invalid]="placeMissing() ? 'true' : null" [(ngModel)]="placeDate" (blur)="savePlaceDate()" (keyup.enter)="savePlaceDate()" [disabled]="readOnly()" [placeholder]="placeInFile() || 'Ex.: Uberlândia, 30 de outubro de 2026.'" maxlength="120">
             <button *ngIf="!readOnly()" type="button" class="btn btn-secondary btn-sm" (click)="todayPlaceDate()"><nl-icon name="calendar"/> Data de hoje</button>
           </div>
-          <small>{{placeInFile() ? (placeDate ? 'No Word, a linha "' + placeInFile() + '" é trocada por este texto.' : 'Em branco: fica "' + placeInFile() + '", como está no arquivo base.') : 'O arquivo base não tem a linha de local e data (ex.: "Uberlândia, 30 de outubro de 2026.").'}}</small>
+          <small *ngIf="placeMissing()" class="need-hint">Obrigatório: escreva o local e a data deste laudo (o arquivo base tem "{{placeInFile()}}").</small>
+          <small *ngIf="!placeMissing()">{{placeInFile() ? 'No Word, a linha "' + placeInFile() + '" é trocada por este texto.' : 'O arquivo base não tem a linha de local e data (ex.: "Uberlândia, 30 de outubro de 2026."): nada a preencher.'}}</small>
         </div>
       </section>
 

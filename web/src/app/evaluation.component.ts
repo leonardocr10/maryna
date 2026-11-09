@@ -168,6 +168,7 @@ export class EvaluationComponent implements OnDestroy {
     const gaps = ([['birth_date', 'data de nascimento'], ['sex', 'sexo'], ['schooling', 'escolaridade'], ['start_date', 'data de início'], ['end_date', 'data de finalização']] as const)
       .filter(([k]) => !String(id[k] || '').trim()).map(([, l]) => l);
     if (gaps.length) { const d = EvaluationComponent.names(gaps); out.push({key: 'id', level: 'warn', title: 'Identificação incompleta', desc: d[0].toUpperCase() + d.slice(1), action: 'Completar dados', run: toId}); }
+    if (this.placeMissing()) out.push({key: 'place', level: 'danger', title: 'Local e data ausentes', desc: 'Obrigatório: escreva o local e a data do fechamento do laudo.', action: 'Completar dados', run: toId});
     if (!this.docName('base')) out.push({key: 'base', level: 'danger', title: 'Arquivo base ausente', desc: 'Envie o .docx da estagiária.', action: 'Enviar arquivo', run: toId});
     if (!this.docName('anamnesis')) out.push({key: 'ana', level: 'danger', title: 'Anamnese ausente', desc: 'Envie o .docx da psicóloga.', action: 'Enviar arquivo', run: toId});
     if (this.inspection && this.missing().length) out.push({key: 'missing', level: 'warn', title: this.missing().length === 1 ? 'Seção ausente no arquivo base' : 'Seções ausentes no arquivo base',
@@ -187,6 +188,7 @@ export class EvaluationComponent implements OnDestroy {
     const gaps = ([['birth_date', 'data de nascimento'], ['sex', 'sexo'], ['schooling', 'escolaridade'], ['start_date', 'data de início'], ['end_date', 'data de finalização']] as const)
       .filter(([k]) => !String(id[k] || '').trim()).map(([, l]) => l);
     if (gaps.length) out.push({level: 'warn', text: 'Identificação incompleta: ' + gaps.join(', ') + '.', step: 0});
+    if (this.placeMissing()) out.push({level: 'danger', text: 'Faltam o local e a data do fechamento do laudo.', step: 0});
     if (!this.docName('base')) out.push({level: 'danger', text: 'Falta o arquivo base (estagiária).', step: 1});
     if (!this.docName('anamnesis')) out.push({level: 'danger', text: 'Falta a anamnese (psicóloga).', step: 1});
     if (this.inspection && this.missing().length) out.push({level: 'warn', text: 'Seções sem lugar no arquivo base: ' + this.missing().join(', ') + '.', step: 1});
@@ -359,6 +361,8 @@ export class EvaluationComponent implements OnDestroy {
   /** Closing "Cidade, data." line: what the evaluation saved, else what the base document says. */
   placeDate = '';
   placeInFile() { return this.inspection?.place_date || ''; }
+  /** Required only when the base file has the closing line (rule 2: nothing is added where the file has no such line). */
+  placeMissing() { return !!this.placeInFile() && !this.readOnly() && !(this.placeDate || '').trim(); }
   async savePlaceDate(v = this.placeDate) {
     const value = (v || '').replace(/\s+/g, ' ').trim();
     if (value === (this.current?.place_date || '') || this.readOnly()) return;

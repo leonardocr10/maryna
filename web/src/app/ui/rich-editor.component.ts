@@ -6,6 +6,7 @@ import {DOC_PT, EDITOR_FONTS, displayHtml, sanitizeHtml, textFromHtml} from '../
 const ICONS: Record<string, string> = {
   undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
   redo: '<path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/>',
+  spell: '<path d="M3 15 6.5 6l3.5 9M4.3 12h4.4"/><path d="m13 15 3 3 6-7"/>',
   left: '<path d="M4 6h16M4 10h10M4 14h16M4 18h10"/>',
   center: '<path d="M4 6h16M7 10h10M4 14h16M7 18h10"/>',
   right: '<path d="M4 6h16M10 10h10M4 14h16M10 18h10"/>',
@@ -63,6 +64,7 @@ const BLOCK = 'p,h3,li';
         <span class="rte-sep rte-hist"></span>
         <button type="button" class="rte-hist" title="Desfazer (Ctrl+Z)" aria-label="Desfazer" [disabled]="!canUndo" (click)="undo()" [innerHTML]="icon('undo')"></button>
         <button type="button" class="rte-hist" title="Refazer (Ctrl+Y)" aria-label="Refazer" [disabled]="!canRedo" (click)="redo()" [innerHTML]="icon('redo')"></button>
+        @if (!readOnly) { <button type="button" class="rte-spellbtn" [class.on]="spellTip" title="Corretor ortográfico: como ligar no Chrome" aria-label="Corretor ortográfico: como ligar" [attr.aria-pressed]="spellTip" (click)="spellTip = !spellTip" [innerHTML]="icon('spell')"></button> }
         <span class="rte-grow"></span>
         <span class="rte-dd">
           <button #moreBtn type="button" class="rte-more" [class.on]="menu==='more'" [attr.aria-expanded]="menu==='more'" aria-haspopup="menu" (click)="toggleMenu('more')" title="Mais opções de formatação">
@@ -127,16 +129,29 @@ const BLOCK = 'p,h3,li';
         </span>
       </div>
       @if (!readOnly && spellTip) {
-        <div class="rte-spell" role="note"><span><b>Corretor ortográfico:</b> palavras com erro ficam sublinhadas em vermelho; clique com o botão direito nelas para ver as sugestões.
-          Se não aparecer, ligue no Chrome: Configurações › Idiomas › Verificação ortográfica, com Português (Brasil).</span><button type="button" (click)="hideSpellTip()">Entendi</button></div>
+        <div class="rte-spell" role="note">
+          <span class="rs-i" [innerHTML]="icon('spell')"></span>
+          <div class="rs-t"><b>Ligue o corretor ortográfico do Chrome para ver as palavras erradas sublinhadas em vermelho</b>
+            <ol><li>Abra <code>chrome://settings/languages</code> numa aba nova (use o botão para copiar o endereço).</li>
+              <li>Em <b>Verificação ortográfica</b>, ligue <b>Verificar se há erros de ortografia ao digitar texto em páginas da Web</b>.</li>
+              <li>Marque <b>português (Brasil)</b> e escolha a verificação <b>básica</b> (a avançada envia o texto ao Google).</li>
+              <li>Volte aqui e recarregue a página. Clique com o botão direito na palavra sublinhada para ver as sugestões.</li></ol></div>
+          <div class="rs-a"><button type="button" (click)="copySpellUrl($event)">Copiar endereço</button><button type="button" class="pri" (click)="hideSpellTip()">Já liguei</button></div>
+        </div>
       }
       <div #area class="rte-area draft editing" spellcheck="true" lang="pt-BR" [style.zoom]="page ? zoom : null" [style.max-width]="page ? sheetMax(0) : null" [attr.contenteditable]="readOnly ? 'false' : 'true'" role="textbox" aria-multiline="true" [attr.aria-label]="label"
         (paste)="paste($event)" (blur)="flush()"></div>
     </div>`,
   styles: [`
     nl-rich-editor{display:block}
-    .rte-spell{display:flex;align-items:center;gap:12px;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--primary-soft);color:var(--text-2);font:13px/1.45 var(--font)}
-    .rte-spell span{flex:1}.rte-spell b{color:var(--text)}
+    .rte-spell{display:flex;align-items:flex-start;gap:12px;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--primary-soft);color:var(--text-2);font:13px/1.45 var(--font)}
+    .rte-spell .rs-i{flex:none;color:var(--primary-text);margin-top:2px}.rte-spell .rs-i svg{width:20px;height:20px}
+    .rte-spell .rs-t{flex:1;min-width:0}.rte-spell b{color:var(--text)}
+    .rte-spell ol{margin:6px 0 0;padding-left:20px}.rte-spell li{margin:2px 0}
+    .rte-spell code{font:12px var(--mono,monospace);background:var(--card);padding:1px 5px;border-radius:5px;border:1px solid var(--border)}
+    .rte-spell .rs-a{display:flex;flex-direction:column;gap:6px;flex:none}
+    .rte-spell button.pri{background:var(--primary);border-color:var(--primary);color:var(--on-primary,#fff)}
+    .rte-bar .rte-spellbtn.on{background:var(--primary-soft);color:var(--primary-text)}
     .rte-spell button{flex:none;height:30px;padding:0 12px;border:1px solid var(--primary-border,var(--border));border-radius:8px;background:var(--card);color:var(--primary-text);font:600 12.5px var(--font);cursor:pointer}
     .rte{border:1px solid var(--border-input);border-radius:var(--radius-sm);background:var(--card)}
     .rte{container-type:inline-size;container-name:rte}
@@ -201,6 +216,11 @@ export class RichEditorComponent implements AfterViewInit, OnChanges, OnDestroy 
   /** One-time tip about the spell checker (Chrome's, in Portuguese - Brazil), per browser. */
   spellTip = (() => { try { return localStorage.getItem('nl-spell-tip') !== '1'; } catch { return false; } })();
   hideSpellTip() { this.spellTip = false; try { localStorage.setItem('nl-spell-tip', '1'); } catch {} }
+  /** chrome:// pages cannot be opened by a link: the address goes to the clipboard. */
+  async copySpellUrl(e: Event) {
+    const b = e.target as HTMLButtonElement;
+    try { await navigator.clipboard.writeText('chrome://settings/languages'); b.textContent = 'Copiado: cole numa aba nova'; } catch { b.textContent = 'Copie: chrome://settings/languages'; }
+  }
   @ViewChild('area', {static: true}) area!: ElementRef<HTMLDivElement>;
   /** Initial HTML; changing it from outside resets the content (and the undo history). */
   @Input() html = '';

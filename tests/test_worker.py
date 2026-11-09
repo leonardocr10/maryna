@@ -144,12 +144,14 @@ class TestWorker(unittest.TestCase):
   run('export',stdin={'base':str(self.base),'out':str(self.out),'sections':{'anamnesis':'## Sono'+nl+nl+'Texto.'+nl+nl+'## Escola'+nl+nl+'Outro.'}})
   ps=Document(self.out).paragraphs
   start=[p.text for p in ps].index('Sono')
-  for p in ps[start:start+5]:
+  # no blank paragraphs as spacing: 1.5 lines, 6 pt after each paragraph, 12 pt before a topic title (not the first)
+  self.assertEqual([p.text for p in ps[start:start+4]],['Sono','Texto.','Escola','Outro.'])
+  for p in ps[start:start+4]:
    self.assertEqual(p.paragraph_format.line_spacing,1.5)
-   if p.text:self.assertEqual((p.runs[0].font.name,p.runs[0].font.size.pt),('Arial',11.0))
-   else:
-    sz=p._p.pPr.find('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}rPr').find('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}sz')
-    self.assertEqual(sz.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}val'),'22')
+   self.assertEqual(p.paragraph_format.space_after.pt,6.0)
+   self.assertEqual((p.runs[0].font.name,p.runs[0].font.size.pt),('Arial',11.0))
+  self.assertIsNone(ps[start].paragraph_format.space_before)
+  self.assertEqual(ps[start+2].paragraph_format.space_before.pt,12.0)
 
  def filled_report(self):
   """Report already written by someone: old narrative, chart, fixed text and references around the destinations."""
@@ -384,7 +386,8 @@ class TestLetter(unittest.TestCase):
    r=run('letter',stdin={'out':str(out),'title':'Devolutiva','subtitle':'Pessoa Fictícia','content':'## Pontos fortes\n\nTexto sintético.\n\n## Como ajudar\n\nOrientação sintética.'})
    ps=[(p.text,any(x.bold for x in p.runs)) for p in Document(out).paragraphs]
    self.assertEqual(ps[0],('Devolutiva',True));self.assertIn(('Pontos fortes',True),ps);self.assertIn(('Orientação sintética.',False),ps)
-   self.assertEqual(r['paragraphs'],5)
+   self.assertEqual(r['paragraphs'],4)
+   self.assertNotIn(('',False),ps[3:],'no blank paragraphs between topics')
  def test_letter_never_overwrites(self):
   with tempfile.TemporaryDirectory() as t:
    out=Path(t)/'x.docx';out.write_bytes(b'existente')

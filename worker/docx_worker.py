@@ -314,10 +314,14 @@ def run_props(bold=False,red=False):
  if red:c=OxmlElement('w:color');c.set(qn('w:val'),'FF0000');rpr.append(c)
  for tag in ('w:sz','w:szCs'):s=OxmlElement(tag);s.set(qn('w:val'),REPORT_HALF_POINTS);rpr.append(s)
  return rpr
-def new_paragraph(text,bold=False,red=False):
- """Body paragraph matching the report layout: Arial 11 pt, justified, 1.5 line spacing."""
+# Inserted text: line spacing 1.5, 6 pt after each paragraph, topic titles 12 pt before; never blank paragraphs as spacing.
+LINE_15='360';AFTER_PARA='120';BEFORE_TITLE='240'
+def new_paragraph(text,bold=False,red=False,title_gap=False):
+ """Body paragraph matching the report layout: Arial 11 pt, justified, 1.5 line spacing, 6 pt after (12 pt before a topic title)."""
  p=OxmlElement('w:p');ppr=OxmlElement('w:pPr')
- sp=OxmlElement('w:spacing');sp.set(qn('w:line'),'360');sp.set(qn('w:lineRule'),'auto');ppr.append(sp)
+ sp=OxmlElement('w:spacing')
+ if title_gap:sp.set(qn('w:before'),BEFORE_TITLE)
+ sp.set(qn('w:after'),AFTER_PARA);sp.set(qn('w:line'),LINE_15);sp.set(qn('w:lineRule'),'auto');ppr.append(sp)
  ind=OxmlElement('w:ind');ind.set(qn('w:left'),'0');ind.set(qn('w:firstLine'),'0');ppr.append(ind)
  jc=OxmlElement('w:jc');jc.set(qn('w:val'),'both');ppr.append(jc)
  ppr.append(run_props(bold))  # paragraph mark too, so blank lines between topics are also Arial 11
@@ -327,7 +331,7 @@ def new_paragraph(text,bold=False,red=False):
   t=OxmlElement('w:t');t.set(qn('xml:space'),'preserve');t.text=text;r.append(t);p.append(r)
  return p
 def blocks(content):
- """Split section text into (text,bold) paragraphs; blank paragraph between topics."""
+ """Split section text into (text,bold) paragraphs. Topics are separated by the title's spacing, not by blank paragraphs."""
  out=[]
  for chunk in re.split(r'\n\s*\n',content.replace('\r','').strip()):
   for line in [l.strip() for l in chunk.split('\n') if l.strip()]:
@@ -336,7 +340,6 @@ def blocks(content):
    if whole_bold:line='## '+whole_bold.group(1)
    line=re.sub(r'\*\*(.+?)\*\*',r'\1',line)
    if line.startswith('#'):
-    if out:out.append(('',False))
     line=line.lstrip('#').strip()
     # "## Título: texto..." on one line: bold title, then the text as a normal paragraph
     inline=re.fullmatch(r'([^:.]{2,80}):\s+(.+)',line) if len(line)>80 else None
@@ -345,9 +348,10 @@ def blocks(content):
    else:out.append((line,False))
  return out
 def insert_after(anchor,content,red=False):
- last=anchor
+ last=anchor;first=True
  for text,bold in blocks(content):
-  p=new_paragraph(text,bold,red);last.addnext(p);last=p
+  if not text.strip():continue
+  p=new_paragraph(text,bold,red,title_gap=bold and not first);last.addnext(p);last=p;first=False
 
 # ---------- formatted text from the app's editor (sanitized HTML subset, see web/src/app/rich-text.ts) ----------
 from html.parser import HTMLParser
@@ -470,10 +474,10 @@ def _rich_props(f,title=False,red=False):
  if f.get('bg'):sh=OxmlElement('w:shd');sh.set(qn('w:val'),'clear');sh.set(qn('w:color'),'auto');sh.set(qn('w:fill'),f['bg']);rpr.append(sh)
  if f.get('va'):v=OxmlElement('w:vertAlign');v.set(qn('w:val'),f['va']);rpr.append(v)
  return rpr
-def rich_paragraph(b,red=False):
- """Body paragraph with the report defaults (Arial 11, justified, 1.5) overridden by the editor's formatting."""
+def rich_paragraph(b,red=False,title_gap=False):
+ """Body paragraph with the report defaults (Arial 11, justified, 1.5, 6 pt after) overridden by the editor's formatting."""
  st=b['style'];title=b['kind']=='h3'
- p=new_paragraph('',bold=title);ppr=p.find(qn('w:pPr'));sp=ppr.find(qn('w:spacing'))
+ p=new_paragraph('',bold=title,title_gap=title_gap);ppr=p.find(qn('w:pPr'));sp=ppr.find(qn('w:spacing'))
  lh=st.get('line-height','')
  if re.fullmatch(r'[\d.]+',lh):
   try:sp.set(qn('w:line'),str(int(round(float(lh)*240))));sp.set(qn('w:lineRule'),'auto')
@@ -504,8 +508,7 @@ def rich_paragraph(b,red=False):
 def insert_rich_after(anchor,html,red=False):
  last=anchor;first=True
  for b in rich_blocks(html):
-  if b['kind']=='h3' and not first:blank=new_paragraph('');last.addnext(blank);last=blank
-  p=rich_paragraph(b,red);last.addnext(p);last=p;first=False
+  p=rich_paragraph(b,red,title_gap=b['kind']=='h3' and not first);last.addnext(p);last=p;first=False
 def sha256(path):
  h=hashlib.sha256()
  with open(path,'rb') as f:
@@ -698,7 +701,10 @@ def letter(out,title,subtitle,content):
  if subtitle:
   sub=new_paragraph(subtitle);sub.find(qn('w:pPr')).find(qn('w:jc')).set(qn('w:val'),'center');sect.addprevious(sub)
  sect.addprevious(new_paragraph(''))
- for text,bold in blocks(content):sect.addprevious(new_paragraph(text,bold))
+ first=True
+ for text,bold in blocks(content):
+  if not text.strip():continue
+  sect.addprevious(new_paragraph(text,bold,title_gap=bold and not first));first=False
  d.save(out)
  return {'out':out,'paragraphs':len(blocks(content))}
 # Pictures inside body paragraphs (score tables pasted as images, charts saved as pictures), by element index -- the

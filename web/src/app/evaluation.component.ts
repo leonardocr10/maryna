@@ -1158,6 +1158,14 @@ export class EvaluationComponent implements OnDestroy {
   }
   /** Word or PDF of the approved report (the PDF is the same Word converted on this computer). */
   exporting: '' | 'docx' | 'pdf' = '';
+  /** The file as it was sent (never the filled copy). */
+  async downloadOriginal(kind: 'base' | 'anamnesis') {
+    try {
+      const data = await this.api.blob(`/evaluations/${this.evaluationId}/documents/${kind}/original`);
+      const url = URL.createObjectURL(data), a = document.createElement('a');
+      a.href = url; a.download = this.docName(kind) || kind + '.docx'; a.click(); URL.revokeObjectURL(url);
+    } catch {}
+  }
   async download(format: 'docx' | 'pdf' = 'docx') {
     if (this.exporting) return;
     if (!this.allApproved()) { this.api.notify(format === 'pdf' ? 'Aprove todas as seções para baixar o PDF.' : 'Aprove todas as seções para baixar o Word.'); return; }

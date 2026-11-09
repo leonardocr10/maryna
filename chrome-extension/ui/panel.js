@@ -154,7 +154,8 @@ function renderSetup() {
   }
   const c = choice;
   const elig = scan.sections.filter(s => !skipReason(s, c.existing, null));
-  if (!c.selected) c.selected = elig.map(s => s.key);
+  // Descrição da demanda comes from the file and the anamnesis: off by default, marked only when she wants it.
+  if (!c.selected) c.selected = elig.filter(s => !OFF_BY_DEFAULT(s)).map(s => s.key);
   const sm = summarize(scan.sections.map(s => ({...s, status: 'pending'})), scan);
   const stat = (icon, n, label, tone) => `<div class="stat ${tone}"><span class="si">${ic(icon, 20)}</span><div><b>${n}</b><span>${label}</span></div></div>`;
   const radio = (name, v, cur, title, desc) => `<label class="opt ${cur === v ? 'sel' : ''}"><input type="radio" name="${name}" value="${v}" ${cur === v ? 'checked' : ''}><span><b>${title}</b>${desc ? `<small>${desc}</small>` : ''}</span></label>`;
@@ -229,6 +230,7 @@ function renderSetup() {
 }
 
 const CONCL = 'conclusao';
+const OFF_BY_DEFAULT = s => s.key === 'demanda' || /descri[cç][aã]o da demanda/i.test(s.name || '');
 /** The default instruction ends open ("...apresenta características "): she completes it before the run. */
 const unfinished = t => /caracter[ií]sticas\s*\.?\s*$/i.test(String(t || '').trim()) || !String(t || '').trim();
 async function loadConclusion(c) {

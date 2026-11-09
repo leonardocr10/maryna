@@ -90,8 +90,8 @@
             <nl-filter-select [options]="models" [value]="current.model_id || ''" [disabled]="readOnly()" ariaLabel="Modelo do laudo" placeholder="Sem modelo" (valueChange)="setModel($event)"></nl-filter-select>
           </div>
           <div class="id-files">
-            <nl-drop-zone [inline]="true" [required]="true" [need]="!readOnly()" title="Arquivo base (estagiária)" [filename]="docName('base')" [busy]="uploading==='base'" [disabled]="locked()" (file)="upload('base',$event)"></nl-drop-zone>
-            <nl-drop-zone [inline]="true" [required]="true" [need]="!readOnly()" title="Anamnese (psicóloga)" [filename]="docName('anamnesis')" [busy]="uploading==='anamnesis'" [disabled]="locked()" (file)="upload('anamnesis',$event)"></nl-drop-zone>
+            <nl-drop-zone [inline]="true" [required]="true" [need]="!readOnly()" title="Arquivo base (estagiária)" [downloadable]="true" (download)="downloadOriginal('base')" [filename]="docName('base')" [busy]="uploading==='base'" [disabled]="locked()" (file)="upload('base',$event)"></nl-drop-zone>
+            <nl-drop-zone [inline]="true" [required]="true" [need]="!readOnly()" title="Anamnese (psicóloga)" [downloadable]="true" (download)="downloadOriginal('anamnesis')" [filename]="docName('anamnesis')" [busy]="uploading==='anamnesis'" [disabled]="locked()" (file)="upload('anamnesis',$event)"></nl-drop-zone>
           </div>
           <ng-container *ngIf="inspection?.model_check as mc">
             <div *ngIf="mc.ok" class="alert tip"><nl-icon name="checkc"/><div><strong>O arquivo confere com o modelo "{{mc.model.name}}"</strong><p *ngFor="let i of mc.items">{{i.text}}</p><p *ngIf="!mc.items.length">Mesmas seções, campos de interpretação e tabelas.</p></div></div>

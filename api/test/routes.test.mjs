@@ -1063,3 +1063,14 @@ test('devolutiva schedule: spreadsheet imported once, each new evaluation adds a
   list = (await api('GET', '/api/devolutiva-agenda', {token: tokens.psy})).data;
   assert.ok(!list.rows.some(r => r.evaluation_id === id), 'row leaves with the evaluation');
 });
+
+test('original files can be downloaded exactly as sent (base and anamnesis)', async () => {
+  const id = await withFiles();
+  for (const [kind, file] of [['base', 'base.docx'], ['anamnesis', 'anamnese.docx']]) {
+    const r = await api('POST', `/api/evaluations/${id}/documents/${kind}/original`, {token: tokens.psy, body: {}});
+    assert.equal(r.status, 200);
+    assert.match(r.headers.get('content-disposition'), /attachment/);
+    assert.ok(Buffer.compare(r.data, fs.readFileSync(path.join(tmp, file))) === 0, kind + ': same bytes as uploaded');
+  }
+  assert.equal((await api('POST', `/api/evaluations/${id}/documents/outro/original`, {token: tokens.psy, body: {}})).status, 400);
+});

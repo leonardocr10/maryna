@@ -15,6 +15,7 @@ import {IconComponent} from './icon.component';
   <div class="txt">
     <strong>{{title}}<span *ngIf="required" class="req" aria-hidden="true"> *</span><span *ngIf="required" class="sr"> (obrigatório)</span></strong>
     <code *ngIf="filename" class="name">{{filename}}</code>
+    <button *ngIf="filename && downloadable" type="button" class="dl" (click)="$event.stopPropagation(); download.emit()" [title]="'Baixar o arquivo original: ' + filename"><nl-icon name="download"/> Baixar original</button>
     <span class="hint">{{busy?'Enviando…':filename?'Arraste outro para trocar':(need&&!disabled?'Obrigatório · arraste o .docx aqui ou clique':'Arraste o .docx aqui ou clique')}}</span>
   </div>
 </div>`,
@@ -29,6 +30,9 @@ import {IconComponent} from './icon.component';
 strong{font-size:14.5px;font-weight:600;color:var(--text)}
 .name{font:12.5px var(--mono);color:var(--primary-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hint{font-size:12.5px;color:var(--text-3)}
+.dl{align-self:flex-start;display:inline-flex;align-items:center;gap:5px;padding:0;border:0;background:none;color:var(--primary-text,var(--primary));font:600 12.5px var(--font,inherit);cursor:pointer;--ico-size:14px}
+.dl:hover{text-decoration:underline}.dl:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:4px}
+.dz:not(.inline) .dl{align-self:center}
 .req{color:var(--danger,#c0392b)}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .dz.need{border-color:var(--danger,#c0392b);background:color-mix(in srgb,var(--danger,#c0392b) 4%,var(--card))}
@@ -49,6 +53,9 @@ export class DropZoneComponent {
   /** Required and still missing: red outline and hint. */
   @Input() need = false;
   @Output() file = new EventEmitter<File>();
+  /** Shows "Baixar original" once a file was sent. */
+  @Input() downloadable = false;
+  @Output() download = new EventEmitter<void>();
   over = false;
   onDrop(e: DragEvent) { e.preventDefault(); this.over = false; const f = e.dataTransfer?.files?.[0]; if (f && !this.disabled) this.emit(f); }
   onPick(e: Event) { const input = e.target as HTMLInputElement; const f = input.files?.[0]; input.value = ''; if (f) this.emit(f); }

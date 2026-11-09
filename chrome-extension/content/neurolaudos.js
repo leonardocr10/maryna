@@ -253,50 +253,25 @@
     }
     if (panel) panel.hidden = !panelOpen;
     syncBackdrop();
+    syncHide();
     ensureButton();
   }
 
-  // ---------- waiting card over the section's ChatGPT window (during a run) ----------
-  // The window stays open underneath (the run reads it); the card only explains, in plain words, what is happening.
-  const WAIT_STEPS = ['Tarefa preparada', 'Comando enviado ao ChatGPT', 'ChatGPT escrevendo o texto', 'Texto salvo no NeuroLaudos IA'];
-  let waitEl = null, waitTimer = null, waitShown = null;   // waitShown: "key|code" the person chose to see underneath
-  function waitPhase(it) {
-    if (it.status === 'waiting_auth') return 2;
-    if (it.status === 'confirming' || it.step === 'confirm' || it.step === 'close') return 3;
-    if (it.status === 'processing' || it.step === 'wait_chatgpt') return 2;
-    if (['chatgpt_new', 'plugin', 'insert', 'send'].includes(it.step)) return 1;
-    return 0;
-  }
-  const clock = iso => { const t = Math.max(0, Math.floor((Date.now() - Date.parse(iso || Date.now())) / 1000)); return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`; };
-  function dropWait() { clearInterval(waitTimer); waitTimer = null; waitEl?.parentElement?.classList.remove('nlx-wait-host'); waitEl?.remove(); waitEl = null; }
-  function syncWait() {
+  // ---------- one place for the run: the section's ChatGPT window hides while the run works ----------
+  // The window stays open (the run reads it), only invisible; the panel shows the steps. It comes back when the run
+  // pauses or when the person asks to see it ("Mostrar janela da seção" in the panel).
+  let shownFor = null, hiddenEl = null;   // shownFor: "key|code" the person chose to see
+  function syncHide() {
     const it = mine() && run.status === 'running' ? run.items?.[run.current] : null;
     const host = it ? modalEl(it.key) : null;
-    if (!it || !host || waitShown === `${it.key}|${it.code || ''}` || !it.step || it.step === 'navigate' || it.step === 'open_modal') return dropWait();
-    if (waitEl && waitEl.parentElement !== host) dropWait();
-    if (!waitEl) {
-      waitEl = document.createElement('div');
-      waitEl.className = 'nlx-wait';
-      waitEl.setAttribute('role', 'status');
-      waitEl.setAttribute('aria-live', 'polite');
-      waitEl.innerHTML = `<div class="nlx-wait-card"><div class="nlx-wait-orb" aria-hidden="true">${ROBOT}</div><b class="nlx-wait-t"></b><p class="nlx-wait-s"></p>
-        <ol class="nlx-wait-steps">${WAIT_STEPS.map(t => `<li><i aria-hidden="true"></i><span>${t}</span></li>`).join('')}</ol>
-        <div class="nlx-wait-meta"><span class="nlx-wait-clock"></span><span class="nlx-wait-code"></span></div>
-        <div class="nlx-wait-acts"><button type="button" class="nlx-wait-chat">Ver no ChatGPT</button><button type="button" class="nlx-wait-show">Mostrar detalhes da tarefa</button></div></div>`;
-      waitEl.querySelector('.nlx-wait-chat').addEventListener('click', () => chrome.runtime.sendMessage({type: 'run.focus', which: 'chat'}).catch(() => {}));
-      waitEl.querySelector('.nlx-wait-show').addEventListener('click', () => { const c = run?.items?.[run.current]; waitShown = c ? `${c.key}|${c.code || ''}` : null; dropWait(); });
-      host.classList.add('nlx-wait-host');
-      host.appendChild(waitEl);
-      waitTimer = setInterval(() => { const c = run?.items?.[run.current]; const el = waitEl?.querySelector('.nlx-wait-clock'); if (c && el) el.textContent = clock(c.startedAt || c.updatedAt); }, 1000);
-    }
-    const ph = waitPhase(it), auth = it.status === 'waiting_auth';
-    const title = auth ? 'O ChatGPT está esperando sua autorização' : ph === 3 ? `Salvando ${it.name}…` : ph === 2 ? `O ChatGPT está escrevendo ${it.name}` : `Preparando ${it.name}`;
-    const sub = auth ? 'Abra o ChatGPT, confira e confirme o salvamento. Depois a execução continua sozinha.' : ph === 2 ? 'Pode levar alguns minutos. Você pode continuar usando o computador.' : ph === 3 ? 'O texto chegou; conferindo se foi salvo na seção.' : 'Enviando a seção para o ChatGPT com o plugin NeuroLaudos IA.';
-    const set = (sel, t) => { const e = waitEl.querySelector(sel); if (e.textContent !== t) e.textContent = t; };
-    set('.nlx-wait-t', title); set('.nlx-wait-s', sub); set('.nlx-wait-code', it.code ? `Tarefa ${it.code}` : '');
-    set('.nlx-wait-clock', clock(it.startedAt || it.updatedAt));
-    if (waitEl.classList.contains('auth') !== auth) waitEl.classList.toggle('auth', auth);
-    waitEl.querySelectorAll('.nlx-wait-steps li').forEach((li, i) => { const c = i < ph ? 'done' : i === ph ? 'now' : ''; if (li.className !== c) li.className = c; });
+    const root = host ? (host.closest('.modal-bg') || host.closest('[role="dialog"]') || host) : null;
+    const hide = root && shownFor !== `${it.key}|${it.code || ''}` ? root : null;
+    if (hiddenEl && hiddenEl !== hide) { hiddenEl.classList.remove('nlx-run-hidden'); hiddenEl = null; }
+    if (hide && !hide.classList.contains('nlx-run-hidden')) hide.classList.add('nlx-run-hidden');
+    hiddenEl = hide;
+    // Side panel open next to a visible window: the window moves left instead of going under the panel.
+    const side = !!panel && panelOpen && !panel.classList.contains('nlx-modal');
+    document.documentElement.classList.toggle('nlx-side-open', side);
   }
 
   // Setup screen: wide centered window over a dimmed page. During a run: side panel, the page stays visible.
@@ -318,13 +293,14 @@
     if (!panel || e.source !== panel.contentWindow || e.origin !== new URL(chrome.runtime.getURL('')).origin) return;
     const d = e.data || {};
     if (d.nlx === 'height' && Number.isFinite(d.h)) panel.style.height = Math.min(Math.max(120, d.h), maxH()) + 'px';
-    if (d.nlx === 'layout') { panel.classList.toggle('nlx-modal', d.mode === 'modal'); syncBackdrop(); }
+    if (d.nlx === 'layout') { panel.classList.toggle('nlx-modal', d.mode === 'modal'); syncBackdrop(); syncHide(); }
+    if (d.nlx === 'showModal') { const it = run?.items?.[run.current]; shownFor = d.on && it ? `${it.key}|${it.code || ''}` : null; syncHide(); }
     if (d.nlx === 'close') togglePanel(false);
     if (d.nlx === 'collapse') panel.classList.toggle('nlx-collapsed', !!d.on);
   });
 
   let queued = false;
-  const flush = () => { if (!queued) return; queued = false; ensureButton(); syncWait(); };
+  const flush = () => { if (!queued) return; queued = false; ensureButton(); syncHide(); };
   // rAF batches the checks; the timeout covers background tabs, where rAF does not run.
   const obs = new MutationObserver(() => { if (queued) return; queued = true; requestAnimationFrame(flush); setTimeout(flush, 150); });
 
@@ -345,7 +321,7 @@
     NLX.DOM.keepAlive(mine() && run.status === 'running');
     if (mine() && run.status === 'paused' && !panelOpen) togglePanel(true);
     ensureButton();
-    syncWait();
+    syncHide();
   });
   init();
 })();

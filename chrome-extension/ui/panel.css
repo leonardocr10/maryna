@@ -100,10 +100,23 @@ main{flex:1;min-height:0;overflow:auto;padding:14px 16px}
 .prog{display:flex;justify-content:space-between;gap:8px;font-size:13px;margin-bottom:8px}
 .prog span:first-child{font-weight:600}.prog span:last-child{color:var(--text-2)}
 .bar{height:8px;border-radius:99px;background:var(--track);overflow:hidden}.bar i{display:block;height:100%;background:var(--primary);border-radius:99px;transition:width .4s ease}
-.cur{display:flex;align-items:center;gap:12px;background:var(--soft);border:1px solid var(--soft-line);border-radius:var(--r);padding:10px 12px}
+.cur{display:flex;flex-direction:column;gap:10px;background:var(--soft);border:1px solid var(--soft-line);border-radius:var(--r);padding:10px 12px}
+.cur.auth{background:color-mix(in srgb,var(--warn) 8%,var(--bg));border-color:color-mix(in srgb,var(--warn) 40%,transparent)}
+.cur .ch{display:flex;align-items:center;gap:12px}
 .cur .ci{display:grid;place-items:center;width:38px;height:38px;border-radius:10px;background:var(--primary);color:var(--on);flex:none}
 .cur small{display:block;font-size:11.5px;color:var(--text-2)}.cur b{display:block;font-size:15px;font-weight:700}
 .cur .code{font:600 11.5px "IBM Plex Mono",ui-monospace,monospace;color:var(--text-3);margin-top:2px;display:block}
+.cur .hint{margin:0;font-size:12px;color:var(--text-2)}
+.steps4{list-style:none;margin:0;padding:0 0 0 2px;display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--text-3)}
+.steps4 li{display:flex;align-items:center;gap:10px}
+.steps4 i{width:18px;height:18px;border-radius:50%;border:2px solid #c7d1ce;flex:none;display:grid;place-items:center;background:var(--bg)}
+.steps4 li.done,.steps4 li.now,.steps4 li.stop{color:var(--text)}
+.steps4 li.done i{background:var(--primary);border-color:var(--primary)}
+.steps4 li.done i::after{content:"";width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:translateY(-1px) rotate(45deg)}
+.steps4 li.now{font-weight:600}
+.steps4 li.now i{border-color:var(--info);border-top-color:transparent;animation:spin .9s linear infinite}
+.cur.auth .steps4 li.now i{border-color:var(--warn);border-top-color:transparent}
+.steps4 li.stop i{border-color:var(--warn)}
 .timer{display:inline-flex;align-items:center;gap:6px;font:600 13px "IBM Plex Mono",ui-monospace,monospace;border:1px solid var(--line);border-radius:99px;padding:4px 10px;background:var(--bg);white-space:nowrap}
 .list{list-style:none;margin:0;padding:6px;display:flex;flex-direction:column;gap:2px;background:var(--bg);border:1px solid var(--line);border-radius:var(--r)}
 .list li{display:flex;align-items:center;gap:10px;padding:5px 8px;border-radius:8px;font-size:13px}
@@ -118,7 +131,7 @@ main{flex:1;min-height:0;overflow:auto;padding:14px 16px}
 .dot.skip{border-style:dashed;opacity:.6}
 .dot.run{border:2px dashed var(--info);animation:spin 2.4s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-@media (prefers-reduced-motion:reduce){.dot.run{animation:none}*{transition:none!important}}
+@media (prefers-reduced-motion:reduce){.dot.run,.steps4 li.now i{animation:none}*{transition:none!important}}
 .alert{border-radius:var(--r);padding:10px 12px;font-size:13px;border:1px solid}
 .alert p{margin:0 0 4px}.alert small{color:var(--text-2)}
 .alert.warn{border-color:color-mix(in srgb,var(--warn) 45%,transparent);background:color-mix(in srgb,var(--warn) 9%,var(--bg))}

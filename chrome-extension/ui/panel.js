@@ -89,7 +89,7 @@ async function rescan() {
 }
 function defaults() {
   const s = settings || {}, l = s.last || {};
-  return {mode: MODES[l.mode] ? l.mode : MODES[s.defaultMode] ? s.defaultMode : 'auto', existing: l.existing || s.existing || 'skip', onError: l.onError || s.onError || 'pause', sendImages: l.sendImages ?? s.sendImages ?? true, sameChat: l.sameChat ?? true, selected: null};
+  return {mode: MODES[l.mode] ? l.mode : MODES[s.defaultMode] ? s.defaultMode : 'auto', existing: 'draft', onError: l.onError || s.onError || 'pause', sendImages: l.sendImages ?? s.sendImages ?? true, sameChat: l.sameChat ?? true, selected: null};
 }
 const mineActive = () => run && run.nlTabId === tabId && (run.status === 'running' || run.status === 'paused');
 const otherActive = () => run && run.nlTabId !== tabId && (run.status === 'running' || run.status === 'paused');
@@ -169,7 +169,7 @@ function renderSetup() {
   </section>
   <div class="cols">
     <section class="card"><h2>${ic('layers', 17, 'hi')} Seções que já têm texto</h2>
-      <div class="opts" role="radiogroup" aria-label="Seções que já têm texto">${radio('existing', 'skip', c.existing, 'Não mexer (padrão)')}${radio('existing', 'draft', c.existing, 'Gerar rascunho mesmo assim', 'O texto atual é preservado; o rascunho aguarda sua confirmação para substituir.')}</div>
+      <div class="opts" role="radiogroup" aria-label="Seções que já têm texto">${radio('existing', 'skip', c.existing, 'Não mexer')}${radio('existing', 'draft', c.existing, 'Gerar rascunho mesmo assim (padrão)', 'O texto atual é preservado; o rascunho aguarda sua confirmação para substituir.')}</div>
     </section>
     <section class="card"><h2>${ic('alert', 17, 'hi')} Se uma seção falhar</h2>
       <div class="opts" role="radiogroup" aria-label="Se uma seção falhar">${radio('onError', 'pause', c.onError, 'Pausar e perguntar (padrão)')}${radio('onError', 'next', c.onError, 'Registrar o erro e seguir para a próxima')}</div>
@@ -228,7 +228,7 @@ async function start() {
 }
 async function go(c) {
   busy = true; flash = null; render();
-  ask({type: 'settings.set', settings: {last: {mode: c.mode, existing: c.existing, onError: c.onError, sendImages: c.sendImages, sameChat: c.sameChat}}});
+  ask({type: 'settings.set', settings: {last: {mode: c.mode, onError: c.onError, sendImages: c.sendImages, sameChat: c.sameChat}}});
   const r = await ask({type: 'run.start', mode: c.mode, existing: c.existing, onError: c.onError, sendImages: c.sendImages, sameChat: c.sameChat, selected: c.selected});
   busy = false;
   if (!r?.ok) { flash = {kind: 'err', ...(r?.error || {message: 'Não foi possível iniciar.'})}; render(); }
@@ -246,6 +246,28 @@ function liveLabel(it) {
   if (it.status === 'processing' || it.step === 'wait_chatgpt') return 'ChatGPT redigindo…';
   if (['chatgpt_new', 'plugin', 'insert', 'send'].includes(it.step)) return 'Enviando para o ChatGPT…';
   return 'Preparando tarefa…';
+}
+const STEPS4 = ['Tarefa preparada', 'Comando enviado ao ChatGPT', 'ChatGPT escrevendo o texto', 'Texto salvo no NeuroLaudos IA'];
+/** Which of the four plain steps the section is on. */
+function phase(it) {
+  if (it.status === 'waiting_auth') return 2;
+  if (it.status === 'confirming' || it.step === 'confirm' || it.step === 'close') return 3;
+  if (it.status === 'processing' || it.step === 'wait_chatgpt') return 2;
+  if (['chatgpt_new', 'plugin', 'insert', 'send'].includes(it.step)) return 1;
+  return 0;
+}
+let shownKey = null;   // "key|code" whose section window the person asked to see
+/** Current section: name, timer, the four steps and the shortcuts (ChatGPT tab, the section's window). */
+function curCard(it) {
+  const ph = phase(it), auth = it.status === 'waiting_auth', paused = run.status === 'paused';
+  const key = `${it.key}|${it.code || ''}`, shown = paused || shownKey === key;
+  const hint = paused ? '' : auth ? 'Confira e confirme o salvamento no ChatGPT; depois continua sozinho.' : ph === 2 ? 'Pode levar alguns minutos. Você pode continuar usando o computador.' : '';
+  return `<div class="cur ${auth ? 'auth' : ''}">
+    <div class="ch"><span class="ci">${ic(secIcon(it.name), 22)}</span><div class="grow"><small>Seção atual</small><b>${esc(it.name)}</b>${it.code ? `<span class="code" title="Código da tarefa">${esc(it.code)}</span>` : ''}</div><span class="timer" title="Tempo nesta seção">${ic('clock', 15)}<span id="tm">${elapsed(it.startedAt || it.updatedAt)}</span></span></div>
+    <ol class="steps4">${STEPS4.map((t, i) => `<li class="${i < ph ? 'done' : i === ph ? (paused ? 'stop' : 'now') : ''}"><i aria-hidden="true"></i><span>${i === 2 && auth ? 'Aguardando sua autorização no ChatGPT' : t}</span></li>`).join('')}</ol>
+    ${hint ? `<p class="hint">${esc(hint)}</p>` : ''}
+    <div class="row">${run.chatTabId ? `<button class="btn sm ${auth ? 'pri' : ''}" id="tochat2">${ic('message', 14)} Ver no ChatGPT</button>` : ''}${paused ? '' : `<button class="btn sm" id="showmodal">${ic(shown ? 'eye' : 'fileText', 14)} ${shown ? 'Ocultar janela da seção' : 'Mostrar janela da seção'}</button>`}</div>
+  </div>`;
 }
 /** "8 de 16 seções": every section of the evaluation; ignored ones (fixed text, approved...) count as done. */
 function overall(items) {
@@ -268,7 +290,7 @@ function renderRun() {
     <div class="prog"><span>Progresso da avaliação</span><span>${p.done} de ${p.total} seções (${p.pct}%)</span></div>
     <div class="bar" role="progressbar" aria-label="Progresso da avaliação" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p.pct}"><i style="width:${p.pct}%"></i></div>
   </div>
-  ${it && active ? `<div class="cur"><span class="ci">${ic(secIcon(it.name), 22)}</span><div class="grow"><small>Seção atual</small><b>${esc(it.name)}</b>${it.code ? `<span class="code" title="Código da tarefa">${esc(it.code)}</span>` : ''}</div><span class="timer" title="Tempo nesta seção">${ic('clock', 15)}<span id="tm">${elapsed(it.startedAt || it.updatedAt)}</span></span></div>` : ''}
+  ${it && active ? curCard(it) : ''}
   ${pause ? `<div class="alert ${pause.code === 'assisted' || pause.code === 'user' ? 'warn' : 'err'}" role="alert"><p><b>${esc(pause.section ? pause.section + ': ' : '')}${esc(pause.message)}</b></p>${pause.stepLabel ? `<small>Etapa: ${esc(pause.stepLabel)}. </small>` : ''}<small>${esc(pause.hint || '')}</small></div>` : ''}
   ${run.status === 'done' ? `<div class="alert ok"><p><b>Execução concluída.</b></p><small>${sm.done} recebidos · ${sm.review} para revisão · ${sm.errors} com erro. Revise e aprove cada seção no NeuroLaudos IA.</small></div>` : ''}
   ${run.status === 'paused' && (pause?.actions || []).some(a => a !== 'continue') ? `<div class="row">${pause.actions.filter(a => a !== 'continue').map(a => `<button class="btn sm" data-act="${a}">${{retry: 'Tentar de novo', skip: 'Pular seção', plugin_done: 'Já selecionei o plugin'}[a]}</button>`).join('')}${run.chatTabId ? '<button class="btn sm" id="tochat">Ir para o ChatGPT</button>' : ''}</div>` : ''}
@@ -288,6 +310,8 @@ function renderRun() {
   $('#clear') && ($('#clear').onclick = async () => { await ask({type: 'run.clear'}); run = null; await rescan(); render(); });
   $('#det').onclick = () => { showDetails = !showDetails; render(); };
   $('#tochat') && ($('#tochat').onclick = () => ask({type: 'run.focus', which: 'chat'}));
+  $('#tochat2') && ($('#tochat2').onclick = () => ask({type: 'run.focus', which: 'chat'}));
+  $('#showmodal') && ($('#showmodal').onclick = () => { const k = `${it.key}|${it.code || ''}`; const on = shownKey !== k; shownKey = on ? k : null; post({nlx: 'showModal', on}); render(); });
   if (it && active) timer = setInterval(() => { const t = $('#tm'); if (t) t.textContent = elapsed(it.startedAt || it.updatedAt); }, 1000);
 }
 

@@ -20,7 +20,7 @@ O critério de sucesso de cada seção é o NeuroLaudos IA mostrar a tarefa como
 | **Automático** | Percorre todas as seções escolhidas, em ordem, uma por vez. Para só em erro ou autorização obrigatória. |
 | **Assistido** | Faz uma seção e pausa: você confere o rascunho e clica em **Próxima seção**. |
 
-Por padrão todas as seções usam **uma única conversa do ChatGPT** (o `@NeuroLaudos IA` vai só na primeira mensagem); desligue a opção para abrir conversa nova em cada seção. O ChatGPT trabalha **em segundo plano**: a aba abre ao lado sem tirar você do NeuroLaudos IA e só vem para frente quando o ChatGPT pede sua autorização ou algo dá errado (se um controle do ChatGPT não responder em segundo plano, a extensão traz a aba e tenta de novo, nunca reenviando a mensagem). Desligue em **Configurações** no ícone da extensão. O painel lembra as últimas escolhas (modo, seções com texto, erro, imagens, conversa).
+Por padrão todas as seções usam **uma única conversa do ChatGPT** (o `@NeuroLaudos IA` vai só na primeira mensagem); desligue a opção para abrir conversa nova em cada seção. O ChatGPT trabalha **em segundo plano**: a aba abre ao lado sem tirar você do NeuroLaudos IA e só vem para frente quando o ChatGPT pede sua autorização ou algo dá errado (se um controle do ChatGPT não responder em segundo plano, a extensão traz a aba e tenta de novo, nunca reenviando a mensagem). Desligue em **Configurações** no ícone da extensão. O painel lembra as últimas escolhas (modo, erro, imagens, conversa); seções com texto começam sempre em "Gerar rascunho mesmo assim".
 
 ## Instalação (manual, sem a Chrome Web Store)
 
@@ -44,7 +44,7 @@ Requisitos: Chrome 116 ou mais novo (Windows). No NeuroLaudos IA, o método **Ch
 
 1. Abra a avaliação no NeuroLaudos IA, etapa **Conferir seções**.
 2. Clique em **Modo automático** (botão verde ao lado de "Aprovar todas").
-3. No painel, escolha o modo (Automático ou Assistido), a política para seções com texto (padrão: não mexer), o que fazer em caso de erro (padrão: pausar), se usa uma única conversa do ChatGPT (padrão: sim) e se as imagens das seções vão junto (imagens não têm nomes trocados por marcadores). Passe o mouse no ⓘ para ver os detalhes.
+3. No painel, escolha o modo (Automático ou Assistido), a política para seções com texto (padrão: gerar rascunho mesmo assim, que espera sua confirmação para substituir), o que fazer em caso de erro (padrão: pausar), se usa uma única conversa do ChatGPT (padrão: sim) e se as imagens das seções vão junto (imagens não têm nomes trocados por marcadores). Passe o mouse no ⓘ para ver os detalhes.
 4. Marque as seções (**Todas** / **Nenhuma**) e clique em **Gerar N seções** > confirme.
 5. Para cada seção a extensão: abre a seção > abre a janela **ChatGPT** > seleciona **ChatGPT — plugin (MCP)** > reaproveita a tarefa aberta ou clica em **Preparar tarefa** > captura o código `NL-XXXX-XXXX` e o comando oficial > abre conversa nova na aba dedicada do ChatGPT > digita `@`, escolhe **NeuroLaudos IA** na lista e confere o chip do plugin > cola o comando e confere o código > envia > espera a resposta > volta ao NeuroLaudos IA e espera **Rascunho recebido** > fecha a janela > próxima seção.
 6. Quando o ChatGPT pedir autorização para o plugin salvar, a extensão traz a aba do ChatGPT para frente e mostra um aviso. **Você** confere e confirma lá; a execução continua sozinha depois.

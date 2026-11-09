@@ -58,7 +58,7 @@ export const SECTION_STATE = {pend: 'Pendente', gen: 'Com rascunho', ap: 'Aprova
 export const DEFAULT_SETTINGS = {
   extraOrigins: [],            // other NeuroLaudos IA addresses (https://...), granted in the popup
   defaultMode: 'auto',
-  existing: 'skip',            // sections that already have text: 'skip' (default) or 'draft' (draft waits for her confirmation)
+  existing: 'draft',           // sections that already have text: 'draft' (default; the draft waits for her confirmation) or 'skip'
   onError: 'pause',            // 'pause' (default) or 'next'
   sendImages: true,
   chatBackground: true,        // ChatGPT works in a background tab; it comes forward only for authorization or a problem

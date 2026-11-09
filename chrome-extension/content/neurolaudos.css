@@ -14,30 +14,10 @@
 #nlx-panel.nlx-modal{top:5vh;left:50%;right:auto;transform:translateX(-50%);width:940px;max-width:calc(100vw - 48px);border-radius:16px;box-shadow:0 24px 64px rgba(10,30,26,.28);z-index:1201}
 #nlx-backdrop{position:fixed;inset:0;background:rgba(12,28,24,.38);z-index:1190}
 #nlx-backdrop[hidden]{display:none}
-/* Waiting card over the section's ChatGPT window during a run */
-.nlx-wait-host{position:relative}
-.nlx-wait{position:absolute;inset:0;z-index:5;display:grid;place-items:center;padding:16px;border-radius:inherit;background:color-mix(in srgb,var(--card,#fff) 95%,transparent);backdrop-filter:blur(2px);animation:nlx-in .2s ease}
-.nlx-wait-card{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;max-width:440px;color:var(--text,#16302b)}
-.nlx-wait-orb{position:relative;display:grid;place-items:center;width:64px;height:64px;border-radius:50%;background:var(--primary,#0f6f5e);color:#fff;margin-bottom:4px}
-.nlx-wait-orb svg{width:28px;height:28px}
-.nlx-wait-orb::after{content:"";position:absolute;inset:-7px;border-radius:50%;border:3px solid transparent;border-top-color:var(--primary,#0f6f5e);border-right-color:color-mix(in srgb,var(--primary,#0f6f5e) 35%,transparent);animation:nlx-spin 1.1s linear infinite}
-.nlx-wait.auth .nlx-wait-orb{background:#b7791f}.nlx-wait.auth .nlx-wait-orb::after{border-top-color:#b7791f;animation-duration:2.2s}
-.nlx-wait-t{font-size:17px;font-weight:700}
-.nlx-wait-s{margin:0;font-size:13px;color:var(--text-2,#3d524e)}
-.nlx-wait-steps{list-style:none;margin:8px 0 2px;padding:0;display:flex;flex-direction:column;gap:7px;text-align:left;font-size:13px;color:var(--text-3,#6b7d79)}
-.nlx-wait-steps li{display:flex;align-items:center;gap:10px}
-.nlx-wait-steps i{width:18px;height:18px;border-radius:50%;border:2px solid #c7d1ce;flex:none;display:grid;place-items:center;box-sizing:border-box}
-.nlx-wait-steps li.done{color:var(--text,#16302b)}
-.nlx-wait-steps li.done i{background:var(--primary,#0f6f5e);border-color:var(--primary,#0f6f5e)}
-.nlx-wait-steps li.done i::after{content:"";width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:translateY(-1px) rotate(45deg)}
-.nlx-wait-steps li.now{color:var(--text,#16302b);font-weight:600}
-.nlx-wait-steps li.now i{border-color:var(--primary,#0f6f5e);border-top-color:transparent;animation:nlx-spin .9s linear infinite}
-.nlx-wait.auth .nlx-wait-steps li.now i{border-color:#b7791f;border-top-color:transparent}
-.nlx-wait-meta{display:flex;gap:12px;font:600 12px "IBM Plex Mono",ui-monospace,monospace;color:var(--text-3,#6b7d79)}
-.nlx-wait-acts{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:6px}
-.nlx-wait-acts button{height:32px;padding:0 12px;border-radius:8px;border:1px solid var(--border,#cdd6d3);background:var(--card,#fff);color:var(--text,#16302b);font-size:13px;font-weight:500;font-family:inherit;cursor:pointer}
-.nlx-wait-acts button:hover{background:var(--surface-2,#f1f5f4)}
-.nlx-wait-acts .nlx-wait-show{border-color:transparent;background:none;color:var(--text-3,#6b7d79)}
-@keyframes nlx-spin{to{transform:rotate(360deg)}}
-@keyframes nlx-in{from{opacity:0}}
-@media (prefers-reduced-motion:reduce){.nlx-wait,.nlx-wait-orb::after,.nlx-wait-steps li.now i{animation:none}}
+/* During a run the section's ChatGPT window stays open but invisible; the panel shows the steps */
+.nlx-run-hidden{opacity:0!important;pointer-events:none!important;transition:opacity .2s ease}
+/* Side panel open: windows of the app center in the space left of it instead of going under it */
+@media (min-width:900px){
+  html.nlx-side-open .modal-bg{padding-right:480px}
+  html.nlx-side-open .modal-bg>.modal{max-width:100%}
+}

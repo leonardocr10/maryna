@@ -280,6 +280,8 @@ test('approval and export: blocked until approved, then the evaluation is locked
   assert.equal(row.status, 'approved');
   assert.equal(row.approved_by, 'u-psy');
   assert.ok(row.approved_at);
+  const agendaRow = (await api('GET', '/api/devolutiva-agenda', {token: tokens.psy})).data.rows.find(r => r.evaluation_id === id);
+  assert.equal(agendaRow?.readiness, 'Sim', 'approved evaluation: Prontos? turns to Sim');
 
   // locked
   const calls = aiRequests.length;
@@ -1073,4 +1075,12 @@ test('original files can be downloaded exactly as sent (base and anamnesis)', as
     assert.ok(Buffer.compare(r.data, fs.readFileSync(path.join(tmp, file))) === 0, kind + ': same bytes as uploaded');
   }
   assert.equal((await api('POST', `/api/evaluations/${id}/documents/outro/original`, {token: tokens.psy, body: {}})).status, 400);
+});
+
+test('list progress follows the evaluation screen (all sections of the report); approved means complete', async () => {
+  const id = await withFiles();
+  assert.equal((await api('PUT', `/api/evaluations/${id}/progress`, {token: tokens.psy, body: {total: 16, done: 20}})).status, 400);
+  assert.equal((await api('PUT', `/api/evaluations/${id}/progress`, {token: tokens.psy, body: {total: 16, done: 11}})).status, 200);
+  const row = (await api('GET', '/api/evaluations', {token: tokens.psy})).data.find(e => e.id === id);
+  assert.equal(row.section_total, 16); assert.equal(row.approved_count, 11);
 });

@@ -39,6 +39,7 @@ const P = {
   pen: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
   pause: '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
   stop: '<rect x="6" y="6" width="12" height="12" rx="1.5"/>',
+  external: '<path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
 };
 const FILLED = new Set(['play', 'pause', 'stop']);
@@ -50,10 +51,11 @@ const secIcon = name => { const n = String(name || '').normalize('NFD').replace(
 function confirmBox(lines, ok, onOk) { pending = {lines, ok, onOk}; render(); }
 function renderConfirm() {
   body.innerHTML = `<div class="alert warn" role="alertdialog" aria-labelledby="cf-t"><p id="cf-t"><b>${esc(pending.lines[0])}</b></p>${pending.lines.slice(1).map(l => `<small style="display:block;margin-top:4px">${esc(l)}</small>`).join('')}</div>`;
-  ft.innerHTML = `<button class="btn" id="cf-no">Cancelar</button><span class="grow"></span><button class="btn pri" id="cf-ok">${ic('play', 15)} ${esc(pending.ok)}</button>`;
+  const btns = pending.buttons || [{label: pending.ok, cls: 'pri', icon: 'play', fn: pending.onOk}];
+  ft.innerHTML = `<button class="btn" id="cf-no">Cancelar</button><span class="grow"></span>${btns.map((x, i) => `<button class="btn ${x.cls || ''}" data-cf="${i}">${x.icon ? ic(x.icon, 15) + ' ' : ''}${esc(x.label)}</button>`).join('')}`;
   $('#cf-no').onclick = () => { pending = null; render(); };
-  $('#cf-ok').onclick = () => { const f = pending.onOk; pending = null; render(); f(); };
-  $('#cf-ok').focus();
+  ft.querySelectorAll('[data-cf]').forEach(el => el.onclick = () => { const fn = btns[+el.dataset.cf].fn; pending = null; render(); fn(); });
+  ft.querySelector('[data-cf]:last-child').focus();
 }
 
 // ---------- frame size, layout and close ----------
@@ -65,13 +67,13 @@ function setLayout(mode) {
   if (layout === mode) return;
   layout = mode;
   document.documentElement.dataset.layout = mode;
-  post({nlx: 'layout', mode});
+  post({nlx: 'layout', mode: 'modal', wide: mode === 'run'});
 }
 const close = () => post({nlx: 'close'});
-$('#close').onclick = close;
+$('#close').onclick = () => askClose();
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
-  if (pending) { pending = null; render(); } else close();
+  if (pending) { pending = null; render(); } else askClose();
 });
 
 // ---------- data ----------
@@ -106,7 +108,7 @@ function render() {
   clearInterval(timer);
   if (pending) return renderConfirm();
   if (otherActive()) { setLayout('modal'); return renderOther(); }
-  if (run && run.nlTabId === tabId && run.status !== 'idle') { setLayout('side'); return renderRun(); }
+  if (run && run.nlTabId === tabId && run.status !== 'idle') { setLayout('run'); return renderRun(); }
   setLayout('modal');
   return renderSetup();
 }
@@ -238,15 +240,6 @@ const DOT = '<svg class="k" viewBox="0 0 24 24" width="13" height="13" fill="non
 
 const dotClass = (it, current) => it.status === 'received' ? 'ok' : it.status === 'needs_review' ? 'warn' : it.status === 'error' || it.status === 'expired' ? 'err' : it.status === 'skipped' ? 'skip' : current && run.status === 'running' ? 'run' : '';
 const elapsed = iso => { const s = Math.max(0, Math.floor((Date.now() - Date.parse(iso || Date.now())) / 1000)); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
-/** What the current section is doing, in the words of the panel. */
-function liveLabel(it) {
-  if (run.status === 'paused') return 'Pausada';
-  if (it.status === 'waiting_auth') return 'Aguardando sua autorização no ChatGPT';
-  if (it.status === 'confirming' || it.step === 'confirm') return 'Conferindo o rascunho…';
-  if (it.status === 'processing' || it.step === 'wait_chatgpt') return 'ChatGPT redigindo…';
-  if (['chatgpt_new', 'plugin', 'insert', 'send'].includes(it.step)) return 'Enviando para o ChatGPT…';
-  return 'Preparando tarefa…';
-}
 const STEPS4 = ['Tarefa preparada', 'Comando enviado ao ChatGPT', 'ChatGPT escrevendo o texto', 'Texto salvo no NeuroLaudos IA'];
 /** Which of the four plain steps the section is on. */
 function phase(it) {
@@ -256,23 +249,32 @@ function phase(it) {
   if (['chatgpt_new', 'plugin', 'insert', 'send'].includes(it.step)) return 1;
   return 0;
 }
-let shownKey = null;   // "key|code" whose section window the person asked to see
-/** Current section: name, timer, the four steps and the shortcuts (ChatGPT tab, the section's window). */
-function curCard(it) {
-  const ph = phase(it), auth = it.status === 'waiting_auth', paused = run.status === 'paused';
-  const key = `${it.key}|${it.code || ''}`, shown = paused || shownKey === key;
-  const hint = paused ? '' : auth ? 'Confira e confirme o salvamento no ChatGPT; depois continua sozinho.' : ph === 2 ? 'Pode levar alguns minutos. Você pode continuar usando o computador.' : '';
-  return `<div class="cur ${auth ? 'auth' : ''}">
-    <div class="ch"><span class="ci">${ic(secIcon(it.name), 22)}</span><div class="grow"><small>Seção atual</small><b>${esc(it.name)}</b>${it.code ? `<span class="code" title="Código da tarefa">${esc(it.code)}</span>` : ''}</div><span class="timer" title="Tempo nesta seção">${ic('clock', 15)}<span id="tm">${elapsed(it.startedAt || it.updatedAt)}</span></span></div>
-    <ol class="steps4">${STEPS4.map((t, i) => `<li class="${i < ph ? 'done' : i === ph ? (paused ? 'stop' : 'now') : ''}"><i aria-hidden="true"></i><span>${i === 2 && auth ? 'Aguardando sua autorização no ChatGPT' : t}</span></li>`).join('')}</ol>
-    ${hint ? `<p class="hint">${esc(hint)}</p>` : ''}
-    <div class="row">${run.chatTabId ? `<button class="btn sm ${auth ? 'pri' : ''}" id="tochat2">${ic('message', 14)} Ver no ChatGPT</button>` : ''}${paused ? '' : `<button class="btn sm" id="showmodal">${ic(shown ? 'eye' : 'fileText', 14)} ${shown ? 'Ocultar janela da seção' : 'Mostrar janela da seção'}</button>`}</div>
-  </div>`;
+/** Big message of the current section, from the real state of the run. */
+function liveMessage(it) {
+  if (run.status === 'paused') return {t: 'Execução pausada', s: 'Veja o motivo abaixo e escolha como seguir.', tone: 'warn'};
+  if (it.status === 'waiting_auth') return {t: 'Aguardando sua autorização no ChatGPT', s: 'Confira e confirme o salvamento no ChatGPT; depois a execução continua sozinha.', tone: 'warn'};
+  const ph = phase(it);
+  if (ph === 3) return {t: 'Aguardando salvamento no NeuroLaudos IA', s: 'O ChatGPT terminou; conferindo se o rascunho chegou na seção.'};
+  if (ph === 2) return {t: `O ChatGPT está escrevendo ${it.name}`, s: 'Pode levar alguns minutos. Você pode continuar usando o computador.'};
+  if (ph === 1) return {t: 'Enviando o comando ao ChatGPT', s: 'Abrindo a conversa e selecionando o plugin NeuroLaudos IA.'};
+  return {t: 'Preparando a tarefa', s: `Lendo os dados de ${it.name} no NeuroLaudos IA.`};
 }
-/** "8 de 16 seções": every section of the evaluation; ignored ones (fixed text, approved...) count as done. */
+/** "5 de 16 seções": every section of the evaluation; ignored ones (fixed text, approved...) count as done.
+ *  A section counts only when it reached a final state (draft received, review, ignored) or failed: never just for being sent. */
 function overall(items) {
   const done = items.filter(i => FINAL_ITEM.includes(i.status) || i.status === 'error' || i.status === 'expired').length;
   return {done, total: items.length, pct: items.length ? Math.round(done * 100 / items.length) : 0};
+}
+
+/** Closing while the run works: hide and keep going, pause, or stop (never stops silently). */
+function askClose() {
+  if (!(run && run.nlTabId === tabId && (run.status === 'running' || run.status === 'paused'))) return close();
+  pending = {lines: ['A automação continua em andamento.', 'Ocultar esta janela não para nada: a execução segue e você pode reabri-la pelo botão Modo automático.'], buttons: [
+    {label: 'Parar', cls: 'dan', icon: 'stop', fn: () => confirmBox(['Parar a execução?', 'Os rascunhos já recebidos ficam no NeuroLaudos IA; nada é apagado.'], 'Parar', () => ask({type: 'run.stop'}))},
+    ...(run.status === 'running' ? [{label: 'Pausar', icon: 'pause', fn: () => ask({type: 'run.pause'})}] : []),
+    {label: 'Ocultar e continuar', cls: 'pri', fn: close},
+  ]};
+  render();
 }
 
 function renderRun() {
@@ -283,25 +285,51 @@ function renderRun() {
   const skipped = run.items.filter(i => i.status === 'skipped' && i.reason !== 'Pulada por você');
   const active = run.status === 'running' || run.status === 'paused';
   const pause = run.status === 'paused' ? run.pause : null;
-  $('#sub').textContent = run.status === 'done' ? 'Rascunhos gerados com o ChatGPT e o plugin NeuroLaudos IA' : run.status === 'stopped' ? 'Execução parada; os rascunhos recebidos ficam no NeuroLaudos IA' : `Gerando rascunhos com o ChatGPT (modo ${(MODES[run.mode] || '').toLowerCase()})`;
-  const status = i => i === it && active ? liveLabel(i) : i.status === 'pending' ? 'Aguardando' : ITEM[i.status] || i.status;
+  $('#sub').textContent = run.status === 'done' ? 'Rascunhos gerados com o ChatGPT' : run.status === 'stopped' ? 'Execução parada; os rascunhos recebidos ficam no NeuroLaudos IA' : `Gerando rascunhos com o ChatGPT · modo ${(MODES[run.mode] || '').toLowerCase()}`;
+  const status = i => i === it && active ? (run.status === 'paused' ? 'Pausada' : 'Em andamento') : i.status === 'pending' ? 'Aguardando' : ITEM[i.status] || i.status;
+  const extra = [sm.errors ? `${sm.errors} com erro` : '', sm.review ? `${sm.review} para revisão` : ''].filter(Boolean).join(' · ');
+  let left;
+  if (it && active) {
+    const ph = phase(it), m = liveMessage(it), auth = it.status === 'waiting_auth', paused = run.status === 'paused';
+    left = `<div class="cur ${m.tone || ''}"><span class="ci">${ic(secIcon(it.name), 22)}</span><div class="grow"><small>Seção atual</small><b>${esc(it.name)}</b>${it.code ? `<span class="code" title="Código da tarefa">${esc(it.code)}</span>` : ''}</div><span class="timer" title="Tempo nesta seção">${ic('clock', 15)}<span id="tm">${elapsed(it.startedAt || it.updatedAt)}</span></span></div>
+    <div class="live ${m.tone || ''} ${paused ? 'still' : ''}" role="status" aria-live="polite">
+      <div class="orb" aria-hidden="true">${ic(paused ? 'pause' : 'robot', 30)}</div>
+      <b>${esc(m.t)}</b><p>${esc(m.s)}</p>
+      <ol class="steps4">${STEPS4.map((t, i) => `<li class="${i < ph ? 'done' : i === ph ? (paused ? 'stop' : 'now') : ''}"><i aria-hidden="true"></i><span>${i === 2 && auth ? 'Aguardando sua autorização' : t}</span></li>`).join('')}</ol>
+    </div>
+    ${pause ? `<div class="alert ${pause.code === 'assisted' || pause.code === 'user' ? 'warn' : 'err'}" role="alert"><p><b>${esc(pause.section ? pause.section + ': ' : '')}${esc(pause.message)}</b></p>${pause.stepLabel ? `<small>Etapa: ${esc(pause.stepLabel)}. </small>` : ''}<small>${esc(pause.hint || '')}</small></div>` : ''}
+    <div class="live-acts">
+      ${pause ? (pause.actions || []).filter(a => a !== 'continue').map(a => `<button class="btn sm" data-act="${a}">${{retry: 'Tentar de novo', skip: 'Pular seção', plugin_done: 'Já selecionei o plugin'}[a]}</button>`).join('') : ''}
+      ${run.chatTabId ? `<button class="btn sm ${auth ? 'pri' : ''}" id="tochat">${ic('external', 15)} Ver no ChatGPT</button>` : ''}
+      <button class="lnk" id="showmodal" type="button">Mostrar detalhes da tarefa</button>
+    </div>`;
+  } else if (run.status === 'done' || run.status === 'stopped') {
+    const done = run.status === 'done';
+    left = `<div class="live ${done ? 'ok' : 'warn'} still"><div class="orb" aria-hidden="true">${ic(done ? 'checkCircle' : 'stop', 30)}</div>
+      <b>${done ? 'Execução concluída' : 'Execução parada'}</b>
+      <p>${sm.done} ${sm.done === 1 ? 'rascunho recebido' : 'rascunhos recebidos'}${sm.review ? ` · ${sm.review} para revisão` : ''}${sm.errors ? ` · ${sm.errors} com erro` : ''}. Revise e aprove cada seção no NeuroLaudos IA.</p></div>`;
+  } else left = '<p class="muted">Preparando…</p>';
   body.innerHTML = `
-  <div class="box">
-    <div class="prog"><span>Progresso da avaliação</span><span>${p.done} de ${p.total} seções (${p.pct}%)</span></div>
+  <div class="progrow">
+    <b>Progresso da avaliação</b>
     <div class="bar" role="progressbar" aria-label="Progresso da avaliação" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p.pct}"><i style="width:${p.pct}%"></i></div>
+    <span>${p.done} de ${p.total} seções — ${p.pct}%${extra ? `<small>${esc(extra)}</small>` : ''}</span>
   </div>
-  ${it && active ? curCard(it) : ''}
-  ${pause ? `<div class="alert ${pause.code === 'assisted' || pause.code === 'user' ? 'warn' : 'err'}" role="alert"><p><b>${esc(pause.section ? pause.section + ': ' : '')}${esc(pause.message)}</b></p>${pause.stepLabel ? `<small>Etapa: ${esc(pause.stepLabel)}. </small>` : ''}<small>${esc(pause.hint || '')}</small></div>` : ''}
-  ${run.status === 'done' ? `<div class="alert ok"><p><b>Execução concluída.</b></p><small>${sm.done} recebidos · ${sm.review} para revisão · ${sm.errors} com erro. Revise e aprove cada seção no NeuroLaudos IA.</small></div>` : ''}
-  ${run.status === 'paused' && (pause?.actions || []).some(a => a !== 'continue') ? `<div class="row">${pause.actions.filter(a => a !== 'continue').map(a => `<button class="btn sm" data-act="${a}">${{retry: 'Tentar de novo', skip: 'Pular seção', plugin_done: 'Já selecionei o plugin'}[a]}</button>`).join('')}${run.chatTabId ? '<button class="btn sm" id="tochat">Ir para o ChatGPT</button>' : ''}</div>` : ''}
-  <ol class="list" aria-label="Seções">${work.map(i => { const cur = i === it && active; return `<li class="${cur ? 'on' : ''}" ${cur ? 'aria-current="step"' : ''}><span class="dot ${dotClass(i, cur)}" aria-hidden="true">${DOT}</span><span><span class="nm">${esc(i.name)}</span> <span class="st">${esc(status(i))}</span></span></li>${showDetails && (i.reason || i.error || i.checks || i.code) ? `<ul class="checks">${i.code ? `<li>Tarefa ${esc(i.code)}</li>` : ''}${i.reason ? `<li>${esc(i.reason)}</li>` : ''}${i.error ? `<li class="no">${esc(i.error.message)}${i.error.stepLabel ? ' (' + esc(i.error.stepLabel) + ')' : ''}${i.error.detail ? ' — ' + esc(i.error.detail) : ''}</li>` : ''}${(i.checks || []).map(c => `<li class="${c.ok ? 'yes' : 'no'}">${c.ok ? '✓' : '✗'} ${esc(c.name)}${c.detail ? ' — ' + esc(c.detail) : ''}</li>`).join('')}</ul>` : ''}`; }).join('')}</ol>
-  ${skipped.length && showDetails ? `<details open><summary>${skipped.length} ${skipped.length === 1 ? 'seção ignorada' : 'seções ignoradas'}</summary><ul class="checks" style="margin-left:0">${skipped.map(i => `<li>${esc(i.name)} — ${esc(i.reason || KIND[i.kind] || '')}</li>`).join('')}</ul></details>` : ''}
-  ${showDetails ? `<div class="box"><b style="font-size:12.5px">Registro</b><ul class="log">${(run.log || []).slice().reverse().map(l => `<li>${esc(new Date(l.t).toLocaleTimeString('pt-BR'))} ${esc(l.msg)}</li>`).join('')}</ul></div>` : ''}`;
+  <div class="runcols">
+    <section class="card now-col">${left}</section>
+    <section class="card queue-col">
+      <h2>${ic('layers', 17, 'hi')} Fila da automação<span class="grow"></span><span class="pill mute">${work.length} ${work.length === 1 ? 'seção' : 'seções'}</span></h2>
+      <ol class="list" aria-label="Fila da automação">${work.map(i => { const cur = i === it && active; return `<li class="${cur ? 'on' : ''}" ${cur ? 'aria-current="step"' : ''}><span class="dot ${dotClass(i, cur)}" aria-hidden="true">${DOT}</span><span><span class="nm">${esc(i.name)}</span> <span class="st">${esc(status(i))}</span></span></li>${showDetails && (i.reason || i.error || i.checks || i.code) ? `<ul class="checks">${i.code ? `<li>Tarefa ${esc(i.code)}</li>` : ''}${i.reason ? `<li>${esc(i.reason)}</li>` : ''}${i.error ? `<li class="no">${esc(i.error.message)}${i.error.stepLabel ? ' (' + esc(i.error.stepLabel) + ')' : ''}${i.error.detail ? ' — ' + esc(i.error.detail) : ''}</li>` : ''}${(i.checks || []).map(c => `<li class="${c.ok ? 'yes' : 'no'}">${c.ok ? '✓' : '✗'} ${esc(c.name)}${c.detail ? ' — ' + esc(c.detail) : ''}</li>`).join('')}</ul>` : ''}`; }).join('')}</ol>
+    </section>
+  </div>
+  ${skipped.length && showDetails ? `<details open class="card"><summary>${skipped.length} ${skipped.length === 1 ? 'seção ignorada' : 'seções ignoradas'}</summary><ul class="checks" style="margin-left:0">${skipped.map(i => `<li>${esc(i.name)} — ${esc(i.reason || KIND[i.kind] || '')}</li>`).join('')}</ul></details>` : ''}
+  ${showDetails ? `<div class="card"><b style="font-size:12.5px">Registro</b><ul class="log">${(run.log || []).slice().reverse().map(l => `<li>${esc(new Date(l.t).toLocaleTimeString('pt-BR'))} ${esc(l.msg)}</li>`).join('')}</ul></div>` : ''}`;
   ft.innerHTML = `
+    ${active ? '' : '<button class="btn" id="clear">Limpar dados</button>'}
+    <span class="grow"></span>
     ${run.status === 'running' ? `<button class="btn" id="pause">${ic('pause', 15)} Pausar</button>` : ''}
     ${run.status === 'paused' ? `<button class="btn pri" data-act="continue">${ic('play', 15)} ${pause?.code === 'assisted' ? 'Próxima seção' : 'Continuar'}</button>` : ''}
-    ${active ? `<button class="btn" id="stop">${ic('stop', 14)} Parar</button>` : '<button class="btn pri" id="new">Nova execução</button><button class="btn" id="clear">Limpar dados</button>'}
-    <span class="grow"></span>
+    ${active ? `<button class="btn" id="stop">${ic('stop', 14)} Parar</button>` : '<button class="btn pri" id="new">Nova execução</button>'}
     <button class="btn out" id="det">${ic('fileText', 17)} ${showDetails ? 'Ocultar detalhes' : 'Ver detalhes'}</button>`;
   $('#pause') && ($('#pause').onclick = () => ask({type: 'run.pause'}));
   document.querySelectorAll('[data-act]').forEach(b => b.onclick = () => ask({type: 'run.resume', action: b.dataset.act}));
@@ -310,8 +338,8 @@ function renderRun() {
   $('#clear') && ($('#clear').onclick = async () => { await ask({type: 'run.clear'}); run = null; await rescan(); render(); });
   $('#det').onclick = () => { showDetails = !showDetails; render(); };
   $('#tochat') && ($('#tochat').onclick = () => ask({type: 'run.focus', which: 'chat'}));
-  $('#tochat2') && ($('#tochat2').onclick = () => ask({type: 'run.focus', which: 'chat'}));
-  $('#showmodal') && ($('#showmodal').onclick = () => { const k = `${it.key}|${it.code || ''}`; const on = shownKey !== k; shownKey = on ? k : null; post({nlx: 'showModal', on}); render(); });
+  // The section's own window (code, command): this window steps aside and the run keeps going.
+  $('#showmodal') && ($('#showmodal').onclick = () => { post({nlx: 'showModal', on: true}); close(); });
   if (it && active) timer = setInterval(() => { const t = $('#tm'); if (t) t.textContent = elapsed(it.startedAt || it.updatedAt); }, 1000);
 }
 

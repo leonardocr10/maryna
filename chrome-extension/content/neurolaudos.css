@@ -12,6 +12,7 @@
 #nlx-panel.nlx-collapsed{width:300px}
 #nlx-panel[hidden]{display:none}
 #nlx-panel.nlx-modal{top:5vh;left:50%;right:auto;transform:translateX(-50%);width:940px;max-width:calc(100vw - 48px);border-radius:16px;box-shadow:0 24px 64px rgba(10,30,26,.28);z-index:1201}
+#nlx-panel.nlx-modal.nlx-wide{width:1150px;max-width:94vw;border-radius:18px}
 #nlx-backdrop{position:fixed;inset:0;background:rgba(12,28,24,.38);z-index:1190}
 #nlx-backdrop[hidden]{display:none}
 /* During a run the section's ChatGPT window stays open but invisible; the panel shows the steps */

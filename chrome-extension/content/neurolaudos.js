@@ -242,6 +242,7 @@
 
   function togglePanel(force) {
     panelOpen = force ?? !panelOpen;
+    if (panelOpen) shownFor = null;   // the automation window is back: the section window steps aside again
     if (panelOpen && !panel && tabId != null) {
       panel = document.createElement('iframe');
       panel.id = 'nlx-panel';
@@ -293,7 +294,7 @@
     if (!panel || e.source !== panel.contentWindow || e.origin !== new URL(chrome.runtime.getURL('')).origin) return;
     const d = e.data || {};
     if (d.nlx === 'height' && Number.isFinite(d.h)) panel.style.height = Math.min(Math.max(120, d.h), maxH()) + 'px';
-    if (d.nlx === 'layout') { panel.classList.toggle('nlx-modal', d.mode === 'modal'); syncBackdrop(); syncHide(); }
+    if (d.nlx === 'layout') { panel.classList.toggle('nlx-modal', d.mode === 'modal'); panel.classList.toggle('nlx-wide', !!d.wide); syncBackdrop(); syncHide(); }
     if (d.nlx === 'showModal') { const it = run?.items?.[run.current]; shownFor = d.on && it ? `${it.key}|${it.code || ''}` : null; syncHide(); }
     if (d.nlx === 'close') togglePanel(false);
     if (d.nlx === 'collapse') panel.classList.toggle('nlx-collapsed', !!d.on);

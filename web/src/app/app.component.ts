@@ -329,6 +329,15 @@ export class AppComponent {
     this.wheelZoom.register(dir => { this.zone.run(() => { if (this.theme.canZoom(dir)) this.theme.stepZoom(dir); }); this.wheelZoom.hud('Tela ' + this.theme.zoom() + '%'); return true; });
     if (this.api.loggedIn()) this.api.loadMe().then(() => { if (!this.mustChange()) this.load(); });
     effect(() => { try { sessionStorage.setItem('nl_view', JSON.stringify({screen: this.screen(), id: this.selectedId()})); } catch {} });
+    // Browser history: each screen change is an entry, so "Voltar" goes to the previous screen instead of leaving the system.
+    effect(() => {
+      const v = {screen: this.screen(), id: this.selectedId()};
+      try {
+        const cur = history.state?.nl;
+        if (!cur) history.replaceState({...history.state, nl: v}, '');
+        else if (cur.screen !== v.screen || cur.id !== v.id) history.pushState({nl: v}, '');
+      } catch {}
+    });
   }
 
   toggleNav() { const v = !this.navCollapsed(); this.navCollapsed.set(v); try { localStorage.setItem('nl_nav_collapsed', v ? '1' : '0'); } catch {} }
@@ -376,6 +385,18 @@ export class AppComponent {
   private blocked() { if (this.generating) { this.api.notify('Aguarde a geração terminar.'); return true; } return false; }
   go(s: Screen) { if (this.blocked()) return; this.autoGenerate = false; if (s !== 'evaluation') this.timer.stop(); this.screen.set(s); }
   goHome() { this.go('home'); }
+  /** Back/forward of the browser: shows the screen of that entry (the effect above sees it already matches and adds nothing). */
+  @HostListener('window:popstate', ['$event'])
+  onPop(e: PopStateEvent) {
+    const nl = e.state?.nl;
+    if (!nl || !SCREENS.includes(nl.screen)) return;
+    if (this.generating) { history.pushState({nl: {screen: this.screen(), id: this.selectedId()}}, ''); this.api.notify('Aguarde a geração terminar.'); return; }
+    this.autoGenerate = false; this.paletteOpen = false;
+    if (nl.screen !== 'evaluation') this.timer.stop();
+    if (nl.id && !this.evaluations().some(x => x.id === nl.id) && this.evaluations().length) nl.id = '';
+    this.selectedId.set(nl.id || '');
+    this.screen.set(nl.screen);
+  }
   isOn(id: Screen) { return this.screen() === id || (id === 'home' && (this.screen() === 'evaluation' || this.screen() === 'new')); }
   globalSearch(v: string) { this.search = v; if (this.screen() !== 'home' && v.trim()) this.go('home'); }
   @HostListener('document:keydown', ['$event'])

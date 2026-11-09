@@ -282,7 +282,7 @@
     if (on && !backdrop) {
       backdrop = document.createElement('div');
       backdrop.id = 'nlx-backdrop';
-      backdrop.addEventListener('click', () => togglePanel(false));
+      // Clicking outside never closes it: only the X (or Esc, which asks first while a run works).
       document.body.insertBefore(backdrop, panel);
     }
     if (backdrop) backdrop.hidden = !on;

@@ -66,7 +66,7 @@ const STATUS_LABEL: Record<AgendaStatus, {label: string; css: string}> = {
 </section>
 
 <!-- Record panel: notes and status columns are editable; the date only on spreadsheet rows (evaluations use "Entrega"). -->
-<div *ngIf="sel" class="overlay" (click)="sel=null"></div>
+<div *ngIf="sel" class="overlay"></div>
 <aside *ngIf="sel" class="card side" role="dialog" aria-modal="true" [attr.aria-label]="'Devolutiva de ' + sel.patient" (keydown.escape)="sel=null">
   <div class="shead"><div><h3>{{sel.patient}}</h3><small>{{sel.age || 'Idade não informada'}} · {{sel.source==='evaluation' ? 'avaliação no sistema' : sel.evaluation_id ? 'da planilha, ligada à avaliação' : 'da planilha'}}</small></div>
     <button class="link close" (click)="sel=null" aria-label="Fechar">×</button></div>

@@ -519,7 +519,7 @@
 
   <!-- "Aprovar todas": choose the sections, see what the final check found, confirm -->
   <!-- Modo automático without the extension: installation steps (the ZIP is served by this app) -->
-  <div *ngIf="autoHelp" class="modal-bg" (mousedown)="$event.target===$event.currentTarget && (autoHelp=false)" (keydown.escape)="autoHelp=false">
+  <div *ngIf="autoHelp" class="modal-bg" (keydown.escape)="autoHelp=false">
     <div class="modal autohelp" role="dialog" aria-modal="true" aria-labelledby="ah-title">
       <div class="ah-head"><span class="ah-logo"><nl-icon name="robot"/></span><div><h2 id="ah-title">Instalar o Modo automático</h2><p class="caption">Extensão do Chrome que gera os rascunhos das seções com o ChatGPT e o plugin NeuroLaudos IA, uma seção por vez, sob a sua supervisão.</p></div></div>
       <ol class="ah-steps">
@@ -539,7 +539,7 @@
     </div>
   </div>
 
-  <div *ngIf="approveOpen" class="modal-bg\" (mousedown)="$event.target===$event.currentTarget && (approveOpen=false)" (keydown.escape)="approveOpen=false">
+  <div *ngIf="approveOpen" class="modal-bg" (keydown.escape)="approveOpen=false">
     <div class="modal apm" role="dialog" aria-modal="true" aria-labelledby="apm-title">
       <h2 id="apm-title">Aprovar seções</h2>
       <p class="caption">Marque as seções que você revisou. {{apmLocks() ? 'Com todas aprovadas, a avaliação fica travada e o Word pode ser baixado.' : 'As que ficarem sem marcar continuam em revisão.'}}</p>
@@ -703,7 +703,7 @@
 </div>
 
 <!-- ===== "Gerar com IA": the section's instruction (or the conclusion's guidance) and the generation, in a dialog ===== -->
-<div *ngIf="aiFor" class="modal-bg ai-bg" (mousedown)="$event.target===$event.currentTarget && !generating && (aiFor='')">
+<div *ngIf="aiFor" class="modal-bg ai-bg">
   <div class="modal ai-modal" role="dialog" aria-modal="true" [attr.aria-label]="'Gerar com IA: ' + sectionName(aiFor)">
     <div class="ai-h"><span class="ai-ico"><nl-icon name="spark"/></span><div><b>Gerar com IA</b><small>{{sectionName(aiFor)}}</small></div>
       <button type="button" class="x" [disabled]="generating" (click)="aiFor=''" aria-label="Fechar">×</button></div>
@@ -729,7 +729,7 @@
 </div>
 
 <!-- ===== ChatGPT (plugin or assisted copy and paste) in a dialog; the draft comes back into the section ===== -->
-<div *ngIf="cgFor" class="modal-bg ai-bg" (mousedown)="$event.target===$event.currentTarget && (cgFor='')">
+<div *ngIf="cgFor" class="modal-bg ai-bg">
   <div class="modal ai-modal cg-modal" role="dialog" aria-modal="true" [attr.aria-label]="'ChatGPT: ' + sectionName(cgFor)">
     <nl-chatgpt-anamnesis [manual]="!aiOn()" [evaluationId]="evaluationId" [sectionKey]="cgFor" [sectionName]="sectionName(cgFor)"
       [notes]="cgFor===MANUAL_KEY ? (instrDraft[cgFor] || '') : ''" [images]="sectionImages(cgFor)" [hasTables]="!!refCount(cgFor)" (copyTables)="copyTablesImage(cgFor)"

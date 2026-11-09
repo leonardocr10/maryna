@@ -15,8 +15,10 @@
   const loginShown = () => !!first(CG.login);
   const allMsgs = () => [...document.querySelectorAll('[data-message-author-role]')];
   const userMsgs = () => document.querySelectorAll(CG.userMsg).length;
-  const lastRole = () => allMsgs().at(-1)?.getAttribute('data-message-author-role') || null;
-  const streaming = () => !!first(CG.stop);
+  // Only turns of the person or of ChatGPT count (tool and system blocks of plugins may come after the answer).
+  const lastRole = () => [...document.querySelectorAll('[data-message-author-role="user"], [data-message-author-role="assistant"]')].at(-1)?.getAttribute('data-message-author-role') || null;
+  /** ChatGPT is still answering: the stop button of the message box (a "Parar"/"Stop" elsewhere on the page does not count). */
+  const streaming = () => { if (document.querySelector('button[data-testid="stop-button"]')) return !!first(['button[data-testid="stop-button"]']); const c = composer(); return !!(c && first(CG.stop, container(c))); };
   const sendBtn = () => first(CG.send);
   const container = c => c.closest('form') || c.parentElement?.parentElement?.parentElement || document.body;
 
@@ -181,7 +183,7 @@
 
   // Last time the conversation changed (count of turns + length of the last one), kept across waiting calls.
   let sig = '', sigAt = Date.now();
-  const STALL_MS = 45000;
+  const STALL_MS = 20000;
   function stalled() {
     const m = allMsgs(), now = Date.now(), cur = m.length + ':' + (m.at(-1)?.textContent.length || 0);
     if (cur !== sig) { sig = cur; sigAt = now; return false; }

@@ -177,7 +177,7 @@ const blankForm = () => ({name: '', description: '', audience: 'geral' as Audien
 </section>
 
 <!-- ============ Novo modelo ============ -->
-<div *ngIf="creating" class="modal-bg" (click)="creating=false">
+<div *ngIf="creating" class="modal-bg">
   <div class="modal nmodal" role="dialog" aria-modal="true" aria-labelledby="nm-title" (click)="$event.stopPropagation()" (keydown.escape)="creating=false">
     <h2 id="nm-title">Novo modelo de laudo</h2>
     <p class="muted">Envie o Word <b>em branco</b>, sem dados de paciente. O sistema confere as seções antes de salvar.</p>

@@ -9,7 +9,7 @@ import {IconComponent} from './icon.component';
   standalone: true,
   imports: [CommonModule, IconComponent],
   template: `
-<div *ngIf="c.current() as d" class="modal-bg" (mousedown)="onBackdrop($event)">
+<div *ngIf="c.current() as d" class="modal-bg">
   <div #box class="modal" role="dialog" aria-modal="true" aria-labelledby="cd-title" [attr.aria-describedby]="d.body ? 'cd-body' : null">
     <div class="m-icon" [class]="'m-icon ' + (d.tone || 'primary')"><nl-icon [name]="d.tone==='danger' ? 'trash' : d.tone==='review' ? 'restore' : 'info'"/></div>
     <h2 id="cd-title">{{d.title}}</h2>
@@ -57,7 +57,6 @@ export class ConfirmDialogComponent implements AfterViewChecked {
     }
   }
 
-  onBackdrop(e: MouseEvent) { if (e.target === e.currentTarget) this.c.close(false); }
 
   @HostListener('document:keydown', ['$event'])
   onKey(e: KeyboardEvent) {

@@ -86,7 +86,7 @@ async function load() {
 async function rescan() {
   scanErr = null;
   const r = await ask({type: 'scan'});
-  if (r?.ok) { scan = r; choice ||= defaults(); }
+  if (r?.ok) { if (scan && scan.evaluationId !== r.evaluationId) choice = null; scan = r; choice ||= defaults(); }
   else { scan = null; scanErr = r?.error || {message: errText(r?.code)}; }
 }
 function defaults() {

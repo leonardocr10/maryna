@@ -30,15 +30,25 @@ test('only one eligible section', async () => {
   assert.equal(cmds(t, 'cg.send').length, 1);
 });
 
-test('existing open task is reused (no new code)', async () => {
+test('open task made before the run is never reused: a new code is prepared', async () => {
   const code = newCode();
   const t = makeEnv({nl: {sections: [section('percepcao', 'Percepção')], tasks: {percepcao: {code, status: 'pending'}}}});
   await start(t);
   const s = await finish(t);
-  assert.equal(cmds(t, 'nl.prepare').length, 0);
-  assert.equal(s.items[0].code, code);
-  assert.equal(s.items[0].reused, true);
+  assert.equal(cmds(t, 'nl.prepare').length, 1);
+  assert.notEqual(s.items[0].code, code);
   assert.equal(s.items[0].status, 'received');
+});
+
+test('a new run starts clean: new conversation, plugin selected again', async () => {
+  const t = makeEnv({nl: {sections: [section('a', 'A')]}});
+  await start(t, {policy: {existing: 'skip', onError: 'pause', sameChat: true}});
+  await finish(t);
+  await t.env.state.finish?.();
+  await start(t, {policy: {existing: 'skip', onError: 'pause', sameChat: true}});
+  const s = await finish(t);
+  assert.equal(s.chatPluginOk, true);
+  assert.equal(cmds(t, 'cg.selectPlugin').length, 2, 'the mention goes again in the new run');
 });
 
 test('expired task is never reused: a new one is prepared', async () => {

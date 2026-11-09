@@ -25,11 +25,11 @@ export class StateManager {
     return run;
   }
 
-  create({evaluationId, nlTabId, nlOrigin, mode, policy, items}) {
+  create({evaluationId, nlTabId, nlOrigin, mode, policy, items, chatTabId = null}) {
     const now = new Date(this.clock()).toISOString();
     return this.update(() => ({
       runId: 'run-' + this.clock().toString(36) + Math.random().toString(36).slice(2, 7),
-      evaluationId, nlTabId, nlOrigin, chatTabId: null, mode, policy, items,
+      evaluationId, nlTabId, nlOrigin, chatTabId, chatPluginOk: false, mode, policy, items,
       status: RUN.running, pause: null, current: -1, startedAt: now, finishedAt: null, log: [{t: now, msg: `Execução iniciada (${items.filter(i => i.status !== 'skipped').length} seções).`}],
     }));
   }

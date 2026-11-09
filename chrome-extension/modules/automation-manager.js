@@ -34,8 +34,10 @@ export class AutomationManager {
     if (scan.readOnly) throw new AutoError('nl_readonly');
     const {items} = buildQueue(scan, {existing: policy.existing, selected});
     if (!items.some(i => i.status !== 'skipped')) throw Object.assign(new AutoError('nl_selector'), {message: 'Nenhuma seção elegível para gerar com as opções escolhidas.', hint: 'Mude a seleção ou a política de seções com texto.'});
-    this.commands.clear();
-    await state.create({evaluationId: scan.evaluationId, nlTabId, nlOrigin, mode, policy, items});
+    // Every run starts clean: no command, task or conversation of an earlier run (another patient) is used again.
+    this.commands.clear(); this.lastDiag = null;
+    const oldChat = cur?.chatTabId && (await this.env.tabExists(cur.chatTabId)) ? cur.chatTabId : null;   // the same ChatGPT tab, on a NEW conversation
+    await state.create({evaluationId: scan.evaluationId, nlTabId, nlOrigin, mode, policy, items, chatTabId: oldChat});
     this.kick();
     return state.load();
   }
@@ -200,12 +202,8 @@ export class AutomationManager {
       return 'final';
     }
     if (it.code && modal.code === it.code && reusable(modal, this.env.now())) return;           // our task, still open
-    if (reusable(modal, this.env.now())) {                                                      // an open task made before: reused, no new code
-      if (this.codeTaken(s, idx, modal.code)) throw new AutoError('nl_bad_command', 'prepare', 'código repetido');
-      await state.setItem(idx, {code: modal.code, status: 'preparing', reused: true});
-      await state.log(`${it.name}: tarefa ${modal.code} já existente reutilizada.`);
-      return;
-    }
+    // An open task made before this run is never reused: a new code is prepared, so nothing of an earlier run goes along.
+    if (reusable(modal, this.env.now())) await state.log(`${it.name}: tarefa ${modal.code} de antes desta execução não é reutilizada; uma nova será preparada.`);
     if (it.code && modal.code === it.code && modal.status === 'expired') { await state.log(`${it.name}: tarefa ${it.code} expirou; uma nova será preparada.`); }
     await state.setItem(idx, {status: 'preparing'});
     const r = await this.nl(s, {cmd: 'nl.prepare', key: it.key, images: !!s.policy?.sendImages, previous: modal.code || null}, LIMITS.prepare + 5000);

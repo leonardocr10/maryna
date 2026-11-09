@@ -73,7 +73,7 @@ const newOpId = () => 'op-' + (crypto.randomUUID?.() || Math.random().toString(3
         <button class="btn btn-secondary btn-sm" data-nl-action="copy-command" (click)="copy(task?.command || '', 'Comando copiado.')"><nl-icon name="copy"/> Copiar comando</button>
         <button class="btn btn-secondary btn-sm" (click)="openChatGpt()"><nl-icon name="external"/> Abrir ChatGPT</button>
         <span class="grow"></span>
-        <button class="link" [disabled]="busy" (click)="prepare('mcp')">Gerar novo código</button>
+        <button class="link" data-nl-action="new-code" [disabled]="busy" (click)="prepare('mcp')">Gerar novo código</button>
         <button *ngIf="cfg?.connected" class="link" (click)="disconnect()">Desconectar ChatGPT</button>
       </div>
       <small class="hint">O ChatGPT recebe só os dados desta seção (tabelas em texto), com nomes, datas e contatos trocados por marcadores; os nomes voltam ao salvar.{{task?.include_images ? ' As imagens da seção vão como estão.' : ''}} Nenhuma chamada paga à API é feita neste método; vale o limite do seu plano do ChatGPT.</small>

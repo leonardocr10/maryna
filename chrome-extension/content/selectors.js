@@ -24,6 +24,7 @@
     mcpOption: 'input[data-nl-method-option="mcp"]',
     images: 'input[data-nl-images]',
     prepare: '[data-nl-action="prepare-mcp"]',
+    newCode: '[data-nl-action="new-code"]',
     command: 'textarea[data-nl-command]',
     copyCommand: '[data-nl-action="copy-command"]',
     close: '[data-nl-action="close"]',

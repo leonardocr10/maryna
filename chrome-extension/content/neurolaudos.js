@@ -123,7 +123,9 @@
     if (m.mode === 'mcp' && ['pending', 'processing'].includes(m.status) && m.code && m.code !== previous) return {ok: true, modal: m};
     const box = el.querySelector(NL.images);
     if (box && box.checked !== !!images) click(box);
-    const btn = el.querySelector(NL.prepare) || [...el.querySelectorAll('button')].find(b => norm(b.textContent).startsWith('preparar tarefa'));
+    // An open task made before: 'Gerar novo código' (the server closes the old one), never its code again.
+    const btn = el.querySelector(NL.prepare) || [...el.querySelectorAll('button')].find(b => norm(b.textContent).startsWith('preparar tarefa'))
+      || el.querySelector(NL.newCode) || [...el.querySelectorAll('button')].find(b => norm(b.textContent).startsWith('gerar novo codigo'));
     if (!btn) return fail('nl_selector', 'botão Preparar tarefa');
     if (!await waitFor(() => !btn.disabled, {timeout: 5000})) return fail('nl_prepare', 'botão desativado');
     click(btn);

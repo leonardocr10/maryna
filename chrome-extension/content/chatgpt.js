@@ -13,10 +13,20 @@
 
   const composer = () => first(CG.composer);
   const loginShown = () => !!first(CG.login);
-  const allMsgs = () => [...document.querySelectorAll('[data-message-author-role]')];
-  const userMsgs = () => document.querySelectorAll(CG.userMsg).length;
+  // Conversation turns. ChatGPT changes its markup: a turn may be marked by data-message-author-role, data-turn or the
+  // conversation-turn test id. Only the outermost element of each turn counts; its role comes from whichever mark it has.
+  const TURN_SEL = '[data-message-author-role], [data-turn], article[data-testid^="conversation-turn"], [data-testid^="conversation-turn-"]';
+  const allMsgs = () => { const l = [...document.querySelectorAll(TURN_SEL)]; return l.filter(el => !l.some(o => o !== el && o.contains(el))); };
+  function roleOf(el) {
+    const r = el.getAttribute('data-message-author-role') || el.getAttribute('data-turn') || el.querySelector('[data-message-author-role]')?.getAttribute('data-message-author-role') || el.querySelector('[data-turn]')?.getAttribute('data-turn');
+    if (r) return r;
+    const h = norm(el.querySelector('h5, h6, .sr-only')?.textContent || '');
+    return /voce disse|you said/.test(h) ? 'user' : /chatgpt disse|chatgpt said/.test(h) ? 'assistant' : null;
+  }
+  const userMsgs = () => allMsgs().filter(m => roleOf(m) === 'user').length;
   // Only turns of the person or of ChatGPT count (tool and system blocks of plugins may come after the answer).
-  const lastRole = () => [...document.querySelectorAll('[data-message-author-role="user"], [data-message-author-role="assistant"]')].at(-1)?.getAttribute('data-message-author-role') || null;
+  // Only turns of the person or of ChatGPT count (tool and system blocks of plugins may come after the answer).
+  const lastRole = () => allMsgs().map(roleOf).filter(r => r === 'user' || r === 'assistant').at(-1) || null;
   /** ChatGPT is still answering: the stop button of the message box (a "Parar"/"Stop" elsewhere on the page does not count). */
   const streaming = () => { if (document.querySelector('button[data-testid="stop-button"]')) return !!first(['button[data-testid="stop-button"]']); const c = composer(); return !!(c && first(CG.stop, container(c))); };
   const sendBtn = () => first(CG.send);
@@ -109,7 +119,7 @@
     let how = await waitFor(picked, {timeout: 2000});
     if (!how && opt.isConnected) { click(opt); how = await waitFor(picked, {timeout: 2000}); }
     // Enter must not have sent the mention alone
-    if (document.querySelectorAll(CG.userMsg).length && allMsgs().at(-1)?.getAttribute('data-message-author-role') === 'user' && norm(allMsgs().at(-1).textContent) === norm('@' + name)) return fail('cg_send', 'a menção foi enviada sozinha');
+    if (userMsgs() && roleOf(allMsgs().at(-1)) === 'user' && norm(allMsgs().at(-1).textContent) === norm('@' + name)) return fail('cg_send', 'a menção foi enviada sozinha');
     if (!how) { clearEditor(c); return fail('cg_plugin_select', 'o plugin não ficou selecionado após Enter'); }
     return {ok: true, how: 'enter'};
   }
@@ -136,8 +146,7 @@
     // Sent when: a new user message shows up, the answer starts, the page moved to the new conversation, or the
     // field (looked up again: ChatGPT may replace it) no longer holds the command.
     const acked = () => {
-      const u = document.querySelectorAll(CG.userMsg);
-      if (u.length > n || streaming() || location.href !== url) return true;
+      if (userMsgs() > n || streaming() || location.href !== url) return true;
       const f = composer();
       return !f || !textOf(f).includes(code) ? true : null;
     };
@@ -185,14 +194,18 @@
   let sig = '', sigAt = Date.now();
   const STALL_MS = 20000;
   function stalled() {
-    const m = allMsgs(), now = Date.now(), cur = m.length + ':' + (m.at(-1)?.textContent.length || 0);
+    const m = allMsgs(), now = Date.now();
+    const cur = m.length ? m.length + ':' + (m.at(-1)?.textContent.length || 0) : 'main:' + (document.querySelector('main')?.textContent.length || 0);
     if (cur !== sig) { sig = cur; sigAt = now; return false; }
-    return lastRole() === 'assistant' && !authButtons() && now - sigAt >= STALL_MS;
+    if (authButtons() || streaming()) return false;
+    // Turns readable: the last one must be ChatGPT's. Not readable: a longer quiet page counts as finished
+    // (NeuroLaudos IA then decides: draft saved, problem reported, or "respondeu sem salvar").
+    return m.length ? lastRole() === 'assistant' && now - sigAt >= STALL_MS : now - sigAt >= STALL_MS * 2;
   }
 
   /** What the page looks like, for the run log (no text of the conversation): roles of the last turns, stop button, quiet time. */
   function diag() {
-    const roles = allMsgs().slice(-3).map(m => m.getAttribute('data-message-author-role')).join('>') || 'nenhum';
+    const roles = allMsgs().slice(-3).map(m => roleOf(m) || '?').join('>') || 'nenhum';
     const anyStop = !!first(CG.stop), boxStop = streaming();
     return `turnos=${allMsgs().length} últimos=${roles} parar=${boxStop ? 'caixa' : anyStop ? 'fora-da-caixa' : 'não'} autorização=${authButtons() ? 'sim' : 'não'} parado-há=${Math.round((Date.now() - sigAt) / 1000)}s`;
   }

@@ -126,11 +126,18 @@ const BLOCK = 'p,h3,li';
           }
         </span>
       </div>
-      <div #area class="rte-area draft editing" [style.zoom]="page ? zoom : null" [style.max-width]="page ? sheetMax(0) : null" [attr.contenteditable]="readOnly ? 'false' : 'true'" role="textbox" aria-multiline="true" [attr.aria-label]="label"
+      @if (!readOnly && spellTip) {
+        <div class="rte-spell" role="note"><span><b>Corretor ortográfico:</b> palavras com erro ficam sublinhadas em vermelho; clique com o botão direito nelas para ver as sugestões.
+          Se não aparecer, ligue no Chrome: Configurações › Idiomas › Verificação ortográfica, com Português (Brasil).</span><button type="button" (click)="hideSpellTip()">Entendi</button></div>
+      }
+      <div #area class="rte-area draft editing" spellcheck="true" lang="pt-BR" [style.zoom]="page ? zoom : null" [style.max-width]="page ? sheetMax(0) : null" [attr.contenteditable]="readOnly ? 'false' : 'true'" role="textbox" aria-multiline="true" [attr.aria-label]="label"
         (paste)="paste($event)" (blur)="flush()"></div>
     </div>`,
   styles: [`
     nl-rich-editor{display:block}
+    .rte-spell{display:flex;align-items:center;gap:12px;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--primary-soft);color:var(--text-2);font:13px/1.45 var(--font)}
+    .rte-spell span{flex:1}.rte-spell b{color:var(--text)}
+    .rte-spell button{flex:none;height:30px;padding:0 12px;border:1px solid var(--primary-border,var(--border));border-radius:8px;background:var(--card);color:var(--primary-text);font:600 12.5px var(--font);cursor:pointer}
     .rte{border:1px solid var(--border-input);border-radius:var(--radius-sm);background:var(--card)}
     .rte{container-type:inline-size;container-name:rte}
     .rte-bar{display:flex;flex-wrap:nowrap;align-items:center;gap:4px;padding:6px 8px;min-height:46px;box-sizing:border-box;width:100%;border-bottom:1px solid var(--border);background:var(--card);border-radius:var(--radius-sm) var(--radius-sm) 0 0;position:sticky;top:0;z-index:4}
@@ -191,6 +198,9 @@ const BLOCK = 'p,h3,li';
 })
 export class RichEditorComponent implements AfterViewInit, OnChanges, OnDestroy {
   private sanitizer = inject(DomSanitizer);
+  /** One-time tip about the spell checker (Chrome's, in Portuguese - Brazil), per browser. */
+  spellTip = (() => { try { return localStorage.getItem('nl-spell-tip') !== '1'; } catch { return false; } })();
+  hideSpellTip() { this.spellTip = false; try { localStorage.setItem('nl-spell-tip', '1'); } catch {} }
   @ViewChild('area', {static: true}) area!: ElementRef<HTMLDivElement>;
   /** Initial HTML; changing it from outside resets the content (and the undo history). */
   @Input() html = '';

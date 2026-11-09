@@ -197,6 +197,16 @@ async function handle(msg, sender) {
       return {ok: true, run: await manager.start({nlTabId: tabId, nlOrigin: origin, mode: MODES[msg.mode] ? msg.mode : MODES[cfg.defaultMode] ? cfg.defaultMode : 'auto', policy, selected: msg.selected})};
     }
     case 'run.pause': await manager.pause(); return {ok: true, run: await state.load()};
+    case 'review.get': {
+      const tabId = msg.tabId ?? sender.tab?.id;
+      return await send(tabId, {cmd: 'nl.reviewGet', key: msg.key}, 20000);
+    }
+    case 'review.act': {
+      const tabId = msg.tabId ?? sender.tab?.id;
+      const r = await send(tabId, {cmd: 'nl.reviewAct', key: msg.key, taskId: msg.taskId, action: msg.action}, 25000);
+      if (r?.ok) await manager.reviewed(msg.key, msg.action);
+      return r;
+    }
     case 'run.continue': return {ok: true, run: await manager.continueRun(msg.tabId ?? null)};
     case 'run.resume': return {ok: true, run: await manager.resume(msg.action || 'continue', msg.tabId ?? null)};
     case 'run.stop': await manager.stop(); return {ok: true, run: await state.load()};

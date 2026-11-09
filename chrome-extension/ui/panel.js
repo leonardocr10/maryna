@@ -9,6 +9,7 @@ const body = $('#body'), ft = $('#ft');
 const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const ask = msg => chrome.runtime.sendMessage({...msg, tabId}).catch(e => ({ok: false, error: {message: String(e?.message || e)}}));
 
+let review = null;   // draft under review in the panel: {key, name, loading, current, draft, taskId, error, busy}
 let run = null, settings = null, scan = null, scanErr = null, showDetails = false, timer = null, choice = null, busy = false, flash = null, pending = null, layout = null;
 
 // ---------- icons (Lucide style: 24 grid, 1.8 stroke) ----------
@@ -40,6 +41,7 @@ const P = {
   pause: '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
   stop: '<rect x="6" y="6" width="12" height="12" rx="1.5"/>',
   external: '<path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  chevl: '<path d="m15 6-6 6 6 6"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
 };
 const FILLED = new Set(['play', 'pause', 'stop']);
@@ -107,6 +109,7 @@ chrome.storage.onChanged.addListener((ch, area) => {
 function render() {
   clearInterval(timer);
   if (pending) return renderConfirm();
+  if (review) return renderReview();
   if (otherActive()) { setLayout('modal'); return renderOther(); }
   if (run && run.nlTabId === tabId && run.status !== 'idle') { setLayout('run'); return renderRun(); }
   setLayout('modal');
@@ -247,6 +250,37 @@ function conclCard(c) {
   </section>`;
 }
 
+// ---------- review of a draft that waits for her confirmation ----------
+const paras = t => String(t || '').split(/\n\s*\n/).map(p => p.trim()).filter(Boolean).map(p => p.startsWith('## ') ? `<h4>${esc(p.slice(3))}</h4>` : `<p>${esc(p)}</p>`).join('') || '<p class="muted">(sem texto)</p>';
+async function openReview(key, name) {
+  review = {key, name, loading: true}; render();
+  const r = await ask({type: 'review.get', key});
+  if (!review || review.key !== key) return;
+  review = r?.ok ? {key, name: r.name || name, current: r.current, draft: r.draft, taskId: r.taskId, editable: r.editable} : {key, name, error: r?.reason === 'done' ? 'Este rascunho já foi resolvido na seção.' : 'Não foi possível abrir o rascunho. Abra a seção no NeuroLaudos IA.'};
+  render();
+}
+function renderReview() {
+  const v = review;
+  $('#sub').textContent = 'Revisão do rascunho: ' + v.name;
+  body.innerHTML = v.loading ? '<p class="muted">Abrindo o rascunho…</p>' : v.error ? `<div class="alert warn"><p>${esc(v.error)}</p></div>` : `
+  <div class="alert warn"><p><b>${esc(v.name)}: a seção já tinha texto.</b></p><small>Aprovar troca o texto atual pelo rascunho do ChatGPT (o atual fica nas versões da seção). Reprovar mantém o texto atual e descarta o rascunho. A aprovação final da seção continua no NeuroLaudos IA.</small></div>
+  <div class="revcols">
+    <section class="card"><h2>${ic('fileText', 16, 'hi')} Texto atual</h2><div class="revtext">${paras(v.current)}</div></section>
+    <section class="card draft"><h2>${ic('robot', 16, 'hi')} Rascunho do ChatGPT</h2><div class="revtext">${paras(v.draft)}</div></section>
+  </div>`;
+  ft.innerHTML = `<button class="btn" id="rv-back" type="button">${ic('chevl', 14)} Voltar</button><span class="grow"></span>${v.loading || v.error ? '' : `<button class="btn dan" id="rv-no" type="button" ${v.busy || !v.editable ? 'disabled' : ''}>${ic('stop', 13)} Reprovar (manter o atual)</button><button class="btn pri" id="rv-ok" type="button" ${v.busy || !v.editable ? 'disabled' : ''}>${ic('checkCircle', 15)} Aprovar rascunho</button>`}`;
+  $('#rv-back').onclick = () => { review = null; render(); };
+  const act = async action => {
+    v.busy = true; render();
+    const r = await ask({type: 'review.act', key: v.key, taskId: v.taskId, action});
+    if (r?.ok) { review = null; flash = null; } else { v.busy = false; v.error = null; }
+    render();
+    if (!r?.ok) body.insertAdjacentHTML('afterbegin', '<div class="alert err"><p>Não foi possível concluir. Tente de novo ou resolva na seção.</p></div>');
+  };
+  $('#rv-ok') && ($('#rv-ok').onclick = () => act('apply'));
+  $('#rv-no') && ($('#rv-no').onclick = () => act('discard'));
+}
+
 async function start() {
   const c = choice;
   const n = c.selected.length;
@@ -317,7 +351,7 @@ function renderRun() {
   const p = overall(run.items);
   const sm = summarize(run.items, null);
   const it = run.items[run.current];
-  const work = run.items.filter(i => i.status !== 'skipped' || i.reason === 'Pulada por você');
+  const work = run.items.filter(i => i.status !== 'skipped' || i.reason === 'Pulada por você' || i.reviewed);
   const skipped = run.items.filter(i => i.status === 'skipped' && i.reason !== 'Pulada por você');
   const active = run.status === 'running' || run.status === 'paused';
   const pause = run.status === 'paused' ? run.pause : null;
@@ -357,7 +391,7 @@ function renderRun() {
     <section class="card now-col">${left}</section>
     <section class="card queue-col">
       <h2>${ic('layers', 17, 'hi')} Fila da automação<span class="grow"></span><span class="pill mute">${work.length} ${work.length === 1 ? 'seção' : 'seções'}</span></h2>
-      <ol class="list" aria-label="Fila da automação">${work.map(i => { const cur = i === it && active; return `<li class="${cur ? 'on' : ''}" ${cur ? 'aria-current="step"' : ''}><span class="dot ${dotClass(i, cur)}" aria-hidden="true">${DOT}</span><span><span class="nm">${esc(i.name)}</span> <span class="st">${esc(status(i))}</span></span></li>${showDetails && (i.reason || i.error || i.checks || i.code) ? `<ul class="checks">${i.code ? `<li>Tarefa ${esc(i.code)}</li>` : ''}${i.reason ? `<li>${esc(i.reason)}</li>` : ''}${i.error ? `<li class="no">${esc(i.error.message)}${i.error.stepLabel ? ' (' + esc(i.error.stepLabel) + ')' : ''}${i.error.detail ? ' — ' + esc(i.error.detail) : ''}</li>` : ''}${(i.checks || []).map(c => `<li class="${c.ok ? 'yes' : 'no'}">${c.ok ? '✓' : '✗'} ${esc(c.name)}${c.detail ? ' — ' + esc(c.detail) : ''}</li>`).join('')}</ul>` : ''}`; }).join('')}</ol>
+      <ol class="list" aria-label="Fila da automação">${work.map(i => { const cur = i === it && active; return `<li class="${cur ? 'on' : ''}" ${cur ? 'aria-current="step"' : ''}><span class="dot ${dotClass(i, cur)}" aria-hidden="true">${DOT}</span><span class="grow"><span class="nm">${esc(i.name)}</span> <span class="st">${esc(status(i))}</span></span>${i.status === 'needs_review' ? `<button class="btn sm rev" type="button" data-rev="${esc(i.key)}" title="Ver o texto atual e o rascunho do ChatGPT">${ic('eye', 14)} Revisar</button>` : ''}</li>${showDetails && (i.reason || i.error || i.checks || i.code) ? `<ul class="checks">${i.code ? `<li>Tarefa ${esc(i.code)}</li>` : ''}${i.reason ? `<li>${esc(i.reason)}</li>` : ''}${i.error ? `<li class="no">${esc(i.error.message)}${i.error.stepLabel ? ' (' + esc(i.error.stepLabel) + ')' : ''}${i.error.detail ? ' — ' + esc(i.error.detail) : ''}</li>` : ''}${(i.checks || []).map(c => `<li class="${c.ok ? 'yes' : 'no'}">${c.ok ? '✓' : '✗'} ${esc(c.name)}${c.detail ? ' — ' + esc(c.detail) : ''}</li>`).join('')}</ul>` : ''}`; }).join('')}</ol>
     </section>
   </div>
   ${skipped.length && showDetails ? `<details open class="card"><summary>${skipped.length} ${skipped.length === 1 ? 'seção ignorada' : 'seções ignoradas'}</summary><ul class="checks" style="margin-left:0">${skipped.map(i => `<li>${esc(i.name)} — ${esc(i.reason || KIND[i.kind] || '')}</li>`).join('')}</ul></details>` : ''}
@@ -373,6 +407,7 @@ function renderRun() {
   document.querySelectorAll('[data-act]').forEach(b => b.onclick = () => ask({type: 'run.resume', action: b.dataset.act}));
   $('#stop') && ($('#stop').onclick = () => confirmBox(['Parar a execução?', 'Os rascunhos já recebidos ficam no NeuroLaudos IA; nada é apagado.'], 'Parar', () => ask({type: 'run.stop'})));
   $('#cont') && ($('#cont').onclick = () => ask({type: 'run.continue'}));
+  body.querySelectorAll('[data-rev]').forEach(b => b.onclick = () => openReview(b.dataset.rev, run.items.find(i => i.key === b.dataset.rev)?.name || ''));
   $('#new') && ($('#new').onclick = async () => { await ask({type: 'run.clear'}); run = null; choice = null; await rescan(); render(); });
   $('#clear') && ($('#clear').onclick = async () => { await ask({type: 'run.clear'}); run = null; await rescan(); render(); });
   $('#det').onclick = () => { showDetails = !showDetails; render(); };

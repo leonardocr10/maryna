@@ -910,6 +910,34 @@ export class EvaluationComponent implements OnDestroy {
     }
     window.dispatchEvent(new CustomEvent('nlx-instruction-saved', {detail: JSON.stringify({key, ok})}));
   }
+  // Modo automático: a draft that waits for her confirmation ("Revisão necessária") is reviewed in the extension's window:
+  // it shows the current text and the draft; she approves (the draft replaces the text, kept in the versions) or rejects.
+  @HostListener('window:nlx-review-get', ['$event'])
+  async onExtReviewGet(e: Event) {
+    const key = String((e as CustomEvent).detail || '');
+    let out: any = {key, ok: false};
+    try {
+      const t = await this.api.req<any>('GET', `/evaluations/${this.evaluationId}/chatgpt-tasks/current?section=${encodeURIComponent(key)}`);
+      if (t?.needs_confirmation && t.received_text) out = {key, ok: true, taskId: t.id, name: this.sectionName(key), current: this.text(key), draft: t.received_text, editable: !this.readOnly()};
+      else out = {key, ok: false, reason: t?.status === 'reviewed' ? 'done' : 'none'};
+    } catch {}
+    window.dispatchEvent(new CustomEvent('nlx-review', {detail: JSON.stringify(out)}));
+  }
+  @HostListener('window:nlx-review-act', ['$event'])
+  async onExtReviewAct(e: Event) {
+    let key = '', taskId = '', action = '';
+    try { ({key, taskId, action} = JSON.parse(String((e as CustomEvent).detail || '{}'))); } catch {}
+    let ok = false;
+    if (!this.readOnly() && taskId && (action === 'apply' || action === 'discard')) {
+      try {
+        await this.api.req('POST', `/chatgpt-tasks/${encodeURIComponent(taskId)}/${action}`, {});
+        ok = true;
+        if (action === 'apply') { await this.load(); this.changed.emit(); this.refreshEditor(key); }
+        this.api.notify(action === 'apply' ? `${this.sectionName(key)}: texto substituído pelo rascunho do ChatGPT. Revise e aprove a seção.` : `${this.sectionName(key)}: rascunho descartado; o texto atual ficou como estava.`);
+      } catch {}
+    }
+    window.dispatchEvent(new CustomEvent('nlx-review-done', {detail: JSON.stringify({key, ok, action})}));
+  }
   @HostListener('document:fullscreenchange') emFullChange() { this.emFull = !!document.fullscreenElement && !!document.querySelector('.em'); }
   emCanFull() { return !!document.fullscreenEnabled; }
   emToReading() { return this.busy('Salvando e abrindo o modo leitura…', () => this.emToReadingNow()); }

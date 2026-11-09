@@ -84,6 +84,16 @@ export class AutomationManager {
     return state.load();
   }
 
+  /** Her decision on a draft that waited for confirmation (made in the panel): the section shows the result. */
+  async reviewed(key, action) {
+    const {state} = this.env;
+    const s = await state.load();
+    const idx = s?.items.findIndex(i => i.key === key && i.status === 'needs_review') ?? -1;
+    if (idx < 0) return;
+    await state.setItem(idx, action === 'apply' ? {status: 'received', reason: 'Rascunho aprovado por você: substituiu o texto'} : {status: 'skipped', reason: 'Rascunho reprovado por você: texto atual mantido', reviewed: true});
+    await state.log(`${s.items[idx].name}: ${action === 'apply' ? 'rascunho aprovado; o texto da seção foi substituído' : 'rascunho reprovado; o texto atual ficou'}.`);
+  }
+
   async stop() { await this.env.state.stop(); await this.env.state.log('Execução parada. Os rascunhos já recebidos ficam no NeuroLaudos IA.'); }
 
   /** Starts the loop when it is not running; returns its promise (awaited in tests). */

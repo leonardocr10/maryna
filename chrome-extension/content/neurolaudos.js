@@ -201,6 +201,15 @@
     return d?.ok ? {ok: true} : {ok: false, code: 'nl_prepare', detail: 'a instrução da Conclusão não foi salva'};
   }
 
+  async function reviewGet(key) {
+    const d = await askPage('nlx-review-get', 'nlx-review', key, 15000);
+    return d && d.key === key ? d : {ok: false, reason: 'page'};
+  }
+  async function reviewAct(key, taskId, action) {
+    const d = await askPage('nlx-review-act', 'nlx-review-done', JSON.stringify({key, taskId, action}), 20000);
+    return {ok: !!d?.ok};
+  }
+
   // ---------- messages from the worker ----------
   chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     if (!msg?.cmd?.startsWith('nl.')) return false;
@@ -216,6 +225,8 @@
         case 'nl.waitStatus': return waitStatus(msg.key, msg.code, msg.chunkMs);
         case 'nl.closeModal': return closeModal(msg.key);
         case 'nl.getInstruction': return getInstruction(msg.key);
+        case 'nl.reviewGet': return reviewGet(msg.key);
+        case 'nl.reviewAct': return reviewAct(msg.key, msg.taskId, msg.action);
         case 'nl.setInstruction': return setInstruction(msg.key, msg.text);
         default: return fail('connection', 'comando desconhecido');
       }

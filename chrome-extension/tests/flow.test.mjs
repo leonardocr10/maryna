@@ -152,6 +152,18 @@ test('stopped run continues from where it stopped: only sections without a draft
   assert.equal(cmds(t, 'cg.send').length, sends + 1, 'only the failed section was sent again');
 });
 
+test('draft reviewed in the panel: approved becomes received, rejected stays listed as kept', async () => {
+  const t = makeEnv({nl: {sections: [section('a', 'A'), section('b', 'B')], draftOutcome: () => 'needs_review'}});
+  await start(t, {policy: {existing: 'draft', onError: 'pause'}});
+  let s = await finish(t);
+  assert.deepEqual(s.items.map(i => i.status), ['needs_review', 'needs_review']);
+  await t.mgr.reviewed('a', 'apply');
+  await t.mgr.reviewed('b', 'discard');
+  s = await t.env.state.load();
+  assert.equal(s.items[0].status, 'received');
+  assert.equal(s.items[1].status, 'skipped'); assert.equal(s.items[1].reviewed, true);
+});
+
 test('ChatGPT answers without saving: one automatic try in a new conversation, then a clear pause', async () => {
   const t = makeEnv({nl: {sections: [section('a', 'A')], draftOutcome: () => 'never'}});
   await start(t);

@@ -5,7 +5,7 @@ export const ERRORS = {
   nl_not_logged: {msg: 'Você não está conectada ao NeuroLaudos IA nesta aba.', hint: 'Entre no NeuroLaudos IA, abra a avaliação e clique em Continuar.'},
   nl_not_review: {msg: 'A tela "Conferir seções" não está aberta.', hint: 'Abra a avaliação na etapa Conferir seções e clique em Continuar.'},
   nl_readonly: {msg: 'Esta avaliação está somente leitura (aprovada ou sem permissão de escrita).', hint: 'Nada a gerar. Abra outra avaliação.'},
-  nl_selector: {msg: 'Um elemento essencial do NeuroLaudos IA não foi encontrado com segurança.', hint: 'A interface pode ter mudado. Rode a Simulação e veja Seletores no README.'},
+  nl_selector: {msg: 'Um elemento essencial do NeuroLaudos IA não foi encontrado com segurança.', hint: 'A interface pode ter mudado. Veja Seletores no README e teste no modo Assistido.'},
   nl_section: {msg: 'A seção não abriu.', hint: 'Abra a seção manualmente e clique em Continuar.'},
   nl_modal: {msg: 'A janela ChatGPT da seção não abriu.', hint: 'Clique em ChatGPT na seção e depois em Continuar.'},
   nl_mcp_off: {msg: 'O método "ChatGPT — plugin (MCP)" está desligado neste NeuroLaudos IA.', hint: 'Ligue CHATGPT_MCP_ENABLED e PUBLIC_BASE_URL (veja docs/CHATGPT_INTEGRACAO.md).'},
@@ -20,11 +20,12 @@ export const ERRORS = {
   nl_task_failed: {msg: 'A tarefa terminou com erro ou foi descartada no NeuroLaudos IA.', hint: 'Tente de novo para preparar uma nova tarefa.'},
   cg_not_logged: {msg: 'Você não está conectada ao ChatGPT.', hint: 'Entre no ChatGPT na aba aberta pela extensão e clique em Continuar.'},
   cg_load: {msg: 'O ChatGPT não carregou.', hint: 'Confira a internet e a aba do ChatGPT; depois clique em Continuar.'},
-  cg_composer: {msg: 'O campo de mensagem do ChatGPT não foi encontrado.', hint: 'A interface do ChatGPT pode ter mudado. Rode a Simulação.'},
+  cg_composer: {msg: 'O campo de mensagem do ChatGPT não foi encontrado.', hint: 'A interface do ChatGPT pode ter mudado. Veja Seletores no README.'},
   cg_plugin_missing: {msg: 'O plugin NeuroLaudos IA não apareceu no seletor do ChatGPT.', hint: 'Conecte o plugin no ChatGPT (Configurações > Aplicativos) ou selecione-o à mão e clique em "Já selecionei o plugin".'},
   cg_plugin_select: {msg: 'Não foi possível confirmar que o plugin NeuroLaudos IA foi selecionado.', hint: 'Selecione o plugin à mão no ChatGPT (@ e NeuroLaudos IA) e clique em "Já selecionei o plugin".'},
   cg_insert: {msg: 'O comando não ficou no campo de mensagem.', hint: 'Cole o comando à mão (Copiar comando) e envie; depois clique em Continuar.'},
   cg_send: {msg: 'A mensagem não foi enviada.', hint: 'Envie à mão no ChatGPT e clique em Continuar.'},
+  cg_no_save: {msg: 'O ChatGPT respondeu, mas não salvou o rascunho.', hint: 'Ele pode ter feito uma pergunta ou visto um problema nos dados (ex.: idade ou sexo diferentes entre identificação e anamnese). Leia a resposta no ChatGPT, corrija no NeuroLaudos IA se for o caso e clique em Tentar de novo, ou Pular seção.'},
   cg_incomplete: {msg: 'A resposta do ChatGPT não terminou no tempo limite.', hint: 'Veja a conversa; quando terminar, clique em Continuar.'},
   cg_rate_limit: {msg: 'O ChatGPT avisou que o limite de uso foi atingido.', hint: 'Espere o limite do seu plano liberar e clique em Continuar.'},
   cg_error: {msg: 'O ChatGPT mostrou uma mensagem de erro.', hint: 'Veja a conversa; tente de novo quando o ChatGPT voltar.'},
@@ -52,4 +53,4 @@ export function describe(err, step) {
 }
 
 /** Errors after which a retry needs the person (never automatic). */
-export const NEEDS_PERSON = ['nl_not_logged', 'cg_not_logged', 'cg_plugin_missing', 'cg_plugin_select', 'cg_rate_limit', 'nl_mcp_off', 'nl_readonly', 'nl_changed', 'nl_selector', 'nl_not_received', 'cg_incomplete', 'busy'];
+export const NEEDS_PERSON = ['nl_not_logged', 'cg_not_logged', 'cg_plugin_missing', 'cg_plugin_select', 'cg_rate_limit', 'nl_mcp_off', 'nl_readonly', 'nl_changed', 'nl_selector', 'nl_not_received', 'cg_no_save', 'cg_incomplete', 'busy'];

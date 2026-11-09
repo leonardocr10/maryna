@@ -118,12 +118,14 @@ test('rate limit pauses the run', async () => {
   assert.equal(s.pause.code, 'cg_rate_limit');
 });
 
-test('draft never arrives: "Rascunho não recebido" after the limit', async () => {
+test('ChatGPT answers without saving: one automatic try in a new conversation, then a clear pause', async () => {
   const t = makeEnv({nl: {sections: [section('a', 'A')], draftOutcome: () => 'never'}});
   await start(t);
   const s = await finish(t);
-  assert.equal(s.pause.code, 'nl_not_received');
+  assert.equal(s.pause.code, 'cg_no_save');
   assert.equal(s.items[0].status, 'error');
+  assert.equal(cmds(t, 'cg.send').length, 2, 'sent once, retried once');
+  assert.ok(s.pause.actions.includes('retry'));
 });
 
 test('error policy "next": records the error and goes on', async () => {

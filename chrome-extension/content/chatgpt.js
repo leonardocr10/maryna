@@ -179,12 +179,21 @@
     return lastRole() === 'assistant' ? 'maybe_done' : 'waiting';
   }
 
+  // Last time the conversation changed (count of turns + length of the last one), kept across waiting calls.
+  let sig = '', sigAt = Date.now();
+  const STALL_MS = 45000;
+  function stalled() {
+    const m = allMsgs(), now = Date.now(), cur = m.length + ':' + (m.at(-1)?.textContent.length || 0);
+    if (cur !== sig) { sig = cur; sigAt = now; return false; }
+    return lastRole() === 'assistant' && !authButtons() && now - sigAt >= STALL_MS;
+  }
+
   /** Waits up to chunkMs. Returns done | auth | streaming | waiting | rate_limit | error. */
   async function waitAnswer(chunkMs) {
     const end = Date.now() + chunkMs;
     for (;;) {
       const st = await waitFor(() => { const s = snapshot(); return ['rate_limit', 'error', 'auth', 'maybe_done', 'logged_out'].includes(s) ? s : null; }, {timeout: Math.max(500, end - Date.now()), interval: 1000});
-      if (!st) return {ok: true, state: streaming() ? 'streaming' : 'waiting'};
+      if (!st) return stalled() ? {ok: true, state: 'done', stalled: true} : {ok: true, state: streaming() ? 'streaming' : 'waiting'};
       if (st === 'logged_out') return fail('cg_not_logged');
       if (st === 'rate_limit' || st === 'error') return {ok: true, state: st, detail: st};
       if (st === 'auth') {

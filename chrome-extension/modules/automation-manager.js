@@ -53,7 +53,7 @@ export class AutomationManager {
       if (action === 'skip') await state.setItem(idx, {status: 'skipped', reason: 'Pulada por você', error: null});
       else if (action === 'retry') {
         // Explicit retry by the person: a new conversation and, if the task is no longer open, a new task.
-        await state.setItem(idx, {status: 'pending', step: 'navigate', error: null, sentAt: null, attempts: 0, pluginManual: false, authNotified: false});
+        await state.setItem(idx, {status: 'pending', step: 'navigate', error: null, sentAt: null, attempts: 0, pluginManual: false, authNotified: false, chatDone: false, noSaveRetries: 0});
         await state.setRun({chatPluginOk: false});   // a retry starts a new conversation
         this.commands.delete(it.key);
       } else await state.setItem(idx, {status: it.status === 'error' || it.status === 'expired' ? 'pending' : it.status, error: null, ...(action === 'plugin_done' ? {pluginManual: true} : {})});
@@ -138,6 +138,13 @@ export class AutomationManager {
     if (!it.sentAt && !NEEDS_PERSON.includes(info.code) && !GLOBAL.includes(info.code) && attempts <= (settings.retries ?? 1)) {
       await state.setItem(idx, {attempts, step: 'navigate', error: info});
       await state.log(`${it.name}: nova tentativa automática.`);
+      return false;
+    }
+    if (info.code === 'cg_no_save' && (it.noSaveRetries || 0) < NO_SAVE_RETRIES) {
+      await state.setItem(idx, {status: 'pending', step: 'navigate', error: info, sentAt: null, chatDone: false, pluginManual: false, authNotified: false, noSaveRetries: (it.noSaveRetries || 0) + 1});
+      await state.setRun({chatPluginOk: false});   // the new try starts a new conversation
+      this.commands.delete(it.key);
+      await state.log(`${it.name}: o ChatGPT respondeu sem salvar o rascunho; nova tentativa automática em uma conversa nova.`);
       return false;
     }
     const status = info.code === 'nl_expired' ? 'expired' : 'error';
@@ -318,7 +325,7 @@ export class AutomationManager {
       const cur = await state.load();
       if (!cur || cur.status !== RUN.running) return 'interrupted';
       const r = await this.cg(cur, {cmd: 'cg.wait', chunkMs: LIMITS.chunk}, LIMITS.chunk + 10000);
-      if (r.state === 'done') return;
+      if (r.state === 'done') { await state.setItem(idx, {chatDone: true}); return; }
       // The draft may arrive before ChatGPT's page looks finished: NeuroLaudos IA decides.
       if (await this.taskMoved(cur, it, 1000, true)) return;
       if (r.state === 'rate_limit') throw new AutoError('cg_rate_limit', 'wait_chatgpt');
@@ -344,7 +351,9 @@ export class AutomationManager {
     const settings = await this.env.settings();
     await state.setItem(idx, {status: 'confirming'});
     await activate(s.nlTabId);
-    const end = now() + (settings.confirmSeconds || 120) * 1000;
+    // ChatGPT already finished its answer: the plugin saves during the answer, so the draft is there in seconds.
+    const chatDone = !!(await state.load())?.items[idx]?.chatDone;
+    const end = now() + Math.min(settings.confirmSeconds || 120, chatDone ? NO_SAVE_SECONDS : Infinity) * 1000;
     while (now() < end) {
       const cur = await state.load();
       if (!cur || cur.status !== RUN.running) return 'interrupted';
@@ -356,7 +365,7 @@ export class AutomationManager {
       if (o.kind === 'failed') throw new AutoError('nl_task_failed', 'confirm', o.detail);
       if (o.kind === 'other') throw new AutoError('nl_changed', 'confirm', 'outra tarefa aberta na seção');
     }
-    throw new AutoError('nl_not_received', 'confirm');
+    throw new AutoError(chatDone ? 'cg_no_save' : 'nl_not_received', 'confirm');
   }
 
   async stepClose(s, idx, it) {
@@ -366,5 +375,7 @@ export class AutomationManager {
 
 }
 
+/** After ChatGPT finished: how long to wait for the draft, and automatic tries in a new conversation. */
+const NO_SAVE_SECONDS = 30, NO_SAVE_RETRIES = 1;
 const RUN_STEPS = ['navigate', 'open_modal', 'prepare', 'command', 'chatgpt_new', 'plugin', 'insert', 'send', 'wait_chatgpt', 'confirm', 'close'];
 const STEP_FN = {navigate: 'stepNavigate', open_modal: 'stepOpenModal', prepare: 'stepPrepare', command: 'stepCommand', chatgpt_new: 'stepChatNew', plugin: 'stepPlugin', insert: 'stepInsert', send: 'stepSend', wait_chatgpt: 'stepWaitChat', confirm: 'stepConfirm', close: 'stepClose'};

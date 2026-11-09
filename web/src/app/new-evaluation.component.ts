@@ -29,14 +29,14 @@ import {FilterSelectComponent} from './ui/filter-select.component';
 
     <div class="pair">
     <section class="card">
-      <div class="sec-title"><span class="num">2</span><h2>Modelo e arquivos</h2><span class="caption">Opcional agora, dá para enviar depois</span></div>
+      <div class="sec-title"><span class="num">2</span><h2>Modelo e arquivos</h2><span class="caption">Arquivos obrigatórios · pode enviar agora ou depois</span></div>
       <div class="model" title="O arquivo da estagiária é comparado com o modelo, e as instruções da IA do modelo valem nesta avaliação.">
         <span class="mlabel">Modelo do laudo</span>
         <nl-filter-select [options]="models" [value]="modelId" ariaLabel="Modelo do laudo" placeholder="Sem modelo" (valueChange)="modelId=$event"></nl-filter-select>
       </div>
       <div class="files">
-        <nl-drop-zone [inline]="true" title="Arquivo base (estagiária)" [filename]="base?.name||''" (file)="pick('base',$event)"></nl-drop-zone>
-        <nl-drop-zone [inline]="true" title="Anamnese (psicóloga)" [filename]="anamnesis?.name||''" (file)="pick('anamnesis',$event)"></nl-drop-zone>
+        <nl-drop-zone [inline]="true" [required]="true" title="Arquivo base (estagiária)" [filename]="base?.name||''" (file)="pick('base',$event)"></nl-drop-zone>
+        <nl-drop-zone [inline]="true" [required]="true" title="Anamnese (psicóloga)" [filename]="anamnesis?.name||''" (file)="pick('anamnesis',$event)"></nl-drop-zone>
       </div>
     </section>
 

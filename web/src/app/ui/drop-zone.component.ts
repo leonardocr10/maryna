@@ -8,14 +8,14 @@ import {IconComponent} from './icon.component';
   standalone: true,
   imports: [CommonModule, IconComponent],
   template: `
-<div class="dz" [class.done]="filename" [class.over]="over" [class.busy]="busy" [class.inline]="inline" [class.disabled]="disabled"
+<div class="dz" [class.done]="filename" [class.over]="over" [class.busy]="busy" [class.inline]="inline" [class.disabled]="disabled" [class.need]="need && !filename && !disabled && !busy"
      (click)="!disabled&&!busy&&picker.click()" (dragover)="$event.preventDefault();over=true" (dragleave)="over=false" (drop)="onDrop($event)">
   <input #picker type="file" accept=".docx" hidden (click)="$event.stopPropagation()" (change)="onPick($event)">
   <div class="icon"><ng-container *ngIf="busy">…</ng-container><nl-icon *ngIf="!busy" [name]="filename ? 'doc' : 'upload'"/></div>
   <div class="txt">
-    <strong>{{title}}</strong>
+    <strong>{{title}}<span *ngIf="required" class="req" aria-hidden="true"> *</span><span *ngIf="required" class="sr"> (obrigatório)</span></strong>
     <code *ngIf="filename" class="name">{{filename}}</code>
-    <span class="hint">{{busy?'Enviando…':filename?'Arraste outro para trocar':'Arraste o .docx aqui ou clique'}}</span>
+    <span class="hint">{{busy?'Enviando…':filename?'Arraste outro para trocar':(need&&!disabled?'Obrigatório · arraste o .docx aqui ou clique':'Arraste o .docx aqui ou clique')}}</span>
   </div>
 </div>`,
   styles: [`
@@ -29,6 +29,11 @@ import {IconComponent} from './icon.component';
 strong{font-size:14.5px;font-weight:600;color:var(--text)}
 .name{font:12.5px var(--mono);color:var(--primary-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hint{font-size:12.5px;color:var(--text-3)}
+.req{color:var(--danger,#c0392b)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.dz.need{border-color:var(--danger,#c0392b);background:color-mix(in srgb,var(--danger,#c0392b) 4%,var(--card))}
+.dz.need .hint{color:var(--danger,#c0392b)}
+.dz.need .icon{color:var(--danger,#c0392b)}
 .dz.inline{flex-direction:row;min-height:0;padding:14px 16px;text-align:left;justify-content:flex-start}
 .dz.inline .icon{width:34px;height:34px;flex:none}
 `],
@@ -39,6 +44,10 @@ export class DropZoneComponent {
   @Input() busy = false;
   @Input() inline = false;
   @Input() disabled = false;
+  /** Shows "*" next to the title. */
+  @Input() required = false;
+  /** Required and still missing: red outline and hint. */
+  @Input() need = false;
   @Output() file = new EventEmitter<File>();
   over = false;
   onDrop(e: DragEvent) { e.preventDefault(); this.over = false; const f = e.dataTransfer?.files?.[0]; if (f && !this.disabled) this.emit(f); }

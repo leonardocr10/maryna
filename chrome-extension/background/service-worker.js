@@ -185,6 +185,10 @@ async function handle(msg, sender) {
       const tabId = msg.tabId ?? sender.tab?.id;
       return await send(tabId, {cmd: 'nl.scan'}, 15000);
     }
+    case 'instruction.get': case 'instruction.set': {
+      const tabId = msg.tabId ?? sender.tab?.id;
+      return await send(tabId, msg.type === 'instruction.get' ? {cmd: 'nl.getInstruction', key: msg.key, evaluationId: msg.evaluationId} : {cmd: 'nl.setInstruction', key: msg.key, text: String(msg.text || '').slice(0, 6000), evaluationId: msg.evaluationId}, 20000);
+    }
     case 'run.start': {
       const tabId = msg.tabId ?? sender.tab?.id;
       const origin = msg.origin || (sender.tab?.url ? new URL(sender.tab.url).origin : null);
@@ -193,6 +197,7 @@ async function handle(msg, sender) {
       return {ok: true, run: await manager.start({nlTabId: tabId, nlOrigin: origin, mode: MODES[msg.mode] ? msg.mode : MODES[cfg.defaultMode] ? cfg.defaultMode : 'auto', policy, selected: msg.selected})};
     }
     case 'run.pause': await manager.pause(); return {ok: true, run: await state.load()};
+    case 'run.continue': return {ok: true, run: await manager.continueRun(msg.tabId ?? null)};
     case 'run.resume': return {ok: true, run: await manager.resume(msg.action || 'continue', msg.tabId ?? null)};
     case 'run.stop': await manager.stop(); return {ok: true, run: await state.load()};
     case 'run.clear': {

@@ -183,6 +183,24 @@
     return {ok: true};
   }
 
+  // ---------- Conclusão instruction (the app answers through window events; strings only) ----------
+  function askPage(send, reply, detail, timeout = 8000) {
+    return new Promise(resolve => {
+      const done = e => { clearTimeout(t); window.removeEventListener(reply, done); let d = {}; try { d = JSON.parse(e.detail || '{}'); } catch {} resolve(d); };
+      const t = setTimeout(() => { window.removeEventListener(reply, done); resolve(null); }, timeout);
+      window.addEventListener(reply, done);
+      window.dispatchEvent(new CustomEvent(send, {detail}));
+    });
+  }
+  async function getInstruction(key) {
+    const d = await askPage('nlx-instruction-get', 'nlx-instruction', key);
+    return d && d.key === key ? {ok: true, text: String(d.text || ''), editable: !!d.editable} : {ok: false, code: 'nl_selector', detail: 'instrução da Conclusão'};
+  }
+  async function setInstruction(key, text) {
+    const d = await askPage('nlx-instruction-set', 'nlx-instruction-saved', JSON.stringify({key, text}), 15000);
+    return d?.ok ? {ok: true} : {ok: false, code: 'nl_prepare', detail: 'a instrução da Conclusão não foi salva'};
+  }
+
   // ---------- messages from the worker ----------
   chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     if (!msg?.cmd?.startsWith('nl.')) return false;
@@ -197,6 +215,8 @@
         case 'nl.command': return command(msg.key);
         case 'nl.waitStatus': return waitStatus(msg.key, msg.code, msg.chunkMs);
         case 'nl.closeModal': return closeModal(msg.key);
+        case 'nl.getInstruction': return getInstruction(msg.key);
+        case 'nl.setInstruction': return setInstruction(msg.key, msg.text);
         default: return fail('connection', 'comando desconhecido');
       }
     })().then(reply, e => reply(fail('connection', String(e?.message || e))));

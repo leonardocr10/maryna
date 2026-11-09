@@ -31,8 +31,10 @@ import {FilterSelectComponent} from './ui/filter-select.component';
     <section class="card">
       <div class="sec-title"><span class="num">2</span><h2>Modelo e arquivos</h2><span class="caption">Arquivos obrigatórios · pode enviar agora ou depois</span></div>
       <div class="model" title="O arquivo da estagiária é comparado com o modelo, e as instruções da IA do modelo valem nesta avaliação.">
-        <span class="mlabel">Modelo do laudo</span>
-        <nl-filter-select [options]="models" [value]="modelId" ariaLabel="Modelo do laudo" placeholder="Sem modelo" (valueChange)="modelId=$event"></nl-filter-select>
+        <span class="mlabel">Modelo do laudo{{hasModels() ? ' *' : ''}}</span>
+        <nl-filter-select [class.need]="hasModels() && !modelId" [options]="models" [value]="modelId" ariaLabel="Modelo do laudo" placeholder="Escolha o modelo" (valueChange)="modelId=$event"></nl-filter-select>
+        <small *ngIf="hasModels() && !modelId" class="need-hint">Obrigatório: escolha o modelo do laudo.</small>
+        <small *ngIf="modelsLoaded && !hasModels()" class="caption">Nenhum modelo cadastrado. Cadastre em Modelos de laudo.</small>
       </div>
       <div class="files">
         <nl-drop-zone [inline]="true" [required]="true" title="Arquivo base (estagiária)" [filename]="base?.name||''" (file)="pick('base',$event)"></nl-drop-zone>
@@ -64,7 +66,7 @@ import {FilterSelectComponent} from './ui/filter-select.component';
         <li [class.ok]="valid()"><span class="bx"><nl-icon name="check"/></span>Identificação<small>nome, nascimento, sexo e escolaridade</small></li>
         <li [class.ok]="base"><span class="bx"><nl-icon name="check"/></span>Arquivo base</li>
         <li [class.ok]="anamnesis"><span class="bx"><nl-icon name="check"/></span>Anamnese</li>
-        <li [class.ok]="modelId"><span class="bx"><nl-icon name="check"/></span>Modelo do laudo<small>opcional</small></li>
+        <li [class.ok]="modelId"><span class="bx"><nl-icon name="check"/></span>Modelo do laudo<small>{{hasModels() ? 'obrigatório' : 'nenhum cadastrado'}}</small></li>
       </ul>
     </section>
     <section class="card card-pad">
@@ -79,7 +81,9 @@ import {FilterSelectComponent} from './ui/filter-select.component';
     <div class="privacy"><nl-icon name="shield"/><span>Dados de saúde são sensíveis. Nomes e dados pessoais são ocultados antes de qualquer envio à IA, e a geração só acontece quando autorizada nas Configurações.</span></div>
   </aside>
 </div>`,
-  styles: [`
+  styles: [`.need-hint{display:block;margin-top:4px;font-size:12px;color:var(--danger,#c0392b)}
+:host ::ng-deep nl-filter-select.need button{border-color:var(--danger,#c0392b)}
+
 nl-icon{--ico-size:16px}
 .layout{display:grid;grid-template-columns:minmax(0,1fr) clamp(280px,calc(24vw / var(--zoom, 1)),360px);gap:16px;align-items:start}
 .form{min-width:0;display:flex;flex-direction:column;gap:16px}
@@ -165,17 +169,19 @@ export class NewEvaluationComponent {
   base: File | null = null;
   anamnesis: File | null = null;
   busy = false;
-  models: {value: string; label: string}[] = [{value: '', label: 'Sem modelo'}];
+  models: {value: string; label: string}[] = []; modelsLoaded = false;
+  hasModels() { return this.models.length > 0; }
   modelId = '';
   /** 'ai': drafts by the AI; 'manual': the AI is never called for this evaluation. */
   aiMode: 'ai' | 'manual' = 'manual';
   async ngOnInit() {
-    try { const list: any[] = await this.api.req('GET', '/models'); this.models = [{value: '', label: 'Sem modelo'}, ...list.filter(m => m.active).map(m => ({value: m.id, label: m.name}))]; } catch {}
+    try { const list: any[] = await this.api.req('GET', '/models'); this.models = list.filter(m => m.active).map(m => ({value: m.id, label: m.name})); if (this.models.length === 1) this.modelId = this.models[0].value; } catch {}
+    this.modelsLoaded = true;
   }
   willGenerate() { return this.aiMode === 'ai' && this.bothFiles() && this.canGenerate(); }
 
-  valid() { return !identityMissing(this.id).length; }
-  missingText() { const m = identityMissing(this.id); return m.length ? 'Falta preencher: ' + m.join(', ') : ''; }
+  valid() { return !identityMissing(this.id).length && (!this.hasModels() || !!this.modelId); }
+  missingText() { const m = [...identityMissing(this.id), ...(this.hasModels() && !this.modelId ? ['modelo do laudo'] : [])]; return m.length ? 'Falta preencher: ' + m.join(', ') : ''; }
   bothFiles() { return !!(this.base && this.anamnesis); }
   pick(kind: 'base' | 'anamnesis', f: File) {
     if (!f.name.toLowerCase().endsWith('.docx')) { this.api.notify('Envie um arquivo .docx (Word).'); return; }

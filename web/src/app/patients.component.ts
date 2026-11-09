@@ -86,7 +86,7 @@ const ORDERS = ['Mais recentes', 'Nome (A–Z)', 'Nome (Z–A)', 'Idade', 'Statu
     </button>
   </div>
   <div class="facts-acts">
-    <button class="btn btn-secondary btn-sm" [disabled]="busy" (click)="sel.last ? reevaluate(sel) : create.emit()"><nl-icon name="plus"/> {{sel.last ? 'Nova reavaliação' : 'Criar avaliação'}}</button>
+    <button class="btn btn-secondary btn-sm" [disabled]="busy" (click)="sel.last?.model_id ? reevaluate(sel) : create.emit()"><nl-icon name="plus"/> {{sel.last ? 'Nova reavaliação' : 'Criar avaliação'}}</button>
   </div>
   <p *ngIf="sel.last" class="caption">A reavaliação já vem com sexo, escolaridade e modelo da última avaliação. Os arquivos são enviados de novo.</p>
 </aside>

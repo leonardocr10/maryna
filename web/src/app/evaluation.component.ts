@@ -169,6 +169,7 @@ export class EvaluationComponent implements OnDestroy {
       .filter(([k]) => !String(id[k] || '').trim()).map(([, l]) => l);
     if (gaps.length) { const d = EvaluationComponent.names(gaps); out.push({key: 'id', level: 'warn', title: 'Identificação incompleta', desc: d[0].toUpperCase() + d.slice(1), action: 'Completar dados', run: toId}); }
     if (this.placeMissing()) out.push({key: 'place', level: 'danger', title: 'Local e data ausentes', desc: 'Obrigatório: escreva o local e a data do fechamento do laudo.', action: 'Completar dados', run: toId});
+    if (this.modelMissing()) out.push({key: 'model', level: 'danger', title: 'Modelo do laudo não escolhido', desc: 'Obrigatório: as instruções da IA e a conferência do arquivo vêm do modelo.', action: 'Escolher modelo', run: toId});
     if (!this.docName('base')) out.push({key: 'base', level: 'danger', title: 'Arquivo base ausente', desc: 'Envie o .docx da estagiária.', action: 'Enviar arquivo', run: toId});
     if (!this.docName('anamnesis')) out.push({key: 'ana', level: 'danger', title: 'Anamnese ausente', desc: 'Envie o .docx da psicóloga.', action: 'Enviar arquivo', run: toId});
     if (this.inspection && this.missing().length) out.push({key: 'missing', level: 'warn', title: this.missing().length === 1 ? 'Seção ausente no arquivo base' : 'Seções ausentes no arquivo base',
@@ -189,6 +190,7 @@ export class EvaluationComponent implements OnDestroy {
       .filter(([k]) => !String(id[k] || '').trim()).map(([, l]) => l);
     if (gaps.length) out.push({level: 'warn', text: 'Identificação incompleta: ' + gaps.join(', ') + '.', step: 0});
     if (this.placeMissing()) out.push({level: 'danger', text: 'Faltam o local e a data do fechamento do laudo.', step: 0});
+    if (this.modelMissing()) out.push({level: 'danger', text: 'Falta escolher o modelo do laudo.', step: 0});
     if (!this.docName('base')) out.push({level: 'danger', text: 'Falta o arquivo base (estagiária).', step: 1});
     if (!this.docName('anamnesis')) out.push({level: 'danger', text: 'Falta a anamnese (psicóloga).', step: 1});
     if (this.inspection && this.missing().length) out.push({level: 'warn', text: 'Seções sem lugar no arquivo base: ' + this.missing().join(', ') + '.', step: 1});
@@ -523,6 +525,8 @@ export class EvaluationComponent implements OnDestroy {
 
   // ---------- report model of this evaluation ----------
   models: {value: string; label: string}[] = [];
+  /** Required whenever a model exists (the AI instructions and the file check come from it). */
+  modelMissing() { return !this.readOnly() && !this.current?.model_id && this.models.some(m => m.value); }
   async loadModels() {
     try { const list: any[] = await this.api.req('GET', '/models'); this.models = [{value: '', label: 'Sem modelo'}, ...list.filter(m => m.active || m.id === this.current?.model_id).map(m => ({value: m.id, label: m.name}))]; } catch {}
   }
@@ -884,6 +888,27 @@ export class EvaluationComponent implements OnDestroy {
   emRedo() { this.rte?.redo(); this.rte?.focus(); }
   async emToggleFull() {
     try { if (document.fullscreenElement) await document.exitFullscreen(); else await (document.querySelector('.em') as HTMLElement | null)?.requestFullscreen(); } catch {}
+  }
+  // Modo automático (extension): before a run the psychologist reviews the Conclusão instruction in the extension's
+  // window. The extension asks for it and sends it back through these window events (strings only; nothing is stored there).
+  @HostListener('window:nlx-instruction-get', ['$event'])
+  async onExtInstructionGet(e: Event) {
+    const key = String((e as CustomEvent).detail || '');
+    if (key !== MANUAL_KEY) return;
+    if (!this.instructions.length) await this.loadInstructions();
+    window.dispatchEvent(new CustomEvent('nlx-instruction', {detail: JSON.stringify({key, text: this.instrDraft[key] ?? this.inherited(this.instruction(key)), editable: !this.readOnly() && !!this.instruction(key)})}));
+  }
+  @HostListener('window:nlx-instruction-set', ['$event'])
+  async onExtInstructionSet(e: Event) {
+    let key = '', text = '';
+    try { ({key, text} = JSON.parse(String((e as CustomEvent).detail || '{}'))); } catch {}
+    let ok = false;
+    if (key === MANUAL_KEY && !this.readOnly()) {
+      if (!this.instructions.length) await this.loadInstructions();
+      this.instrDraft[key] = String(text || '').slice(0, 6000);
+      ok = await this.saveInstruction(key, this.instrDraft[key]);
+    }
+    window.dispatchEvent(new CustomEvent('nlx-instruction-saved', {detail: JSON.stringify({key, ok})}));
   }
   @HostListener('document:fullscreenchange') emFullChange() { this.emFull = !!document.fullscreenElement && !!document.querySelector('.em'); }
   emCanFull() { return !!document.fullscreenEnabled; }

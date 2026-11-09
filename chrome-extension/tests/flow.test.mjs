@@ -137,6 +137,21 @@ test('ChatGPT reports a problem (informar_problema): pauses at once with the rea
   assert.ok(s.pause.actions.includes('retry'));
 });
 
+test('stopped run continues from where it stopped: only sections without a draft run again', async () => {
+  const t = makeEnv({nl: {sections: [section('a', 'A'), section('b', 'B'), section('c', 'C')], draftOutcome: k => k === 'b' ? 'error' : 'received'}});
+  await start(t, {policy: {existing: 'skip', onError: 'next'}});
+  let s = await finish(t);
+  assert.equal(s.status, 'done');
+  assert.deepEqual(s.items.map(i => i.status), ['received', 'error', 'received']);
+  const sends = cmds(t, 'cg.send').length;
+  t.nl.draftOutcome = () => 'received';
+  await t.mgr.continueRun();
+  s = await finish(t);
+  assert.equal(s.status, 'done');
+  assert.deepEqual(s.items.map(i => i.status), ['received', 'received', 'received']);
+  assert.equal(cmds(t, 'cg.send').length, sends + 1, 'only the failed section was sent again');
+});
+
 test('ChatGPT answers without saving: one automatic try in a new conversation, then a clear pause', async () => {
   const t = makeEnv({nl: {sections: [section('a', 'A')], draftOutcome: () => 'never'}});
   await start(t);

@@ -86,7 +86,7 @@
         <section class="card idcard">
           <div class="sec-title"><span class="num">2</span><h2>Modelo e arquivos</h2><span class="caption">{{docCount()}} de 2 enviados</span></div>
           <div class="id-model" title="O arquivo da estagiária é comparado com o modelo, e as instruções da IA do modelo valem nesta avaliação.">
-            <span class="mlabel">Modelo do laudo</span>
+            <span class="mlabel">Modelo do laudo{{models.length > 1 ? ' *' : ''}}</span>
             <nl-filter-select [options]="models" [value]="current.model_id || ''" [disabled]="readOnly()" ariaLabel="Modelo do laudo" placeholder="Sem modelo" (valueChange)="setModel($event)"></nl-filter-select>
           </div>
           <div class="id-files">

@@ -43,7 +43,7 @@ export const TOOLS = [
   {
     name: 'informar_problema',
     title: 'Informar problema na tarefa',
-    description: 'Use em vez de salvar_rascunho quando NÃO for possível redigir a seção com segurança: dados divergentes (por exemplo idade, sexo ou pessoa diferentes entre identificação e anamnese), dados insuficientes ou instrução conflitante. Encerra a tarefa com erro e mostra o motivo à psicóloga no NeuroLaudos IA, que corrige e prepara uma nova tarefa. Não salva texto.',
+    description: 'Use em vez de salvar_rascunho só quando NÃO for possível redigir a seção com segurança: os dados parecem de outra pessoa (nome, idade ou sexo diferentes entre identificação e anamnese), faltam os dados da seção ou a instrução se contradiz. Não use por escolha clínica da psicóloga (instrumento, versão, norma ou faixa etária do teste, quantidade de testes): isso é decisão dela; redija com os dados como estão. Encerra a tarefa com erro e mostra o motivo à psicóloga no NeuroLaudos IA, que corrige e prepara uma nova tarefa. Não salva texto.',
     inputSchema: {
       type: 'object',
       properties: {

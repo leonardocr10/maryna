@@ -66,6 +66,24 @@ export class AutomationManager {
     return state.load();
   }
 
+  /**
+   * A stopped or finished run goes on from where it stopped: only the sections without a draft (error, expired, not
+   * reached, skipped by the person) run again; the ones already received are kept. New task and new conversation.
+   */
+  async continueRun(nlTabId = null) {
+    const {state} = this.env;
+    const s = await state.load();
+    if (!s || !(s.status === RUN.stopped || s.status === RUN.done)) return s;
+    const again = s.items.map((it, i) => (!FINAL_ITEM.includes(it.status) || (it.status === 'skipped' && it.reason === 'Pulada por você')) ? i : -1).filter(i => i >= 0);
+    if (!again.length) return s;
+    for (const i of again) await state.setItem(i, {status: 'pending', step: 'navigate', error: null, reason: null, sentAt: null, attempts: 0, chatDone: false, noSaveRetries: 0, pluginManual: false, authNotified: false});
+    this.commands.clear(); this.lastDiag = null;
+    await state.setRun({status: RUN.running, pause: null, finishedAt: null, chatPluginOk: false, current: -1, ...(nlTabId ? {nlTabId} : {})});
+    await state.log(`Continuando de onde parou: ${again.length} ${again.length === 1 ? 'seção' : 'seções'} sem rascunho; as recebidas ficam como estão.`);
+    this.kick();
+    return state.load();
+  }
+
   async stop() { await this.env.state.stop(); await this.env.state.log('Execução parada. Os rascunhos já recebidos ficam no NeuroLaudos IA.'); }
 
   /** Starts the loop when it is not running; returns its promise (awaited in tests). */

@@ -319,7 +319,7 @@ export function mountChatGpt(app, deps, cfg = chatgptConfig()) {
           codigo: t.code, secao: nameOf(t.section_key), instrucao_de_redacao: m.instruction, formato: m.format,
           rotulo_dos_dados: m.dataLabel, dados_da_secao: m.data, dados_pessoais_trocados_por_marcadores: m.hidden,
           imagens_anexadas: images.length, ...(images.length ? {sobre_as_imagens: CHATGPT_IMAGES_NOTE} : {}), expira_em: t.expires_at,
-          proximo_passo: 'Redija o texto completo da seção seguindo a instrução e chame salvar_rascunho com este código, o texto final e um id_operacao novo. Se não for possível redigir com segurança (dados divergentes ou insuficientes), chame informar_problema em vez de salvar.',
+          proximo_passo: 'Redija o texto completo da seção seguindo a instrução e chame salvar_rascunho com este código, o texto final e um id_operacao novo. Se não for possível redigir com segurança (dados que parecem de outra pessoa ou dados da seção ausentes), chame informar_problema em vez de salvar. Escolha de instrumento, versão, norma ou faixa etária do teste é decisão da psicóloga: não bloqueie por isso.',
           ...(images.length ? {[IMAGES]: images} : {}),
         };
       }

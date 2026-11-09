@@ -118,6 +118,15 @@ test('rate limit pauses the run', async () => {
   assert.equal(s.pause.code, 'cg_rate_limit');
 });
 
+test('ChatGPT reports a problem (informar_problema): pauses at once with the reason, no automatic retry', async () => {
+  const t = makeEnv({nl: {sections: [section('a', 'A')], draftOutcome: () => 'problem'}});
+  await start(t);
+  const s = await finish(t);
+  assert.equal(s.pause.code, 'cg_diverge');
+  assert.equal(cmds(t, 'cg.send').length, 1);
+  assert.ok(s.pause.actions.includes('retry'));
+});
+
 test('ChatGPT answers without saving: one automatic try in a new conversation, then a clear pause', async () => {
   const t = makeEnv({nl: {sections: [section('a', 'A')], draftOutcome: () => 'never'}});
   await start(t);

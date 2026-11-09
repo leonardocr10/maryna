@@ -906,7 +906,7 @@ test('ChatGPT plugin: OAuth with PKCE, scoped MCP tools, isolation per account a
   ({verifier, back} = await authorize(tokens.psy));
   const tok = await (await exchange(back, verifier)).json();
   assert.equal((await mcp(tok.access_token, 'initialize', {protocolVersion: '2025-11-25'})).data.result.protocolVersion, '2025-11-25');
-  assert.equal((await mcp(tok.access_token, 'tools/list', {})).data.result.tools.length, 3);
+  assert.equal((await mcp(tok.access_token, 'tools/list', {})).data.result.tools.length, 4);
   // refresh rotates: the old refresh token stops working
   const refreshed = await (await token({grant_type: 'refresh_token', refresh_token: tok.refresh_token})).json();
   assert.ok(refreshed.access_token);
@@ -953,6 +953,15 @@ test('ChatGPT plugin: OAuth with PKCE, scoped MCP tools, isolation per account a
   assert.ok((await anamnesis()).startsWith('## Motivo'));
   const hist = await api('GET', `/api/evaluations/${id}/sections/anamnesis/history`, {token: tokens.psy});
   assert.ok(JSON.stringify(hist.data).includes('Anamnese revisada pela psicóloga'), 'the replaced text stays in the versions');
+
+  // ChatGPT cannot write safely: it reports the reason instead of saving; the task closes with the reason, nothing is saved
+  const t3 = await api('POST', `/api/evaluations/${id}/chatgpt-tasks`, {token: tokens.psy, body: {mode: 'mcp'}});
+  const rep = (await call('informar_problema', {codigo: t3.data.code, motivo: 'dados_divergentes', detalhe: 'Idade da identificação difere da anamnese (sintético).'})).data.result.structuredContent;
+  assert.equal(rep.status, 'error');
+  const cur3 = (await api('GET', `/api/evaluations/${id}/chatgpt-tasks/current`, {token: tokens.psy})).data;
+  assert.equal(cur3.status, 'error'); assert.equal(cur3.problem, 'dados_divergentes'); assert.match(cur3.error, /Idade/);
+  assert.equal((await call('informar_problema', {codigo: t3.data.code, motivo: 'outro', detalhe: 'de novo'})).data.result.isError, true, 'a closed task cannot be reported again');
+  assert.ok((await anamnesis()).startsWith('## Motivo'), 'the section text is untouched');
 
   assert.equal(aiRequests.length, calls, 'no API call in the plugin flow');
   assert.equal((await api('DELETE', '/api/chatgpt/connection', {token: tokens.psy})).status, 200);

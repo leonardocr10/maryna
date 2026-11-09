@@ -25,7 +25,7 @@ import {TopbarService} from './topbar.service';
 import {ReadingService} from './ui/reading-mode.component';
 import {WheelZoom} from './wheel-zoom.service';
 import {Narrator, highlight, segmentsOf} from './ui/reading-narrator';
-import {AI_MODE_CONFIRM, CONCLUSION_GUIDANCE, HAND_ONLY, niceTitle, OPTIONAL_SECTIONS, PERCEPTION_MAX_AGE, SECTIONS, SECTION_STATE, STATUS, SectionState, ageText, ageYears, brDate, brl, int, words} from './shared';
+import {AI_MODE_CONFIRM, CONCLUSION_GUIDANCE, HAND_ONLY, niceTitle, OPTIONAL_SECTIONS, PERCEPTION_MAX_AGE, SECTIONS, SECTION_STATE, STATUS, SectionState, ageText, ageYears, brDate, brl, int, sectionIcon, words} from './shared';
 /** Interpretation sections: written from their own tables in the base document. */
 const INTERPRETATION_SLOTS = ['inteligencia', 'percepcao', 'memoria', 'atencao', 'funcoes_executivas', 'comportamento', 'personalidade', 'comportamento_diva'];
 
@@ -74,7 +74,7 @@ export class EvaluationComponent implements OnDestroy {
   @Input() autoGenerate = false;
   @Input() set id(v: string) { if (v && v !== this.evaluationId) { this.evaluationId = v; this.load(true); } }
 
-  MANUAL_KEY = MANUAL_KEY; DEMAND_KEY = DEMAND_KEY; SECTIONS = SECTIONS; SECTION_STATE = SECTION_STATE; STATUS = STATUS; brDate = brDate; brl = brl; int = int; words = words;
+  MANUAL_KEY = MANUAL_KEY; DEMAND_KEY = DEMAND_KEY; SECTIONS = SECTIONS; SECTION_STATE = SECTION_STATE; STATUS = STATUS; brDate = brDate; brl = brl; sectionIcon = sectionIcon; int = int; words = words;
   steps = ['Identificação e arquivos', 'Arquivos', 'Gerar com IA', 'Conferir e baixar'];
   /** Short step names for the compact indicator under the patient name. */
   shortStep(i: number) { return ['Identificação', 'Arquivos', 'Gerar com IA', 'Conferir e baixar'][i]; }

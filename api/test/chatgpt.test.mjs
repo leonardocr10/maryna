@@ -106,7 +106,7 @@ test('MCP protocol: initialize, list, scoped calls, readable tool errors', async
   assert.match(init.result.instructions.slice(0, 512), /obter_tarefa_pendente[\s\S]*salvar_rascunho/);
   assert.equal(await handleMessage({jsonrpc: '2.0', method: 'notifications/initialized'}, ctx), null);
   const list = await handleMessage({jsonrpc: '2.0', id: 2, method: 'tools/list'}, ctx);
-  assert.deepEqual(list.result.tools.map(t => t.name), ['obter_tarefa_pendente', 'salvar_rascunho', 'consultar_status_tarefa']);
+  assert.deepEqual(list.result.tools.map(t => t.name), ['obter_tarefa_pendente', 'salvar_rascunho', 'informar_problema', 'consultar_status_tarefa']);
   assert.ok(list.result.tools.every(t => !('scope' in t) && t.annotations.openWorldHint === false));
   assert.equal(TOOLS.find(t => t.name === 'salvar_rascunho').annotations.readOnlyHint, false);
   // the first version's names still work (a plugin whose tool list was not refreshed)

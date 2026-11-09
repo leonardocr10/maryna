@@ -25,6 +25,10 @@ export const ERRORS = {
   cg_plugin_select: {msg: 'Não foi possível confirmar que o plugin NeuroLaudos IA foi selecionado.', hint: 'Selecione o plugin à mão no ChatGPT (@ e NeuroLaudos IA) e clique em "Já selecionei o plugin".'},
   cg_insert: {msg: 'O comando não ficou no campo de mensagem.', hint: 'Cole o comando à mão (Copiar comando) e envie; depois clique em Continuar.'},
   cg_send: {msg: 'A mensagem não foi enviada.', hint: 'Envie à mão no ChatGPT e clique em Continuar.'},
+  cg_diverge: {msg: 'O ChatGPT encontrou dados divergentes e não redigiu a seção.', hint: 'Ex.: idade, sexo ou pessoa diferentes entre a identificação e a anamnese. Veja o motivo em "Mostrar detalhes da tarefa" (janela da seção), corrija no NeuroLaudos IA e clique em Tentar de novo, ou Pular seção.'},
+  cg_insufficient: {msg: 'O ChatGPT achou os dados insuficientes e não redigiu a seção.', hint: 'Veja o motivo em "Mostrar detalhes da tarefa" (janela da seção), corrija no NeuroLaudos IA e clique em Tentar de novo, ou Pular seção.'},
+  cg_conflict: {msg: 'O ChatGPT viu uma instrução conflitante e não redigiu a seção.', hint: 'Veja o motivo em "Mostrar detalhes da tarefa" (janela da seção), corrija no NeuroLaudos IA e clique em Tentar de novo, ou Pular seção.'},
+  cg_cannot: {msg: 'O ChatGPT informou que não pôde redigir a seção.', hint: 'Veja o motivo em "Mostrar detalhes da tarefa" (janela da seção), corrija no NeuroLaudos IA e clique em Tentar de novo, ou Pular seção.'},
   cg_no_save: {msg: 'O ChatGPT respondeu, mas não salvou o rascunho.', hint: 'Ele pode ter feito uma pergunta ou visto um problema nos dados (ex.: idade ou sexo diferentes entre identificação e anamnese). Leia a resposta no ChatGPT, corrija no NeuroLaudos IA se for o caso e clique em Tentar de novo, ou Pular seção.'},
   cg_incomplete: {msg: 'A resposta do ChatGPT não terminou no tempo limite.', hint: 'Veja a conversa; quando terminar, clique em Continuar.'},
   cg_rate_limit: {msg: 'O ChatGPT avisou que o limite de uso foi atingido.', hint: 'Espere o limite do seu plano liberar e clique em Continuar.'},
@@ -53,4 +57,4 @@ export function describe(err, step) {
 }
 
 /** Errors after which a retry needs the person (never automatic). */
-export const NEEDS_PERSON = ['nl_not_logged', 'cg_not_logged', 'cg_plugin_missing', 'cg_plugin_select', 'cg_rate_limit', 'nl_mcp_off', 'nl_readonly', 'nl_changed', 'nl_selector', 'nl_not_received', 'cg_no_save', 'cg_incomplete', 'busy'];
+export const NEEDS_PERSON = ['nl_not_logged', 'cg_not_logged', 'cg_plugin_missing', 'cg_plugin_select', 'cg_rate_limit', 'nl_mcp_off', 'nl_readonly', 'nl_changed', 'nl_selector', 'nl_not_received', 'cg_no_save', 'cg_diverge', 'cg_insufficient', 'cg_conflict', 'cg_cannot', 'cg_incomplete', 'busy'];

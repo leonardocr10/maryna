@@ -25,7 +25,7 @@ export function makeEnv(opts = {}) {
   const cg = {plugin: 'ok', auth: 0, rateLimit: false, sendFails: false, loggedIn: true, ...(opts.cg || {})};
   let openModal = null, lastSent = null, chipManual = false, authLeft = 0;
 
-  const view = key => { const t = nl.tasks[key]; return t ? {ready: true, mcp: nl.mcp, method: 'mcp', busy: false, code: t.code, mode: t.mode || 'mcp', status: t.status, expires: t.expires || new Date(clock + 864e5).toISOString(), needsConfirmation: !!t.needsConfirmation, applied: t.status === 'draft_received' && !t.needsConfirmation} : {ready: true, mcp: nl.mcp, method: 'mcp', busy: false, code: null, mode: null, status: 'none', expires: null, needsConfirmation: false, applied: false}; };
+  const view = key => { const t = nl.tasks[key]; return t ? {ready: true, mcp: nl.mcp, method: 'mcp', busy: false, code: t.code, mode: t.mode || 'mcp', status: t.status, problem: t.problem || null, expires: t.expires || new Date(clock + 864e5).toISOString(), needsConfirmation: !!t.needsConfirmation, applied: t.status === 'draft_received' && !t.needsConfirmation} : {ready: true, mcp: nl.mcp, method: 'mcp', busy: false, code: null, mode: null, status: 'none', expires: null, needsConfirmation: false, applied: false}; };
 
   function nlHandle(msg) {
     if (msg.cmd !== 'nl.scan' && msg.evaluationId && msg.evaluationId !== nl.evaluationId) return {ok: false, code: 'nl_changed'};
@@ -50,6 +50,7 @@ export function makeEnv(opts = {}) {
     if (out === 'received') nl.tasks[key].status = 'draft_received';
     if (out === 'needs_review') Object.assign(nl.tasks[key], {status: 'draft_received', needsConfirmation: true});
     if (out === 'error') nl.tasks[key].status = 'error';
+    if (out === 'problem') Object.assign(nl.tasks[key], {status: 'error', problem: 'dados_divergentes'});
   }
   function cgHandle(msg) {
     switch (msg.cmd) {

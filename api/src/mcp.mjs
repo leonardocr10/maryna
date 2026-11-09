@@ -7,6 +7,8 @@ export const PROTOCOL_VERSIONS = ['2026-07-28', '2025-11-25', '2025-06-18', '202
 /** Key of a tool result holding images ([{mimeType, data}]): sent as MCP image content, not inside the JSON text. */
 export const IMAGES = '__imagens';
 const oauth = scopes => [{type: 'oauth2', scopes}];
+/** Why ChatGPT could not write a section (informar_problema); the extension maps each one to a message. */
+export const PROBLEM_REASONS = ['dados_divergentes', 'dados_insuficientes', 'instrucao_conflitante', 'outro'];
 const code = {type: 'string', description: 'Código da tarefa mostrado no NeuroLaudos IA, no formato NL-XXXX-XXXX.'};
 
 export const TOOLS = [
@@ -32,6 +34,24 @@ export const TOOLS = [
         id_operacao: {type: 'string', description: 'Identificador único desta gravação (8 a 100 caracteres: letras, números, ponto, hífen, dois-pontos). Repetir o mesmo id não grava duas vezes.'},
       },
       required: ['codigo', 'texto', 'id_operacao'], additionalProperties: false,
+    },
+    annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false},
+    securitySchemes: oauth([SCOPES.write]),
+    _meta: {securitySchemes: oauth([SCOPES.write])},
+    scope: SCOPES.write,
+  },
+  {
+    name: 'informar_problema',
+    title: 'Informar problema na tarefa',
+    description: 'Use em vez de salvar_rascunho quando NÃO for possível redigir a seção com segurança: dados divergentes (por exemplo idade, sexo ou pessoa diferentes entre identificação e anamnese), dados insuficientes ou instrução conflitante. Encerra a tarefa com erro e mostra o motivo à psicóloga no NeuroLaudos IA, que corrige e prepara uma nova tarefa. Não salva texto.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        codigo: code,
+        motivo: {type: 'string', enum: PROBLEM_REASONS, description: 'dados_divergentes, dados_insuficientes, instrucao_conflitante ou outro.'},
+        detalhe: {type: 'string', description: 'Explicação curta (até 500 caracteres) do que impede a redação, usando os marcadores ([PACIENTE] etc.) em vez de dados pessoais.'},
+      },
+      required: ['codigo', 'motivo', 'detalhe'], additionalProperties: false,
     },
     annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false},
     securitySchemes: oauth([SCOPES.write]),

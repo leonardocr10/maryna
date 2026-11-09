@@ -96,3 +96,9 @@ export const int = (v: number) => (v || 0).toLocaleString('pt-BR');
 
 /** "COMPORTAMENTO SOCIAL:" -> "Comportamento social"; mixed-case titles keep their case (same as api/src/models.mjs). */
 export function niceTitle(t: string) { const s = String(t || '').replace(/\s*:\s*$/, '').replace(/\s+/g, ' ').trim(); return s === s.toUpperCase() ? s.charAt(0) + s.slice(1).toLowerCase() : s; }
+
+/** Icon of a report section, by its name (same set as the icon sheet: brain, eye, layers, target, gear, users, flag...). */
+const SECTION_ICONS: [RegExp, string][] = [[/identifica|demanda/, 'filetext'], [/anamnese/, 'clipempty'], [/intelect|habilidade|cogni/, 'brain'], [/percep|visu/, 'eye'],
+  [/memori|aprendiz/, 'layers'], [/atenc/, 'target'], [/execut/, 'gear'], [/comport|social|emoc/, 'users'], [/personalidade|fatorial/, 'user'], [/linguagem/, 'chat'],
+  [/hipotese|diagnost/, 'edit'], [/conclus/, 'flag'], [/recomend|indica|encaminh|sugest/, 'clipcheck'], [/instrumento|resultado/, 'table'], [/fonte/, 'book'], [/procedimento/, 'list']];
+export function sectionIcon(name: string) { const n = fold(name || ''); return (SECTION_ICONS.find(([r]) => r.test(n)) || [null, 'doc'])[1] as string; }

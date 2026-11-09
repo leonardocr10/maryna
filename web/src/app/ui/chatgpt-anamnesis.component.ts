@@ -6,7 +6,7 @@ import {ConfirmService} from '../confirm.service';
 import {IconComponent} from './icon.component';
 
 type Method = 'api' | 'mcp' | 'paste';
-interface Task {id: string; code: string; mode: 'mcp' | 'paste'; section_key: string; include_images?: boolean; status: string; status_label: string; expires_at: string; applied: boolean; needs_confirmation: boolean; received_text: string | null; existing_approved: boolean; error: string | null; command?: string; text?: string | null; hidden?: number}
+interface Task {id: string; code: string; mode: 'mcp' | 'paste'; section_key: string; include_images?: boolean; status: string; status_label: string; expires_at: string; applied: boolean; needs_confirmation: boolean; received_text: string | null; existing_approved: boolean; error: string | null; problem?: string | null; command?: string; text?: string | null; hidden?: number}
 const OPEN = ['pending', 'processing'];
 const CHATGPT = 'https://chatgpt.com/';
 
@@ -31,7 +31,7 @@ const newOpId = () => 'op-' + (crypto.randomUUID?.() || Math.random().toString(3
   template: `
 <div class="cg" role="region" [attr.aria-label]="'Geração: ' + sectionName" (nlrefresh)="refresh()"
   data-nl-cg [attr.data-nl-section]="sectionKey" [attr.data-nl-ready]="ready ? '1' : null" [attr.data-nl-mcp]="cfg?.mcp_enabled ? '1' : '0'" [attr.data-nl-method]="method" [attr.data-nl-busy]="busy ? '1' : null"
-  [attr.data-nl-task-code]="task?.code || null" [attr.data-nl-task-mode]="task?.mode || null" [attr.data-nl-task-status]="task?.status || 'none'" [attr.data-nl-task-expires]="task?.expires_at || null" [attr.data-nl-needs-confirmation]="task?.needs_confirmation ? '1' : null" [attr.data-nl-applied]="task?.applied ? '1' : null">
+  [attr.data-nl-task-code]="task?.code || null" [attr.data-nl-task-mode]="task?.mode || null" [attr.data-nl-task-status]="task?.status || 'none'" [attr.data-nl-task-expires]="task?.expires_at || null" [attr.data-nl-task-problem]="task?.problem || null" [attr.data-nl-needs-confirmation]="task?.needs_confirmation ? '1' : null" [attr.data-nl-applied]="task?.applied ? '1' : null">
   <div class="cg-head"><nl-icon name="spark"/><b>Gerar {{sectionName}}</b>
     <span *ngIf="task" [class]="'badge ' + badge()">{{task.status_label}}</span>
     <button class="x" data-nl-action="close" (click)="closed.emit()" aria-label="Fechar">×</button></div>
@@ -51,7 +51,7 @@ const newOpId = () => 'op-' + (crypto.randomUUID?.() || Math.random().toString(3
       <button class="btn btn-secondary btn-sm" [disabled]="busy" (click)="discard()">Descartar rascunho</button></div>
   </div></div>
   <div *ngIf="task?.applied && task?.status!=='reviewed' && !task?.needs_confirmation" class="alert tip small" role="status"><nl-icon name="checkc"/><div><p>Rascunho do ChatGPT salvo nesta seção. Revise, edite se precisar e aprove.</p></div></div>
-  <div *ngIf="task?.status==='error'" class="alert danger small"><nl-icon name="alert"/><div><p>{{task?.error || 'A tarefa terminou com erro.'}} Prepare uma nova.</p></div></div>
+  <div *ngIf="task?.status==='error'" class="alert danger small"><nl-icon name="alert"/><div><p><b *ngIf="task?.problem">{{problemLabel(task?.problem || "")}}</b> {{task?.error || 'A tarefa terminou com erro.'}}</p><p>Corrija o que for preciso e prepare uma nova tarefa.</p></div></div>
 
   <!-- Current API generation (unchanged) -->
   <div *ngIf="method==='api' && apiEnabled" class="pane">
@@ -206,6 +206,7 @@ export class ChatgptAnamnesisComponent implements OnInit, OnDestroy {
   }
   mcpTask() { return this.task?.mode === 'mcp' && OPEN.includes(this.task.status) ? this.task : null; }
   pasteTask() { return this.task?.mode === 'paste' && OPEN.includes(this.task.status) ? this.task : null; }
+  problemLabel(p: string) { return ({dados_divergentes: 'O ChatGPT viu dados divergentes:', dados_insuficientes: 'O ChatGPT achou os dados insuficientes:', instrucao_conflitante: 'O ChatGPT viu uma instrução conflitante:'} as Record<string, string>)[p] || 'O ChatGPT não pôde redigir:'; }
   badge() { const s = this.task?.status || ''; return s === 'draft_received' || s === 'reviewed' ? 'ok' : s === 'error' ? 'danger' : 'warn'; }
 
   async prepare(mode: 'mcp' | 'paste') {

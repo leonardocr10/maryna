@@ -311,7 +311,7 @@ export class AutomationManager {
       let r;
       try { r = await this.nl(s, {cmd: 'nl.waitStatus', key: it.key, code: it.code, chunkMs: Math.min(5000, ms)}, Math.min(5000, ms) + 10000); } catch { return false; }
       const st = r?.modal?.code === it.code ? r.modal.status : null;
-      if (st === 'draft_received' || st === 'reviewed' || (!received && st === 'processing')) return true;
+      if (st === 'draft_received' || st === 'reviewed' || st === 'error' || (!received && st === 'processing')) return true;
     } while (this.env.now() < end);
     return false;
   }
@@ -325,6 +325,9 @@ export class AutomationManager {
       const cur = await state.load();
       if (!cur || cur.status !== RUN.running) return 'interrupted';
       const r = await this.cg(cur, {cmd: 'cg.wait', chunkMs: LIMITS.chunk}, LIMITS.chunk + 10000);
+      // Diagnosis in the run log ("Ver detalhes"): what the ChatGPT page looked like, only when it changes. Never text of the conversation.
+      const seen = `${r.state}${r.stalled ? ' (sem mudança)' : ''} · ${String(r.diag || '').replace(/ parado-há=\d+s/, '')}`;
+      if (seen !== this.lastDiag) { this.lastDiag = seen; await state.log(`${it.name}: ChatGPT ${r.state}${r.stalled ? ' (sem mudança)' : ''}${r.diag ? ' · ' + r.diag : ''}`); }
       if (r.state === 'done') { await state.setItem(idx, {chatDone: true}); return; }
       // The draft may arrive before ChatGPT's page looks finished: NeuroLaudos IA decides.
       if (await this.taskMoved(cur, it, 1000, true)) return;
@@ -362,6 +365,7 @@ export class AutomationManager {
       if (o.kind === 'received') { await state.setItem(idx, {status: 'received'}); await state.log(`${it.name}: rascunho recebido no NeuroLaudos IA.`); return; }
       if (o.kind === 'needs_review') { await state.setItem(idx, {status: 'needs_review', reason: 'A seção já tinha texto: confirme a substituição no NeuroLaudos IA'}); await state.log(`${it.name}: rascunho recebido; revisão necessária (substituição não feita).`); return; }
       if (o.kind === 'expired') throw new AutoError('nl_expired', 'confirm');
+      if (o.kind === 'problem') throw new AutoError(PROBLEM_CODE[o.detail] || 'cg_cannot', 'confirm');
       if (o.kind === 'failed') throw new AutoError('nl_task_failed', 'confirm', o.detail);
       if (o.kind === 'other') throw new AutoError('nl_changed', 'confirm', 'outra tarefa aberta na seção');
     }
@@ -377,5 +381,7 @@ export class AutomationManager {
 
 /** After ChatGPT finished: how long to wait for the draft, and automatic tries in a new conversation. */
 const NO_SAVE_SECONDS = 30, NO_SAVE_RETRIES = 1;
+/** Reason given by ChatGPT (informar_problema) -> error shown in the panel. */
+const PROBLEM_CODE = {dados_divergentes: 'cg_diverge', dados_insuficientes: 'cg_insufficient', instrucao_conflitante: 'cg_conflict', outro: 'cg_cannot'};
 const RUN_STEPS = ['navigate', 'open_modal', 'prepare', 'command', 'chatgpt_new', 'plugin', 'insert', 'send', 'wait_chatgpt', 'confirm', 'close'];
 const STEP_FN = {navigate: 'stepNavigate', open_modal: 'stepOpenModal', prepare: 'stepPrepare', command: 'stepCommand', chatgpt_new: 'stepChatNew', plugin: 'stepPlugin', insert: 'stepInsert', send: 'stepSend', wait_chatgpt: 'stepWaitChat', confirm: 'stepConfirm', close: 'stepClose'};

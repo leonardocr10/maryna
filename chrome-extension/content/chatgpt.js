@@ -190,12 +190,19 @@
     return lastRole() === 'assistant' && !authButtons() && now - sigAt >= STALL_MS;
   }
 
+  /** What the page looks like, for the run log (no text of the conversation): roles of the last turns, stop button, quiet time. */
+  function diag() {
+    const roles = allMsgs().slice(-3).map(m => m.getAttribute('data-message-author-role')).join('>') || 'nenhum';
+    const anyStop = !!first(CG.stop), boxStop = streaming();
+    return `turnos=${allMsgs().length} últimos=${roles} parar=${boxStop ? 'caixa' : anyStop ? 'fora-da-caixa' : 'não'} autorização=${authButtons() ? 'sim' : 'não'} parado-há=${Math.round((Date.now() - sigAt) / 1000)}s`;
+  }
+
   /** Waits up to chunkMs. Returns done | auth | streaming | waiting | rate_limit | error. */
   async function waitAnswer(chunkMs) {
     const end = Date.now() + chunkMs;
     for (;;) {
       const st = await waitFor(() => { const s = snapshot(); return ['rate_limit', 'error', 'auth', 'maybe_done', 'logged_out'].includes(s) ? s : null; }, {timeout: Math.max(500, end - Date.now()), interval: 1000});
-      if (!st) return stalled() ? {ok: true, state: 'done', stalled: true} : {ok: true, state: streaming() ? 'streaming' : 'waiting'};
+      if (!st) return stalled() ? {ok: true, state: 'done', stalled: true, diag: diag()} : {ok: true, state: streaming() ? 'streaming' : 'waiting', diag: diag()};
       if (st === 'logged_out') return fail('cg_not_logged');
       if (st === 'rate_limit' || st === 'error') return {ok: true, state: st, detail: st};
       if (st === 'auth') {
@@ -207,7 +214,7 @@
       // Finished only when nothing changes for a while and no stop button came back.
       await waitQuiet({quietMs: 2500, timeout: Math.max(3000, Math.min(15000, end - Date.now()))});
       const again = snapshot();
-      if (again === 'maybe_done') return {ok: true, state: 'done'};
+      if (again === 'maybe_done') return {ok: true, state: 'done', diag: diag()};
       if (Date.now() >= end) return {ok: true, state: again === 'auth' ? 'auth' : 'streaming'};
     }
   }

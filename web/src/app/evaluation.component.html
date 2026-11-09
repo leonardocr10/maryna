@@ -258,7 +258,7 @@
         <!-- A section missing from the base document can still be drafted by hand; its text just does not go into the Word file -->
         <section *ngIf="cur()===s.id" class="card editor" [attr.data-nl-editor]="s.id">
           <div class="edhead">
-            <span class="ei"><nl-icon name="doc"/></span>
+            <span class="ei"><nl-icon [name]="sectionIcon(s.name)"/></span>
             <div class="edt"><h2>{{s.name}}</h2><small>Seção {{(i+1).toString().padStart(2,'0')}} · {{sourceLabel(s.id)}}</small></div>
             <!-- Status and the section's actions, side by side in the header (they wrap to a second line when there is no room) -->
             <div class="edacts-h" role="group" aria-label="Ações da seção">

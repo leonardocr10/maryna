@@ -77,7 +77,7 @@
     if (!el) return null;
     if (el.hasAttribute('data-nl-cg')) return {
       ready: el.getAttribute('data-nl-ready') === '1', mcp: el.getAttribute('data-nl-mcp') === '1', method: el.getAttribute('data-nl-method'), busy: el.getAttribute('data-nl-busy') === '1',
-      code: el.getAttribute('data-nl-task-code') || null, mode: el.getAttribute('data-nl-task-mode') || null, status: el.getAttribute('data-nl-task-status') || 'none',
+      code: el.getAttribute('data-nl-task-code') || null, mode: el.getAttribute('data-nl-task-mode') || null, status: el.getAttribute('data-nl-task-status') || 'none', problem: el.getAttribute('data-nl-task-problem') || null,
       expires: el.getAttribute('data-nl-task-expires') || null, needsConfirmation: el.getAttribute('data-nl-needs-confirmation') === '1', applied: el.getAttribute('data-nl-applied') === '1',
     };
     // Compatibility reading (no data-nl-*): badge label, code box and radio state.
@@ -249,7 +249,7 @@
       panel.title = 'NeuroLaudos IA — Modo automático';
       const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
       panel.src = chrome.runtime.getURL(`ui/panel.html?tab=${tabId}&theme=${theme}`);
-      panel.setAttribute('allow', '');
+      panel.setAttribute('allow', 'clipboard-write');   // "Copiar registro" in the details
       document.body.appendChild(panel);
     }
     if (panel) panel.hidden = !panelOpen;

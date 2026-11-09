@@ -11,7 +11,7 @@ import {randomUUID} from 'node:crypto';
 import {chatgptCommand, CHATGPT_IMAGES_NOTE} from './prompts.mjs';
 import {TASK_MODES, TASK_STATUS, OPEN_STATUSES, newTaskCode, normalizeCode, validOpId, normalizeAnswer, answerProblems, answerShape, pastePackage, taskStatus} from './chatgpt.mjs';
 import {SCOPES, ACCESS_TTL_S, REFRESH_TTL_S, CODE_TTL_S, REQUEST_TTL_S, newSecret, hashSecret, pkceOk, publicBase, mcpResource, protectedResourceMetadata, authServerMetadata, challenge, redirectHosts, validRedirect, grantedScopes, redirectWith} from './oauth.mjs';
-import {handleMessage, ToolError, IMAGES} from './mcp.mjs';
+import {handleMessage, ToolError, IMAGES, PROBLEM_REASONS} from './mcp.mjs';
 
 const FROM_FILE = 'from_file';
 const later = seconds => new Date(Date.now() + seconds * 1000).toISOString();
@@ -53,7 +53,7 @@ export function mountChatGpt(app, deps, cfg = chatgptConfig()) {
       id: t.id, code: t.code, mode: t.mode, section_key: t.section_key, section_name: nameOf(t.section_key), include_images: !!t.include_images, status, status_label: TASK_STATUS[status], expires_at: t.expires_at, created_at: t.created_at,
       fetched_at: t.fetched_at, received_at: t.received_at, received_via: t.received_via, applied: !!t.applied_at,
       needs_confirmation: t.status === 'draft_received' && !t.applied_at, received_text: t.status === 'draft_received' && !t.applied_at ? t.received_text : null,
-      existing_approved: s?.status === 'approved', error: t.error,
+      existing_approved: s?.status === 'approved', error: t.error, problem: t.problem || null,
       ...(t.mode === 'mcp' ? {command: chatgptCommand(t.code, t.section_key, nameOf(t.section_key))} : {}),
     };
   }
@@ -319,9 +319,17 @@ export function mountChatGpt(app, deps, cfg = chatgptConfig()) {
           codigo: t.code, secao: nameOf(t.section_key), instrucao_de_redacao: m.instruction, formato: m.format,
           rotulo_dos_dados: m.dataLabel, dados_da_secao: m.data, dados_pessoais_trocados_por_marcadores: m.hidden,
           imagens_anexadas: images.length, ...(images.length ? {sobre_as_imagens: CHATGPT_IMAGES_NOTE} : {}), expira_em: t.expires_at,
-          proximo_passo: 'Redija o texto completo da seção seguindo a instrução e chame salvar_rascunho com este código, o texto final e um id_operacao novo.',
+          proximo_passo: 'Redija o texto completo da seção seguindo a instrução e chame salvar_rascunho com este código, o texto final e um id_operacao novo. Se não for possível redigir com segurança (dados divergentes ou insuficientes), chame informar_problema em vez de salvar.',
           ...(images.length ? {[IMAGES]: images} : {}),
         };
+      }
+      if (name === 'informar_problema') {
+        const motivo = PROBLEM_REASONS.includes(args.motivo) ? args.motivo : 'outro';
+        const detalhe = String(args.detalhe || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+        if (!OPEN_STATUSES.includes(t.status)) throw new ToolError('Esta tarefa não está mais aberta (' + TASK_STATUS[t.status] + ').');
+        await pool.execute("UPDATE chatgpt_tasks SET status='error',problem=?,error=? WHERE id=? AND status IN ('pending','processing')", [motivo, detalhe || null, t.id]);
+        await audit(req, 'chatgpt_task_problem_' + motivo, t.evaluation_id);
+        return {codigo: t.code, secao: nameOf(t.section_key), status: 'error', mensagem: 'Problema registrado. A psicóloga vê o motivo no NeuroLaudos IA, corrige e prepara uma nova tarefa. Nenhum texto foi salvo.'};
       }
       if (name === 'salvar_rascunho') {
         const r = await saveAnswer(req, t, args.texto, args.id_operacao, 'mcp');

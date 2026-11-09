@@ -323,7 +323,7 @@ function renderRun() {
     </section>
   </div>
   ${skipped.length && showDetails ? `<details open class="card"><summary>${skipped.length} ${skipped.length === 1 ? 'seção ignorada' : 'seções ignoradas'}</summary><ul class="checks" style="margin-left:0">${skipped.map(i => `<li>${esc(i.name)} — ${esc(i.reason || KIND[i.kind] || '')}</li>`).join('')}</ul></details>` : ''}
-  ${showDetails ? `<div class="card"><b style="font-size:12.5px">Registro</b><ul class="log">${(run.log || []).slice().reverse().map(l => `<li>${esc(new Date(l.t).toLocaleTimeString('pt-BR'))} ${esc(l.msg)}</li>`).join('')}</ul></div>` : ''}`;
+  ${showDetails ? `<div class="card"><div class="row"><b style="font-size:12.5px">Registro</b><span class="grow"></span><button class="btn sm" id="copylog" type="button">Copiar registro</button></div><ul class="log">${(run.log || []).slice().reverse().map(l => `<li>${esc(new Date(l.t).toLocaleTimeString('pt-BR'))} ${esc(l.msg)}</li>`).join('')}</ul></div>` : ''}`;
   ft.innerHTML = `
     ${active ? '' : '<button class="btn" id="clear">Limpar dados</button>'}
     <span class="grow"></span>
@@ -337,6 +337,7 @@ function renderRun() {
   $('#new') && ($('#new').onclick = async () => { await ask({type: 'run.clear'}); run = null; choice = null; await rescan(); render(); });
   $('#clear') && ($('#clear').onclick = async () => { await ask({type: 'run.clear'}); run = null; await rescan(); render(); });
   $('#det').onclick = () => { showDetails = !showDetails; render(); };
+  $('#copylog') && ($('#copylog').onclick = async e => { const txt = (run.log || []).map(l => new Date(l.t).toLocaleTimeString('pt-BR') + ' ' + l.msg).join('\n'); try { await navigator.clipboard.writeText(txt); e.target.textContent = 'Copiado'; } catch { e.target.textContent = 'Não foi possível copiar'; } });
   $('#tochat') && ($('#tochat').onclick = () => ask({type: 'run.focus', which: 'chat'}));
   // The section's own window (code, command): this window steps aside and the run keeps going.
   $('#showmodal') && ($('#showmodal').onclick = () => { post({nlx: 'showModal', on: true}); close(); });

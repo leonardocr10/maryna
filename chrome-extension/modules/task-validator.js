@@ -34,6 +34,7 @@ export function reusable(task, now = Date.now()) {
  * received: draft saved in the section; needs_review: draft waits for her confirmation (text already there);
  * waiting: still open; failed/expired: the task ended without a draft; other: a different task is shown.
  */
+const PROBLEMS = ['dados_divergentes', 'dados_insuficientes', 'instrucao_conflitante', 'outro'];
 export function outcome(modal, code) {
   if (!modal) return {kind: 'unknown'};
   if (code && modal.code && modal.code !== code) return {kind: 'other', detail: modal.code};
@@ -42,6 +43,8 @@ export function outcome(modal, code) {
   if (s === 'draft_received' || s === 'reviewed') return {kind: 'received'};
   if (NL_OPEN.includes(s)) return {kind: 'waiting'};
   if (s === 'expired') return {kind: 'expired'};
+  // ChatGPT reported why it could not write (informar_problema): the reason code, never the free text.
+  if (s === 'error' && modal.problem) return {kind: 'problem', detail: PROBLEMS.includes(modal.problem) ? modal.problem : 'outro'};
   if (s === 'error' || s === 'discarded') return {kind: 'failed', detail: s};
   // No task shown: the code we followed is gone (should not happen after a send).
   if (s === 'none' && code) return {kind: 'unknown'};

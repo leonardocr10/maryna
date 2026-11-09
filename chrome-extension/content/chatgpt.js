@@ -201,27 +201,6 @@
     }
   }
 
-  // ---------- simulation ----------
-  async function probe(name) {
-    const checks = [];
-    const add = (n, ok, detail) => checks.push({name: n, ok: !!ok, detail: detail || null});
-    add('ChatGPT: sessão iniciada', !loginShown());
-    const c = composer();
-    add('ChatGPT: campo de mensagem', c);
-    add('ChatGPT: botão enviar ou de voz visível', sendBtn() || document.querySelector('form button'), 'conferido sem clicar');
-    if (!c) return {ok: true, checks};
-    clearEditor(c);
-    insertText(c, '@');
-    const menu = await waitFor(() => pickerOptions().length ? true : null, {timeout: LIMITS.pluginMenu});
-    add('ChatGPT: seletor @ abre', menu);
-    insertText(c, name.split(' ')[0]);
-    const opt = await waitFor(() => pluginOption(name), {timeout: LIMITS.pluginMenu});
-    add(`ChatGPT: opção ${name} no seletor`, opt, opt ? null : 'conecte o plugin no ChatGPT');
-    if (opt) { click(opt); add(`ChatGPT: ${name} selecionado (chip)`, await waitFor(() => chipPresent(name), {timeout: LIMITS.pluginChip})); }
-    clearEditor(c);   // nothing is sent in the simulation
-    return {ok: true, checks};
-  }
-
   chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     if (!msg?.cmd?.startsWith('cg.')) return false;
     (async () => {
@@ -231,7 +210,6 @@
         case 'cg.insert': return insert(msg.text, msg.code, msg.name);
         case 'cg.send': return sendMessage(msg.code);
         case 'cg.wait': return waitAnswer(Math.min(Math.max(msg.chunkMs || 30000, 1000), 60000));
-        case 'cg.probe': return probe(msg.name);
         default: return fail('connection', 'comando desconhecido');
       }
     })().then(reply, e => reply(fail('connection', String(e?.message || e))));

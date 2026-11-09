@@ -25,7 +25,7 @@ async function load() {
     if (run.status === 'running' || run.status === 'paused') add('Parar', () => chrome.runtime.sendMessage({type: 'run.stop'}), 'dan');
     else add('Limpar dados', async () => { await chrome.runtime.sendMessage({type: 'run.clear'}); say('Dados temporários apagados.'); });
   }
-  $('#cgmin').value = settings.chatgptMinutes; $('#cfs').value = settings.confirmSeconds; $('#retries').value = settings.retries;
+  $('#cgmin').value = settings.chatgptMinutes; $('#cfs').value = settings.confirmSeconds; $('#retries').value = settings.retries; $('#bg').checked = settings.chatBackground !== false;
   const list = $('#origins');
   list.innerHTML = '';
   for (const o of settings.extraOrigins || []) {
@@ -84,7 +84,7 @@ $('#add').onclick = async () => {
 
 $('#save').onclick = async () => {
   const clamp = (v, a, b, d) => { const n = Number(v); return Number.isFinite(n) ? Math.min(Math.max(Math.round(n), a), b) : d; };
-  await chrome.runtime.sendMessage({type: 'settings.set', settings: {chatgptMinutes: clamp($('#cgmin').value, 3, 60, 15), confirmSeconds: clamp($('#cfs').value, 30, 900, 120), retries: clamp($('#retries').value, 0, 3, 1)}});
+  await chrome.runtime.sendMessage({type: 'settings.set', settings: {chatgptMinutes: clamp($('#cgmin').value, 3, 60, 15), confirmSeconds: clamp($('#cfs').value, 30, 900, 120), retries: clamp($('#retries').value, 0, 3, 1), chatBackground: $('#bg').checked}});
   say('Configurações salvas.');
   load();
 };

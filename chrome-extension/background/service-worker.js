@@ -1,5 +1,5 @@
 // Service worker: owns the run (AutomationManager), the tabs and the messages between the pages.
-import {STORAGE_KEY, SETTINGS_KEY, DEFAULT_SETTINGS, DEFAULT_NL_ORIGINS, RUN, CHATGPT_URL} from '../modules/constants.js';
+import {STORAGE_KEY, SETTINGS_KEY, DEFAULT_SETTINGS, DEFAULT_NL_ORIGINS, RUN, CHATGPT_URL, MODES} from '../modules/constants.js';
 import {StateManager, recoverAfterRestart, isActive} from '../modules/state-manager.js';
 import {AutomationManager} from '../modules/automation-manager.js';
 import {describe} from '../modules/error-handler.js';
@@ -61,15 +61,18 @@ function waitLoaded(tabId, ms = 45000) {
   });
 }
 
-/** The dedicated ChatGPT tab, on a new conversation. */
-async function openChat(tabId, url = CHATGPT_URL) {
+/** The dedicated ChatGPT tab, on a new conversation. In the background it opens next to NeuroLaudos IA without taking the focus. */
+async function openChat(tabId, url = CHATGPT_URL, {background = false, nearTabId = null} = {}) {
   if (tabId) {
     const loaded = waitLoaded(tabId);
-    await chrome.tabs.update(tabId, {url, active: true});
+    await chrome.tabs.update(tabId, background ? {url, autoDiscardable: false} : {url, active: true});
     await loaded;
     return tabId;
   }
-  const t = await chrome.tabs.create({url, active: true});
+  let place = {};
+  if (nearTabId) { try { const n = await chrome.tabs.get(nearTabId); place = {windowId: n.windowId, index: n.index + 1, openerTabId: nearTabId}; } catch {} }
+  const t = await chrome.tabs.create({url, active: !background, ...place});
+  if (background) chrome.tabs.update(t.id, {autoDiscardable: false}).catch(() => {});   // memory saver must not freeze it mid-answer
   await waitLoaded(t.id);
   return t.id;
 }
@@ -107,7 +110,7 @@ async function enableOrigin(origin) {
   if (!/^https?:\/\/[^/]+$/.test(origin || '') || origin === 'https://chatgpt.com' || DEFAULT_NL_ORIGINS.includes(origin)) return false;
   if (!(await chrome.permissions.contains({origins: [origin + '/*']}))) return false;
   const cfg = await settings();
-  if (!(cfg.extraOrigins || []).includes(origin)) await storage.set(SETTINGS_KEY, {...cfg, extraOrigins: [...(cfg.extraOrigins || []), origin]});
+  if (!(cfg.extraOrigins || []).includes(origin)) await storage.set(SETTINGS_KEY, {...((await storage.get(SETTINGS_KEY)) || {}), extraOrigins: [...(cfg.extraOrigins || []), origin]});
   await registerOrigins();
   let tabs = [];
   try { tabs = await chrome.tabs.query({url: origin + '/*'}); } catch {}
@@ -186,8 +189,8 @@ async function handle(msg, sender) {
       const tabId = msg.tabId ?? sender.tab?.id;
       const origin = msg.origin || (sender.tab?.url ? new URL(sender.tab.url).origin : null);
       const cfg = await settings();
-      const policy = {existing: msg.existing || cfg.existing, onError: msg.onError || cfg.onError, sendImages: msg.sendImages ?? cfg.sendImages, sameChat: !!(msg.sameChat ?? cfg.sameChat)};
-      return {ok: true, run: await manager.start({nlTabId: tabId, nlOrigin: origin, mode: msg.mode || cfg.defaultMode, policy, selected: msg.selected})};
+      const policy = {existing: msg.existing || cfg.existing, onError: msg.onError || cfg.onError, sendImages: msg.sendImages ?? cfg.sendImages, sameChat: !!(msg.sameChat ?? cfg.sameChat), background: !!(msg.background ?? cfg.chatBackground)};
+      return {ok: true, run: await manager.start({nlTabId: tabId, nlOrigin: origin, mode: MODES[msg.mode] ? msg.mode : MODES[cfg.defaultMode] ? cfg.defaultMode : 'auto', policy, selected: msg.selected})};
     }
     case 'run.pause': await manager.pause(); return {ok: true, run: await state.load()};
     case 'run.resume': return {ok: true, run: await manager.resume(msg.action || 'continue', msg.tabId ?? null)};
@@ -206,8 +209,9 @@ async function handle(msg, sender) {
     case 'settings.get': return {ok: true, settings: await settings()};
     case 'origin.enable': return {ok: await enableOrigin(msg.origin)};
     case 'settings.set': {
-      const next = {...(await settings()), ...(msg.settings || {})};
-      await storage.set(SETTINGS_KEY, next);
+      // Only what was saved before plus what changed: defaults stay defaults (a new default reaches old installs).
+      await storage.set(SETTINGS_KEY, {...((await storage.get(SETTINGS_KEY)) || {}), ...(msg.settings || {})});
+      const next = await settings();
       const granted = await registerOrigins();
       return {ok: true, settings: next, granted};
     }

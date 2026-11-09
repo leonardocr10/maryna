@@ -19,7 +19,8 @@ O critério de sucesso de cada seção é o NeuroLaudos IA mostrar a tarefa como
 |---|---|
 | **Automático** | Percorre todas as seções escolhidas, em ordem, uma por vez. Para só em erro ou autorização obrigatória. |
 | **Assistido** | Faz uma seção e pausa: você confere o rascunho e clica em **Próxima seção**. |
-| **Simulação** | Confere a tela, os seletores, a janela ChatGPT de cada seção e, uma vez, o ChatGPT (campo, seletor @, plugin). Não prepara tarefa, não envia mensagem, não salva nada. |
+
+Por padrão todas as seções usam **uma única conversa do ChatGPT** (o `@NeuroLaudos IA` vai só na primeira mensagem); desligue a opção para abrir conversa nova em cada seção. O ChatGPT trabalha **em segundo plano**: a aba abre ao lado sem tirar você do NeuroLaudos IA e só vem para frente quando o ChatGPT pede sua autorização ou algo dá errado (se um controle do ChatGPT não responder em segundo plano, a extensão traz a aba e tenta de novo, nunca reenviando a mensagem). Desligue em **Configurações** no ícone da extensão. O painel lembra as últimas escolhas (modo, seções com texto, erro, imagens, conversa).
 
 ## Instalação (manual, sem a Chrome Web Store)
 
@@ -43,8 +44,8 @@ Requisitos: Chrome 116 ou mais novo (Windows). No NeuroLaudos IA, o método **Ch
 
 1. Abra a avaliação no NeuroLaudos IA, etapa **Conferir seções**.
 2. Clique em **Modo automático** (botão verde ao lado de "Aprovar todas").
-3. No painel, confira a contagem (seções, elegíveis, texto fixo ignorado, já com texto), escolha o modo, a política para seções com texto (padrão: não mexer), o que fazer em caso de erro (padrão: pausar) e se as imagens das seções vão junto (imagens não têm nomes trocados por marcadores).
-4. Marque as seções e clique em **Iniciar** > confirme.
+3. No painel, escolha o modo (Automático ou Assistido), a política para seções com texto (padrão: não mexer), o que fazer em caso de erro (padrão: pausar), se usa uma única conversa do ChatGPT (padrão: sim) e se as imagens das seções vão junto (imagens não têm nomes trocados por marcadores). Passe o mouse no ⓘ para ver os detalhes.
+4. Marque as seções (**Todas** / **Nenhuma**) e clique em **Gerar N seções** > confirme.
 5. Para cada seção a extensão: abre a seção > abre a janela **ChatGPT** > seleciona **ChatGPT — plugin (MCP)** > reaproveita a tarefa aberta ou clica em **Preparar tarefa** > captura o código `NL-XXXX-XXXX` e o comando oficial > abre conversa nova na aba dedicada do ChatGPT > digita `@`, escolhe **NeuroLaudos IA** na lista e confere o chip do plugin > cola o comando e confere o código > envia > espera a resposta > volta ao NeuroLaudos IA e espera **Rascunho recebido** > fecha a janela > próxima seção.
 6. Quando o ChatGPT pedir autorização para o plugin salvar, a extensão traz a aba do ChatGPT para frente e mostra um aviso. **Você** confere e confirma lá; a execução continua sozinha depois.
 7. No fim, o painel mostra o relatório por seção (recebido, revisão necessária, erro, ignorada). Revise e aprove cada seção no NeuroLaudos IA, como sempre.
@@ -61,7 +62,7 @@ Controles: **Pausar** (não começa nada novo; a seção em andamento continua d
 
 ## Limitações conhecidas (leia antes de confiar no modo automático)
 
-- **Interface do ChatGPT.** O ChatGPT não publica um contrato estável de interface. Os seletores (campo de mensagem, seletor `@`, chip do plugin, botões enviar/parar, botões de autorização) estão em `content/selectors.js` e foram escritos para a interface atual; podem quebrar quando ela mudar. Quando isso acontece a extensão **pausa** com a etapa e o motivo. Rode a **Simulação** depois de atualizações do ChatGPT.
+- **Interface do ChatGPT.** O ChatGPT não publica um contrato estável de interface. Os seletores (campo de mensagem, seletor `@`, chip do plugin, botões enviar/parar, botões de autorização) estão em `content/selectors.js` e foram escritos para a interface atual; podem quebrar quando ela mudar. Quando isso acontece a extensão **pausa** com a etapa e o motivo. Depois de atualizações do ChatGPT, teste no modo **Assistido** com uma seção.
 - **Seleção do plugin.** A extensão só considera o plugin selecionado quando a interface mostra o chip/menção do plugin (texto `@NeuroLaudos IA` digitado não conta). Se o ChatGPT mudar a forma de escolher apps, use o **modo assistido da etapa**: selecione o plugin à mão e clique em **Já selecionei o plugin**.
 - **Fim da resposta e autorização** são detectados pela interface (botão parar, botões de confirmar/negar). O que vale no fim é sempre o status no NeuroLaudos IA.
 - **Termos de uso.** Automatizar a interface web do ChatGPT pode contrariar os termos do serviço da OpenAI e levar a limites ou bloqueios da conta. Use de forma supervisionada, com volume normal de uso.
@@ -90,7 +91,7 @@ Lado ChatGPT, para atualizar depois de uma mudança de interface:
 1. Abra o ChatGPT, clique com o botão direito no elemento (campo de mensagem, item do seletor `@`, chip do plugin, botão enviar/parar, botão de confirmar do plugin) > **Inspecionar**.
 2. Prefira `data-testid`, `id`, `role` e `aria-label`. Evite classes geradas.
 3. Atualize a lista correspondente em `content/selectors.js` (`CG.composer`, `CG.option`, `CG.send`, `CG.stop`, `CG.authText`...). A primeira que bater e estiver visível é usada.
-4. Em `chrome://extensions`, clique em **Recarregar** na extensão e rode a **Simulação**.
+4. Em `chrome://extensions`, clique em **Recarregar** na extensão e teste no modo **Assistido** com uma seção.
 
 ## Atualização
 
@@ -111,18 +112,17 @@ npm run check     # manifest, arquivos, sintaxe, nenhuma chave nem endpoint inte
 npm run zip       # check + gera ../dist/neurolaudos-modo-automatico.zip e a cópia em web/src/assets/extensao/ (rode após mudar a extensão)
 ```
 
-Casos cobertos em `tests/flow.test.mjs`: uma seção elegível; várias seções; texto fixo; seções com rascunho; seções já aprovadas; tarefa pendente reaproveitada; tarefa expirada; plugin não selecionado (e "Já selecionei o plugin"); plugin ausente; falha de comunicação com o ChatGPT; autorização humana; limite de uso; rascunho não recebido; pausar e continuar; fechar e reabrir o Chrome; mudança de avaliação; execução simultânea; modo assistido; simulação; seção que precisa confirmar substituição; plugin MCP desligado; ChatGPT desconectado; avaliação somente leitura.
+Casos cobertos em `tests/flow.test.mjs`: uma seção elegível; várias seções; texto fixo; seções com rascunho; seções já aprovadas; tarefa pendente reaproveitada; tarefa expirada; plugin não selecionado (e "Já selecionei o plugin"); plugin ausente; falha de comunicação com o ChatGPT; autorização humana; limite de uso; rascunho não recebido; pausar e continuar; fechar e reabrir o Chrome; mudança de avaliação; execução simultânea; modo assistido; seção que precisa confirmar substituição; plugin MCP desligado; ChatGPT desconectado; avaliação somente leitura.
 
 Testes de DOM em navegador (páginas sintéticas em `tests/dom/`, com `chrome.*` simulado): sirva a pasta `chrome-extension` (ex.: `python -m http.server 9097 --directory chrome-extension`) e abra `tests/dom/neurolaudos-fixture.html`, `tests/dom/chatgpt-fixture.html` ou `tests/dom/panel-preview.html` (`?view=setup|paused`). No console, `await cs({cmd: 'nl.scan'})` chama o content script como o worker faria.
 
 Roteiro manual com o sistema real (use uma avaliação de teste com dados fictícios):
 
-1. **Simulação** numa avaliação com várias seções: todas as verificações ✓ em **Ver detalhes**.
-2. **Assistido** com uma seção: rascunho recebido, pausa, conferência na seção.
-3. **Automático** com várias seções, incluindo uma com texto (política "Gerar mesmo assim" > **Revisão necessária**) e uma de texto fixo (ignorada).
-4. Pausar durante a resposta do ChatGPT, continuar; fechar o Chrome no meio e reabrir (volta pausado, sem reenviar).
-5. Desconectar o plugin no ChatGPT e iniciar: pausa com "plugin não apareceu".
-6. Navegar entre telas do NeuroLaudos IA sem recarregar: o botão continua ao lado de "Aprovar todas", sem duplicar.
+1. **Assistido** com uma seção: rascunho recebido, pausa, conferência na seção.
+2. **Automático** com várias seções, incluindo uma com texto (política "Gerar mesmo assim" > **Revisão necessária**) e uma de texto fixo (ignorada).
+3. Pausar durante a resposta do ChatGPT, continuar; fechar o Chrome no meio e reabrir (volta pausado, sem reenviar).
+4. Desconectar o plugin no ChatGPT e iniciar: pausa com "plugin não apareceu".
+5. Navegar entre telas do NeuroLaudos IA sem recarregar: o botão continua ao lado de "Aprovar todas", sem duplicar.
 
 ## Estrutura
 

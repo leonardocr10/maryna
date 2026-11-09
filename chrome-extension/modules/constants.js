@@ -13,7 +13,6 @@ export const PLUGIN_NAME = 'NeuroLaudos IA';
 export const MODES = {
   auto: 'Automático',        // every eligible section, stops only on error or required human authorization
   assisted: 'Assistido',     // one section at a time; the psychologist checks it and clicks Continuar
-  simulation: 'Simulação',   // checks selectors and the flow; prepares nothing, sends nothing, saves nothing
 };
 
 /** Whole-run status. */
@@ -32,10 +31,9 @@ export const ITEM = {
   error: 'Erro',
   expired: 'Expirada',
   skipped: 'Ignorada',
-  simulated: 'Simulação ok',
 };
 /** Item statuses that end the section (the queue moves on). */
-export const FINAL_ITEM = ['received', 'needs_review', 'skipped', 'simulated'];
+export const FINAL_ITEM = ['received', 'needs_review', 'skipped'];
 
 /** Steps of one section, in order. `sent` is the only non-repeatable step: a message is never sent twice on its own. */
 export const STEPS = ['navigate', 'open_modal', 'prepare', 'command', 'chatgpt_new', 'plugin', 'insert', 'send', 'wait_chatgpt', 'confirm', 'close'];
@@ -63,7 +61,8 @@ export const DEFAULT_SETTINGS = {
   existing: 'skip',            // sections that already have text: 'skip' (default) or 'draft' (draft waits for her confirmation)
   onError: 'pause',            // 'pause' (default) or 'next'
   sendImages: true,
-  sameChat: false,             // one ChatGPT conversation for every section (mention only in the first); off: rule 10            // same default as the app's checkbox (pictures are not pseudonymised)
+  chatBackground: true,        // ChatGPT works in a background tab; it comes forward only for authorization or a problem
+  sameChat: true,              // one ChatGPT conversation for every section (mention only in the first); off: a new conversation per section
   chatgptMinutes: 15,          // longest wait for one ChatGPT answer (authorization included)
   confirmSeconds: 120,         // longest wait for the draft to show up in NeuroLaudos IA after ChatGPT finished
   retries: 1,                  // automatic retries of a failed section before applying onError (never after a message was sent)

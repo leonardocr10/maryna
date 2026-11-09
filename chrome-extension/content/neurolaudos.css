@@ -11,3 +11,6 @@
 #nlx-panel{position:fixed;top:84px;right:16px;width:440px;max-width:calc(100vw - 32px);height:520px;border:0;border-radius:12px;box-shadow:0 10px 32px rgba(15,40,34,.16);z-index:985;background:transparent;color-scheme:normal}
 #nlx-panel.nlx-collapsed{width:300px}
 #nlx-panel[hidden]{display:none}
+#nlx-panel.nlx-modal{top:5vh;left:50%;right:auto;transform:translateX(-50%);width:940px;max-width:calc(100vw - 48px);border-radius:16px;box-shadow:0 24px 64px rgba(10,30,26,.28);z-index:987}
+#nlx-backdrop{position:fixed;inset:0;background:rgba(12,28,24,.38);z-index:986}
+#nlx-backdrop[hidden]{display:none}

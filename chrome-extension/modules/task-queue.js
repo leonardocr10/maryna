@@ -43,7 +43,7 @@ export function summarize(items, scan) {
     fixed: sections.filter(s => s.kind === 'fixed').length,
     withText: sections.filter(s => s.kind === 'ai' && s.state === 'gen').length,
     queued: work.length,
-    done: items.filter(i => i.status === 'received' || i.status === 'simulated').length,
+    done: items.filter(i => i.status === 'received').length,
     review: c('needs_review'),
     errors: items.filter(i => i.status === 'error' || i.status === 'expired').length,
     pending: work.filter(i => !FINAL_ITEM.includes(i.status) && i.status !== 'error' && i.status !== 'expired').length,

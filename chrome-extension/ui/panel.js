@@ -1,28 +1,78 @@
 // Panel shown inside the NeuroLaudos IA page (extension iframe). Talks only to the extension's worker.
-import {STORAGE_KEY, ITEM, MODES, STEP_LABEL, FINAL_ITEM, KIND} from '../modules/constants.js';
-import {progress, summarize, skipReason} from '../modules/task-queue.js';
+// Setup: wide centered window (fixed header and footer, content scrolls). Run: side panel, the page stays visible.
+import {STORAGE_KEY, ITEM, MODES, FINAL_ITEM, KIND} from '../modules/constants.js';
+import {summarize, skipReason} from '../modules/task-queue.js';
 
 const tabId = Number(new URLSearchParams(location.search).get('tab'));
 const $ = s => document.querySelector(s);
-const body = $('#body');
+const body = $('#body'), ft = $('#ft');
 const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const ask = msg => chrome.runtime.sendMessage({...msg, tabId}).catch(e => ({ok: false, error: {message: String(e?.message || e)}}));
 
-let run = null, settings = null, scan = null, scanErr = null, showDetails = false, timer = null, choice = null, busy = false, flash = null, pending = null;
+let run = null, settings = null, scan = null, scanErr = null, showDetails = false, timer = null, choice = null, busy = false, flash = null, pending = null, layout = null;
+
+// ---------- icons (Lucide style: 24 grid, 1.8 stroke) ----------
+const P = {
+  robot: '<rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 4v4M9.5 16h5M2 12v3M22 12v3"/><circle cx="12" cy="3.5" r="1"/><circle cx="9" cy="12.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="12.5" r="1.3" fill="currentColor" stroke="none"/>',
+  files: '<path d="M15 2H8a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M15 2v5h5M4 7v13a2 2 0 0 0 2 2h10"/>',
+  zap: '<path d="M13 2 3 14h9l-1 8 10-12h-9z"/>',
+  file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+  fileText: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
+  checkCircle: '<circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/>',
+  play: '<path d="M7 4v16l13-8z"/>',
+  hand: '<path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-6-2.3l-3.6-3.6a2 2 0 0 1 2.8-2.8L7 15"/>',
+  layers: '<path d="m12 2 10 5-10 5L2 7z"/><path d="m2 12 10 5 10-5M2 17l10 5 10-5"/>',
+  alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  message: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
+  list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+  refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5v.5"/>',
+  clipboard: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>',
+  clipboardCheck: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
+  brain: '<path d="M12 5a3 3 0 1 0-6 .1 4 4 0 0 0-2.5 5.8 4 4 0 0 0 .6 6.6A4 4 0 1 0 12 18z"/><path d="M12 5a3 3 0 1 1 6 .1 4 4 0 0 1 2.5 5.8 4 4 0 0 1-.6 6.6A4 4 0 1 1 12 18z"/><path d="M12 5v13"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/>',
+  flag: '<path d="M4 22V4c1-.7 2.3-1 4-1 3 0 5 2 8 2 1.4 0 2.6-.3 4-1v11c-1.4.7-2.6 1-4 1-3 0-5-2-8-2-1.7 0-3 .3-4 1"/>',
+  pen: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  pause: '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="1.5"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+};
+const FILLED = new Set(['play', 'pause', 'stop']);
+const ic = (n, sz = 18, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" width="${sz}" height="${sz}" ${FILLED.has(n) ? 'fill="currentColor" stroke="none"' : 'fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"'} aria-hidden="true">${P[n]}</svg>`;
+const SEC_ICON = [[/demanda|identifica/, 'fileText'], [/anamnese/, 'clipboard'], [/intelect|habilidade|cogni/, 'brain'], [/percep|visu/, 'eye'], [/memori|aprendiz/, 'layers'], [/atenc/, 'target'], [/execut/, 'gear'], [/comport|social|emoc/, 'users'], [/hipotese|diagnost/, 'pen'], [/conclus/, 'flag'], [/recomend|indica|encaminh/, 'clipboardCheck']];
+const secIcon = name => { const n = String(name || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); return (SEC_ICON.find(([r]) => r.test(n)) || [0, 'file'])[1]; };
 
 /** In-panel confirmation (native dialogs are unreliable inside a frame of another site). */
 function confirmBox(lines, ok, onOk) { pending = {lines, ok, onOk}; render(); }
 function renderConfirm() {
-  body.innerHTML = `<div class="alert warn" role="alertdialog" aria-labelledby="cf-t"><p id="cf-t"><b>${esc(pending.lines[0])}</b></p>${pending.lines.slice(1).map(l => `<small style="display:block;margin-top:4px">${esc(l)}</small>`).join('')}</div><div class="row"><span class="grow"></span><button class="btn" id="cf-no">Cancelar</button><button class="btn pri" id="cf-ok">${esc(pending.ok)}</button></div>`;
+  body.innerHTML = `<div class="alert warn" role="alertdialog" aria-labelledby="cf-t"><p id="cf-t"><b>${esc(pending.lines[0])}</b></p>${pending.lines.slice(1).map(l => `<small style="display:block;margin-top:4px">${esc(l)}</small>`).join('')}</div>`;
+  ft.innerHTML = `<button class="btn" id="cf-no">Cancelar</button><span class="grow"></span><button class="btn pri" id="cf-ok">${ic('play', 15)} ${esc(pending.ok)}</button>`;
   $('#cf-no').onclick = () => { pending = null; render(); };
   $('#cf-ok').onclick = () => { const f = pending.onOk; pending = null; render(); f(); };
   $('#cf-ok').focus();
 }
 
-// ---------- frame size / close ----------
-const post = m => parent.postMessage({nlx: m.nlx, ...m}, '*');
-new ResizeObserver(() => post({nlx: 'height', h: Math.ceil(document.querySelector('.pn').getBoundingClientRect().height) + 2})).observe(document.body);
-$('#close').onclick = () => post({nlx: 'close'});
+// ---------- frame size, layout and close ----------
+const post = m => parent.postMessage(m, '*');
+const fit = () => post({nlx: 'height', h: Math.ceil($('.hd').offsetHeight + body.offsetHeight + 28 + ft.offsetHeight) + 2});
+new ResizeObserver(fit).observe(body);
+new ResizeObserver(fit).observe(ft);
+function setLayout(mode) {
+  if (layout === mode) return;
+  layout = mode;
+  document.documentElement.dataset.layout = mode;
+  post({nlx: 'layout', mode});
+}
+const close = () => post({nlx: 'close'});
+$('#close').onclick = close;
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (pending) { pending = null; render(); } else close();
+});
 
 // ---------- data ----------
 async function load() {
@@ -38,8 +88,8 @@ async function rescan() {
   else { scan = null; scanErr = r?.error || {message: errText(r?.code)}; }
 }
 function defaults() {
-  const s = settings || {};
-  return {mode: s.defaultMode || 'auto', existing: s.existing || 'skip', onError: s.onError || 'pause', sendImages: s.sendImages ?? true, sameChat: !!s.sameChat, selected: null};
+  const s = settings || {}, l = s.last || {};
+  return {mode: MODES[l.mode] ? l.mode : MODES[s.defaultMode] ? s.defaultMode : 'auto', existing: l.existing || s.existing || 'skip', onError: l.onError || s.onError || 'pause', sendImages: l.sendImages ?? s.sendImages ?? true, sameChat: l.sameChat ?? true, selected: null};
 }
 const mineActive = () => run && run.nlTabId === tabId && (run.status === 'running' || run.status === 'paused');
 const otherActive = () => run && run.nlTabId !== tabId && (run.status === 'running' || run.status === 'paused');
@@ -55,23 +105,45 @@ chrome.storage.onChanged.addListener((ch, area) => {
 function render() {
   clearInterval(timer);
   if (pending) return renderConfirm();
-  if (otherActive()) return renderOther();
-  if (run && run.nlTabId === tabId && run.status !== 'stopped' && run.status !== 'idle') return renderRun();
-  if (run && run.nlTabId === tabId && run.status === 'stopped') return renderRun();
+  if (otherActive()) { setLayout('modal'); return renderOther(); }
+  if (run && run.nlTabId === tabId && run.status !== 'idle') { setLayout('side'); return renderRun(); }
+  setLayout('modal');
   return renderSetup();
 }
 
 function renderOther() {
-  body.innerHTML = `<div class="alert warn"><p><b>Já existe uma execução em andamento</b> em outra aba${run.evaluationId ? ' (outra avaliação ou outra aba)' : ''}.</p><small>Só uma execução por vez. Volte à aba da execução ou pare-a para começar aqui.</small></div>
-  <div class="row"><button class="btn" id="goto">Ir para a execução</button><button class="btn dan" id="stop">Parar a outra execução</button></div>`;
+  body.innerHTML = `<div class="alert warn"><p><b>Já existe uma execução em andamento</b> em outra aba${run.evaluationId ? ' (outra avaliação ou outra aba)' : ''}.</p><small>Só uma execução por vez. Volte à aba da execução ou pare-a para começar aqui.</small></div>`;
+  ft.innerHTML = `<button class="btn" id="cancel">Fechar</button><span class="grow"></span><button class="btn dan" id="stop">Parar a outra execução</button><button class="btn pri" id="goto">Ir para a execução</button>`;
+  $('#cancel').onclick = close;
   $('#goto').onclick = () => ask({type: 'run.focus', which: 'nl'});
   $('#stop').onclick = async () => { await ask({type: 'run.stop'}); await rescan(); render(); };
 }
 
+const MODE_INFO = {
+  auto: {icon: 'robot', desc: 'Percorre todas as seções selecionadas, com mínima intervenção.', badge: 'Recomendado', start: 'Iniciar modo automático'},
+  assisted: {icon: 'hand', desc: 'Uma seção por vez. Você confere o resultado e clica em Continuar.', start: 'Iniciar modo assistido'},
+};
+const TIP_SAME = 'O @NeuroLaudos IA vai só na primeira mensagem. As seções anteriores ficam no histórico da conversa e o ChatGPT pode usá-las. Desligado, cada seção abre conversa nova só com os próprios dados.';
+const TIP_IMGS = 'Tabelas coladas como figura. Imagens não têm nomes trocados por marcadores: confira se não mostram dados do paciente.';
+
+/** Status pill and one-line description of a section on the setup screen. */
+function secState(s, c, why) {
+  if (s.kind === 'fixed') return {pill: 'Texto fixo', tone: 'mute', desc: 'Ignorada (texto fixo do arquivo)'};
+  if (s.kind === 'hand') return {pill: 'Psicóloga', tone: 'mute', desc: 'Escrita só pela psicóloga'};
+  if (s.kind === 'missing') return {pill: 'Ausente', tone: 'mute', desc: 'Falta no documento'};
+  if (s.state === 'ap' || s.state === 'file') return {pill: 'Aprovada', tone: 'ok', desc: 'Já aprovada'};
+  if (why) return {pill: s.state === 'gen' ? 'Já com texto' : 'Ignorada', tone: 'mute', desc: why};
+  const on = c.selected.includes(s.key);
+  if (s.state === 'gen') return {pill: 'Já com texto', tone: 'warn', desc: on ? 'Rascunho aguardará sua confirmação' : 'Não selecionada'};
+  return {pill: 'Elegível', tone: 'ok', desc: on ? 'Selecionada para gerar rascunho' : 'Não selecionada'};
+}
+
 function renderSetup() {
-  $('#sub').textContent = 'Escolha as seções e como gerar os rascunhos com o ChatGPT e o plugin NeuroLaudos IA';
+  $('#sub').textContent = 'Gere rascunhos das seções com o ChatGPT e o plugin NeuroLaudos IA';
   if (scanErr || !scan) {
-    body.innerHTML = `<div class="alert warn"><p>${esc(scanErr?.message || 'Lendo as seções…')}</p>${scanErr?.hint ? `<small>${esc(scanErr.hint)}</small>` : ''}</div><div class="row"><button class="btn" id="re">Ler de novo</button></div>`;
+    body.innerHTML = `<div class="alert warn"><p>${esc(scanErr?.message || 'Lendo as seções…')}</p>${scanErr?.hint ? `<small>${esc(scanErr.hint)}</small>` : ''}</div>`;
+    ft.innerHTML = `<button class="btn" id="cancel">Cancelar</button><span class="grow"></span><button class="btn pri" id="re">${ic('refresh', 16)} Ler de novo</button>`;
+    $('#cancel').onclick = close;
     $('#re').onclick = async () => { await rescan(); render(); };
     return;
   }
@@ -79,39 +151,70 @@ function renderSetup() {
   const elig = scan.sections.filter(s => !skipReason(s, c.existing, null));
   if (!c.selected) c.selected = elig.map(s => s.key);
   const sm = summarize(scan.sections.map(s => ({...s, status: 'pending'})), scan);
+  const stat = (icon, n, label, tone) => `<div class="stat ${tone}"><span class="si">${ic(icon, 20)}</span><div><b>${n}</b><span>${label}</span></div></div>`;
+  const radio = (name, v, cur, title, desc) => `<label class="opt ${cur === v ? 'sel' : ''}"><input type="radio" name="${name}" value="${v}" ${cur === v ? 'checked' : ''}><span><b>${title}</b>${desc ? `<small>${desc}</small>` : ''}</span></label>`;
+  const sw = (id, on, icon, title, desc, tip) => `<div class="setrow"><span class="ri">${ic(icon, 18)}</span><label for="${id}" class="rt" title="${esc(tip)}"><b>${title}</b><small>${desc}</small></label><span class="sw"><input type="checkbox" role="switch" id="${id}" ${on ? 'checked' : ''} aria-describedby="${id}-d"><i aria-hidden="true"></i></span><span class="sr" id="${id}-d">${esc(tip)}</span></div>`;
   body.innerHTML = `
   ${flash ? `<div class="alert ${flash.kind}"><p>${esc(flash.message)}</p>${flash.hint ? `<small>${esc(flash.hint)}</small>` : ''}</div>` : ''}
-  <div class="kv" aria-label="Resumo das seções">
-    <div><b>${sm.total}</b><span>seções</span></div><div><b>${sm.eligible}</b><span>elegíveis</span></div>
-    <div><b>${sm.fixed}</b><span>texto fixo (ignoradas)</span></div><div><b>${sm.withText}</b><span>já com texto</span></div>
-  </div>
   ${scan.readOnly ? '<div class="alert warn"><p>Avaliação somente leitura: nada a gerar.</p></div>' : ''}
-  ${scan.compat ? '<div class="alert warn"><p>Modo de compatibilidade</p><small>Esta versão do NeuroLaudos IA não publica os atributos data-nl-*. O tipo de cada seção é conferido ao abri-la.</small></div>' : ''}
-  <fieldset><legend>Modo</legend>
-    ${Object.entries(MODES).map(([k, v]) => `<label><input type="radio" name="mode" value="${k}" ${c.mode === k ? 'checked' : ''}> <span>${v}<small>${{auto: 'Percorre todas as seções escolhidas; para só em erro ou autorização.', assisted: 'Uma seção por vez: você confere e clica em Continuar.', simulation: 'Confere seletores e fluxo. Não prepara tarefa, não envia nada, não salva.'}[k]}</small></span></label>`).join('')}
-  </fieldset>
-  <fieldset><legend>Seções que já têm texto</legend>
-    <label><input type="radio" name="existing" value="skip" ${c.existing === 'skip' ? 'checked' : ''}> <span>Não mexer (padrão)</span></label>
-    <label><input type="radio" name="existing" value="draft" ${c.existing === 'draft' ? 'checked' : ''}> <span>Gerar rascunho mesmo assim<small>O texto atual não é substituído: o rascunho espera a sua confirmação na seção.</small></span></label>
-  </fieldset>
-  <fieldset><legend>Se uma seção falhar</legend>
-    <label><input type="radio" name="onError" value="pause" ${c.onError === 'pause' ? 'checked' : ''}> <span>Pausar e perguntar (padrão)</span></label>
-    <label><input type="radio" name="onError" value="next" ${c.onError === 'next' ? 'checked' : ''}> <span>Registrar o erro e seguir para a próxima</span></label>
-  </fieldset>
-  <label><input type="checkbox" id="same" ${c.sameChat ? 'checked' : ''}> <span>Usar uma única conversa do ChatGPT para todas as seções<small>O @NeuroLaudos IA vai só na primeira mensagem. Atenção: as seções anteriores ficam no histórico da conversa e o ChatGPT pode usá-las; desligado, cada seção abre conversa nova só com os próprios dados.</small></span></label>
-  <label><input type="checkbox" id="imgs" ${c.sendImages ? 'checked' : ''}> <span>Enviar as imagens das seções (tabelas coladas como figura)<small>Imagens não têm nomes trocados por marcadores: confira se não mostram dados do paciente.</small></span></label>
-  <fieldset><legend>Seções desta avaliação (na ordem do documento)</legend>
-    <div class="secs">${scan.sections.map(s => { const why = skipReason(s, c.existing, null); return `<label class="${why ? 'off' : ''}"><input type="checkbox" data-k="${esc(s.key)}" ${why ? 'disabled' : c.selected.includes(s.key) ? 'checked' : ''}> <span>${esc(s.name)}${why ? `<small>${esc(why)}</small>` : ''}</span></label>`; }).join('')}</div>
-  </fieldset>
-  <p class="note">A extensão nunca aprova textos, nunca clica em "Aprovar todas" e nunca autoriza o plugin por você. O conteúdo do ChatGPT é rascunho para sua revisão.</p>
-  <div class="acts"><span class="grow"></span><button class="btn" id="re">Ler de novo</button><button class="btn pri" id="start" ${scan.readOnly || busy ? 'disabled' : ''}>Iniciar</button></div>`;
-  body.querySelectorAll('input[name="mode"]').forEach(i => i.onchange = () => { c.mode = i.value; });
+  ${scan.compat ? '<div class="alert warn"><p>Modo de compatibilidade: o tipo de cada seção é conferido ao abri-la.</p></div>' : ''}
+  <div class="stats" aria-label="Resumo das seções">
+    ${stat('files', sm.total, 'Seções', '')}${stat('zap', sm.eligible, 'Elegíveis', 'g')}${stat('file', sm.fixed, 'Texto fixo <em>(ignoradas)</em>', 'm')}${stat('checkCircle', sm.withText, 'Já com texto', 'g')}
+  </div>
+  <section class="card">
+    <h2>${ic('play', 15, 'hi')} Modo de execução <span class="tip" title="Nos dois modos as autorizações do ChatGPT continuam com você e nada é aprovado sozinho.">${ic('info', 15)}</span></h2>
+    <div class="modes" role="radiogroup" aria-label="Modo de execução">
+      ${Object.entries(MODES).map(([k, v]) => `<label class="mode ${c.mode === k ? 'sel' : ''}"><input type="radio" name="mode" value="${k}" ${c.mode === k ? 'checked' : ''}><span class="mi">${ic(MODE_INFO[k].icon, 22)}</span><span class="mt"><b>${v}</b><small>${MODE_INFO[k].desc}</small>${MODE_INFO[k].badge ? `<em class="badge">${MODE_INFO[k].badge}</em>` : ''}</span></label>`).join('')}
+    </div>
+  </section>
+  <div class="cols">
+    <section class="card"><h2>${ic('layers', 17, 'hi')} Seções que já têm texto</h2>
+      <div class="opts" role="radiogroup" aria-label="Seções que já têm texto">${radio('existing', 'skip', c.existing, 'Não mexer (padrão)')}${radio('existing', 'draft', c.existing, 'Gerar rascunho mesmo assim', 'O texto atual é preservado; o rascunho aguarda sua confirmação para substituir.')}</div>
+    </section>
+    <section class="card"><h2>${ic('alert', 17, 'hi')} Se uma seção falhar</h2>
+      <div class="opts" role="radiogroup" aria-label="Se uma seção falhar">${radio('onError', 'pause', c.onError, 'Pausar e perguntar (padrão)')}${radio('onError', 'next', c.onError, 'Registrar o erro e seguir para a próxima')}</div>
+    </section>
+  </div>
+  <section class="card">
+    <h2>${ic('gear', 17, 'hi')} Configurações adicionais</h2>
+    ${sw('same', c.sameChat, 'message', 'Usar uma única conversa do ChatGPT para todas as seções', 'O plugin é selecionado na primeira mensagem; as próximas seções usam a mesma conversa.', TIP_SAME)}
+    ${sw('imgs', c.sendImages, 'image', 'Enviar as imagens das seções', 'Tabelas coladas como figura. Confira se não mostram dados do paciente.', TIP_IMGS)}
+  </section>
+  <section class="card">
+    <div class="lh"><h2>${ic('list', 17, 'hi')} Seções desta avaliação <small>na ordem do documento</small></h2><span class="grow"></span>
+      <button class="lnk" id="all" type="button"></button>
+      <span class="pill mute">${sm.total} ${sm.total === 1 ? 'seção' : 'seções'}</span>
+      <button class="ic sm" id="re" type="button" title="Ler as seções de novo" aria-label="Ler as seções de novo">${ic('refresh', 16)}</button>
+    </div>
+    <div class="slist">${scan.sections.map(s => { const why = skipReason(s, c.existing, null); const st = secState(s, c, why); return `<label class="srow ${why ? 'off' : ''}" data-row="${esc(s.key)}"><input type="checkbox" data-k="${esc(s.key)}" ${why ? 'disabled' : c.selected.includes(s.key) ? 'checked' : ''}><span class="sic">${ic(secIcon(s.name), 17)}</span><span class="sn"><b>${esc(s.name)}</b><small>${esc(st.desc)}</small></span><span class="pill ${st.tone}">${esc(st.pill)}</span></label>`; }).join('')}</div>
+  </section>
+  <p class="note">A extensão nunca aprova textos, nunca clica em "Aprovar todas" e nunca autoriza o plugin por você. O conteúdo do ChatGPT é rascunho para sua revisão.</p>`;
+  ft.innerHTML = `<button class="btn" id="cancel" type="button">Cancelar</button><span class="grow"></span><span class="cnt" id="cnt"></span><button class="btn pri" id="start" type="button"></button>`;
+  const boxes = [...body.querySelectorAll('.slist input[data-k]:not(:disabled)')];
+  const upd = () => {
+    const k = c.selected.length, b = $('#start');
+    b.innerHTML = `${ic('play', 15)} ${MODE_INFO[c.mode].start}`;
+    b.disabled = scan.readOnly || busy || !k;
+    $('#cnt').textContent = `${k} de ${elig.length} ${elig.length === 1 ? 'seção selecionada' : 'seções selecionadas'}`;
+    const all = boxes.length && k === boxes.length;
+    $('#all').textContent = all ? 'Desmarcar todas' : 'Selecionar todas as elegíveis';
+    $('#all').hidden = !boxes.length;
+    for (const s of scan.sections) {
+      const row = body.querySelector(`[data-row="${CSS.escape(s.key)}"] small`);
+      if (row) row.textContent = secState(s, c, skipReason(s, c.existing, null)).desc;
+    }
+  };
+  upd();
+  const radioSel = name => body.querySelectorAll(`input[name="${name}"]`).forEach(i => i.closest('label').classList.toggle('sel', i.checked));
+  body.querySelectorAll('input[name="mode"]').forEach(i => i.onchange = () => { c.mode = i.value; radioSel('mode'); upd(); });
   body.querySelectorAll('input[name="existing"]').forEach(i => i.onchange = () => { c.existing = i.value; c.selected = null; render(); });
-  body.querySelectorAll('input[name="onError"]').forEach(i => i.onchange = () => { c.onError = i.value; });
+  body.querySelectorAll('input[name="onError"]').forEach(i => i.onchange = () => { c.onError = i.value; radioSel('onError'); });
   $('#imgs').onchange = e => { c.sendImages = e.target.checked; };
   $('#same').onchange = e => { c.sameChat = e.target.checked; };
-  body.querySelectorAll('.secs input[data-k]').forEach(i => i.onchange = () => { const k = i.dataset.k; c.selected = i.checked ? [...new Set([...c.selected, k])] : c.selected.filter(x => x !== k); });
+  boxes.forEach(i => i.onchange = () => { const k = i.dataset.k; c.selected = i.checked ? [...new Set([...c.selected, k])] : c.selected.filter(x => x !== k); upd(); });
+  $('#all').onclick = () => { const on = c.selected.length !== boxes.length; boxes.forEach(i => { i.checked = on; }); c.selected = on ? boxes.map(i => i.dataset.k) : []; upd(); };
   $('#re').onclick = async () => { await rescan(); render(); };
+  $('#cancel').onclick = close;
   $('#start').onclick = start;
 }
 
@@ -120,29 +223,20 @@ async function start() {
   const n = c.selected.length;
   if (!n) { flash = {kind: 'warn', message: 'Escolha ao menos uma seção.'}; return render(); }
   const names = scan.sections.filter(s => c.selected.includes(s.key)).map(s => s.name).join(', ');
-  const lines = c.mode === 'simulation'
-    ? [`Simular ${n} ${n === 1 ? 'seção' : 'seções'}?`, 'Nada será preparado, enviado ou salvo.', names]
-    : [`Gerar rascunhos de ${n} ${n === 1 ? 'seção' : 'seções'} com o ChatGPT (modo ${MODES[c.mode].toLowerCase()})?`, names, `Seções com texto: ${c.existing === 'skip' ? 'não mexer' : 'rascunho aguarda sua confirmação'} · Erro: ${c.onError === 'pause' ? 'pausar' : 'seguir'} · Imagens: ${c.sendImages ? 'enviar' : 'não enviar'} · Conversa: ${c.sameChat ? 'uma só' : 'nova por seção'}`, 'As autorizações do ChatGPT continuam com você.'];
+  const lines = [`Gerar rascunhos de ${n} ${n === 1 ? 'seção' : 'seções'} com o ChatGPT (modo ${MODES[c.mode].toLowerCase()})?`, names, `Seções com texto: ${c.existing === 'skip' ? 'não mexer' : 'rascunho aguarda sua confirmação'} · Erro: ${c.onError === 'pause' ? 'pausar' : 'seguir'} · Imagens: ${c.sendImages ? 'enviar' : 'não enviar'} · Conversa: ${c.sameChat ? 'uma só' : 'nova por seção'}`, 'As autorizações do ChatGPT continuam com você.'];
   confirmBox(lines, 'Iniciar', () => go(c));
 }
 async function go(c) {
   busy = true; flash = null; render();
+  ask({type: 'settings.set', settings: {last: {mode: c.mode, existing: c.existing, onError: c.onError, sendImages: c.sendImages, sameChat: c.sameChat}}});
   const r = await ask({type: 'run.start', mode: c.mode, existing: c.existing, onError: c.onError, sendImages: c.sendImages, sameChat: c.sameChat, selected: c.selected});
   busy = false;
   if (!r?.ok) { flash = {kind: 'err', ...(r?.error || {message: 'Não foi possível iniciar.'})}; render(); }
 }
 
-const ICON = {
-  pause: '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>',
-  play: '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
-  stop: '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>',
-  doc: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>',
-  gear: '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
-  clock: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
-};
 const DOT = '<svg class="k" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><svg class="w" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"><path d="M12 6v8M12 18.5v.5"/></svg><svg class="x" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>';
 
-const dotClass = (it, current) => it.status === 'received' || it.status === 'simulated' ? 'ok' : it.status === 'needs_review' ? 'warn' : it.status === 'error' || it.status === 'expired' ? 'err' : it.status === 'skipped' ? 'skip' : current && run.status === 'running' ? 'run' : '';
+const dotClass = (it, current) => it.status === 'received' ? 'ok' : it.status === 'needs_review' ? 'warn' : it.status === 'error' || it.status === 'expired' ? 'err' : it.status === 'skipped' ? 'skip' : current && run.status === 'running' ? 'run' : '';
 const elapsed = iso => { const s = Math.max(0, Math.floor((Date.now() - Date.parse(iso || Date.now())) / 1000)); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
 /** What the current section is doing, in the words of the panel. */
 function liveLabel(it) {
@@ -151,7 +245,6 @@ function liveLabel(it) {
   if (it.status === 'confirming' || it.step === 'confirm') return 'Conferindo o rascunho…';
   if (it.status === 'processing' || it.step === 'wait_chatgpt') return 'ChatGPT redigindo…';
   if (['chatgpt_new', 'plugin', 'insert', 'send'].includes(it.step)) return 'Enviando para o ChatGPT…';
-  if (run.mode === 'simulation') return 'Conferindo seletores…';
   return 'Preparando tarefa…';
 }
 /** "8 de 16 seções": every section of the evaluation; ignored ones (fixed text, approved...) count as done. */
@@ -168,29 +261,28 @@ function renderRun() {
   const skipped = run.items.filter(i => i.status === 'skipped' && i.reason !== 'Pulada por você');
   const active = run.status === 'running' || run.status === 'paused';
   const pause = run.status === 'paused' ? run.pause : null;
-  $('#sub').textContent = run.status === 'done' ? (run.mode === 'simulation' ? 'Simulação concluída: nada foi enviado nem salvo' : 'Rascunhos gerados com o ChatGPT e o plugin NeuroLaudos IA') : run.status === 'stopped' ? 'Execução parada; os rascunhos recebidos ficam no NeuroLaudos IA' : run.mode === 'simulation' ? 'Simulação: conferindo a tela e o ChatGPT, sem enviar nada' : 'Gerando rascunhos das seções com o ChatGPT e o plugin NeuroLaudos IA';
+  $('#sub').textContent = run.status === 'done' ? 'Rascunhos gerados com o ChatGPT e o plugin NeuroLaudos IA' : run.status === 'stopped' ? 'Execução parada; os rascunhos recebidos ficam no NeuroLaudos IA' : `Gerando rascunhos com o ChatGPT (modo ${(MODES[run.mode] || '').toLowerCase()})`;
   const status = i => i === it && active ? liveLabel(i) : i.status === 'pending' ? 'Aguardando' : ITEM[i.status] || i.status;
   body.innerHTML = `
   <div class="box">
     <div class="prog"><span>Progresso da avaliação</span><span>${p.done} de ${p.total} seções (${p.pct}%)</span></div>
     <div class="bar" role="progressbar" aria-label="Progresso da avaliação" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p.pct}"><i style="width:${p.pct}%"></i></div>
   </div>
-  ${it && active ? `<div class="cur"><span class="ci" aria-hidden="true">${ICON.gear}</span><div class="grow"><small>Seção atual</small><b>${esc(it.name)}</b>${it.code ? `<span class="code" title="Código da tarefa">${esc(it.code)}</span>` : ''}</div><span class="timer" title="Tempo nesta seção">${ICON.clock}<span id="tm">${elapsed(it.startedAt || it.updatedAt)}</span></span></div>` : ''}
+  ${it && active ? `<div class="cur"><span class="ci">${ic(secIcon(it.name), 22)}</span><div class="grow"><small>Seção atual</small><b>${esc(it.name)}</b>${it.code ? `<span class="code" title="Código da tarefa">${esc(it.code)}</span>` : ''}</div><span class="timer" title="Tempo nesta seção">${ic('clock', 15)}<span id="tm">${elapsed(it.startedAt || it.updatedAt)}</span></span></div>` : ''}
   ${pause ? `<div class="alert ${pause.code === 'assisted' || pause.code === 'user' ? 'warn' : 'err'}" role="alert"><p><b>${esc(pause.section ? pause.section + ': ' : '')}${esc(pause.message)}</b></p>${pause.stepLabel ? `<small>Etapa: ${esc(pause.stepLabel)}. </small>` : ''}<small>${esc(pause.hint || '')}</small></div>` : ''}
-  ${run.status === 'done' ? `<div class="alert ok"><p><b>${run.mode === 'simulation' ? 'Simulação concluída.' : 'Execução concluída.'}</b></p><small>${run.mode === 'simulation' ? 'Veja em Ver detalhes o resultado de cada verificação.' : `${sm.done} recebidos · ${sm.review} para revisão · ${sm.errors} com erro. Revise e aprove cada seção no NeuroLaudos IA.`}</small></div>` : ''}
+  ${run.status === 'done' ? `<div class="alert ok"><p><b>Execução concluída.</b></p><small>${sm.done} recebidos · ${sm.review} para revisão · ${sm.errors} com erro. Revise e aprove cada seção no NeuroLaudos IA.</small></div>` : ''}
+  ${run.status === 'paused' && (pause?.actions || []).some(a => a !== 'continue') ? `<div class="row">${pause.actions.filter(a => a !== 'continue').map(a => `<button class="btn sm" data-act="${a}">${{retry: 'Tentar de novo', skip: 'Pular seção', plugin_done: 'Já selecionei o plugin'}[a]}</button>`).join('')}${run.chatTabId ? '<button class="btn sm" id="tochat">Ir para o ChatGPT</button>' : ''}</div>` : ''}
   <ol class="list" aria-label="Seções">${work.map(i => { const cur = i === it && active; return `<li class="${cur ? 'on' : ''}" ${cur ? 'aria-current="step"' : ''}><span class="dot ${dotClass(i, cur)}" aria-hidden="true">${DOT}</span><span><span class="nm">${esc(i.name)}</span> <span class="st">${esc(status(i))}</span></span></li>${showDetails && (i.reason || i.error || i.checks || i.code) ? `<ul class="checks">${i.code ? `<li>Tarefa ${esc(i.code)}</li>` : ''}${i.reason ? `<li>${esc(i.reason)}</li>` : ''}${i.error ? `<li class="no">${esc(i.error.message)}${i.error.stepLabel ? ' (' + esc(i.error.stepLabel) + ')' : ''}${i.error.detail ? ' — ' + esc(i.error.detail) : ''}</li>` : ''}${(i.checks || []).map(c => `<li class="${c.ok ? 'yes' : 'no'}">${c.ok ? '✓' : '✗'} ${esc(c.name)}${c.detail ? ' — ' + esc(c.detail) : ''}</li>`).join('')}</ul>` : ''}`; }).join('')}</ol>
   ${skipped.length && showDetails ? `<details open><summary>${skipped.length} ${skipped.length === 1 ? 'seção ignorada' : 'seções ignoradas'}</summary><ul class="checks" style="margin-left:0">${skipped.map(i => `<li>${esc(i.name)} — ${esc(i.reason || KIND[i.kind] || '')}</li>`).join('')}</ul></details>` : ''}
-  ${showDetails ? `<div class="box"><b style="font-size:12.5px">Registro</b><ul class="log">${(run.log || []).slice().reverse().map(l => `<li>${esc(new Date(l.t).toLocaleTimeString('pt-BR'))} ${esc(l.msg)}</li>`).join('')}</ul></div>` : ''}
-  ${run.status === 'paused' && (pause?.actions || []).some(a => a !== 'continue') ? `<div class="row">${pause.actions.filter(a => a !== 'continue').map(a => `<button class="btn sm" data-act="${a}">${{retry: 'Tentar de novo', skip: 'Pular seção', plugin_done: 'Já selecionei o plugin'}[a]}</button>`).join('')}${run.chatTabId ? '<button class="btn sm" id="tochat">Ir para o ChatGPT</button>' : ''}</div>` : ''}
-  <div class="acts">
-    ${run.status === 'running' ? `<button class="btn" id="pause">${ICON.pause} Pausar</button>` : ''}
-    ${run.status === 'paused' ? `<button class="btn pri" data-act="continue">${ICON.play} ${pause?.code === 'assisted' ? 'Próxima seção' : 'Continuar'}</button>` : ''}
-    ${active ? `<button class="btn" id="stop">${ICON.stop} Parar</button>` : '<button class="btn pri" id="new">Nova execução</button><button class="btn" id="clear">Limpar dados</button>'}
+  ${showDetails ? `<div class="box"><b style="font-size:12.5px">Registro</b><ul class="log">${(run.log || []).slice().reverse().map(l => `<li>${esc(new Date(l.t).toLocaleTimeString('pt-BR'))} ${esc(l.msg)}</li>`).join('')}</ul></div>` : ''}`;
+  ft.innerHTML = `
+    ${run.status === 'running' ? `<button class="btn" id="pause">${ic('pause', 15)} Pausar</button>` : ''}
+    ${run.status === 'paused' ? `<button class="btn pri" data-act="continue">${ic('play', 15)} ${pause?.code === 'assisted' ? 'Próxima seção' : 'Continuar'}</button>` : ''}
+    ${active ? `<button class="btn" id="stop">${ic('stop', 14)} Parar</button>` : '<button class="btn pri" id="new">Nova execução</button><button class="btn" id="clear">Limpar dados</button>'}
     <span class="grow"></span>
-    <button class="btn out" id="det">${ICON.doc} ${showDetails ? 'Ocultar detalhes' : 'Ver detalhes'}</button>
-  </div>`;
+    <button class="btn out" id="det">${ic('fileText', 17)} ${showDetails ? 'Ocultar detalhes' : 'Ver detalhes'}</button>`;
   $('#pause') && ($('#pause').onclick = () => ask({type: 'run.pause'}));
-  body.querySelectorAll('[data-act]').forEach(b => b.onclick = () => ask({type: 'run.resume', action: b.dataset.act}));
+  document.querySelectorAll('[data-act]').forEach(b => b.onclick = () => ask({type: 'run.resume', action: b.dataset.act}));
   $('#stop') && ($('#stop').onclick = () => confirmBox(['Parar a execução?', 'Os rascunhos já recebidos ficam no NeuroLaudos IA; nada é apagado.'], 'Parar', () => ask({type: 'run.stop'})));
   $('#new') && ($('#new').onclick = async () => { await ask({type: 'run.clear'}); run = null; choice = null; await rescan(); render(); });
   $('#clear') && ($('#clear').onclick = async () => { await ask({type: 'run.clear'}); run = null; await rescan(); render(); });

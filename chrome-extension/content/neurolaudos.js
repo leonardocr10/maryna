@@ -181,24 +181,6 @@
     return {ok: true};
   }
 
-  /** Simulation: every selector the run needs, checked on this section. Nothing is clicked except opening and closing. */
-  async function simCheck(key) {
-    const checks = [];
-    const add = (name, ok, detail) => checks.push({name, ok: !!ok, detail: detail || null});
-    add('Tela Conferir seções (data-nl-review)', review(), review() ? null : 'modo de compatibilidade (sem data-nl-*)');
-    add('Botão Aprovar todas', approveAllBtn());
-    add('Seção na barra de navegação', barFor(key));
-    add('Seção aberta', editorFor(key));
-    const el = modalEl(key), m = readModal(el);
-    add('Janela ChatGPT da seção', el);
-    add('Método ChatGPT — plugin (MCP) disponível', m?.mcp, m?.mcp ? null : 'desligado no servidor');
-    const open = m && m.mode === 'mcp' && ['pending', 'processing'].includes(m.status);
-    if (open) { add('Tarefa aberta com código', CODE_RE.test(m.code || ''), m.code); add('Comando da tarefa', el.querySelector(NL.command)?.value?.includes(m.code)); }
-    else add('Botão Preparar tarefa', el && (el.querySelector(NL.prepare) || el.querySelector(NL.mcpOption)), 'não clicado na simulação');
-    add('Botão Fechar', el && (el.querySelector(NL.close) || el.querySelector('.x')));
-    return {ok: true, checks};
-  }
-
   // ---------- messages from the worker ----------
   chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     if (!msg?.cmd?.startsWith('nl.')) return false;
@@ -213,7 +195,6 @@
         case 'nl.command': return command(msg.key);
         case 'nl.waitStatus': return waitStatus(msg.key, msg.code, msg.chunkMs);
         case 'nl.closeModal': return closeModal(msg.key);
-        case 'nl.simCheck': return simCheck(msg.key);
         default: return fail('connection', 'comando desconhecido');
       }
     })().then(reply, e => reply(fail('connection', String(e?.message || e))));
@@ -271,14 +252,30 @@
       document.body.appendChild(panel);
     }
     if (panel) panel.hidden = !panelOpen;
+    syncBackdrop();
     ensureButton();
   }
+
+  // Setup screen: wide centered window over a dimmed page. During a run: side panel, the page stays visible.
+  let backdrop = null;
+  function syncBackdrop() {
+    const on = !!panel && panelOpen && panel.classList.contains('nlx-modal');
+    if (on && !backdrop) {
+      backdrop = document.createElement('div');
+      backdrop.id = 'nlx-backdrop';
+      backdrop.addEventListener('click', () => togglePanel(false));
+      document.body.insertBefore(backdrop, panel);
+    }
+    if (backdrop) backdrop.hidden = !on;
+  }
+  const maxH = () => panel?.classList.contains('nlx-modal') ? Math.floor(window.innerHeight * 0.9) : window.innerHeight - 96;
 
   // The panel asks for its height and to close (messages from the extension's own frame only).
   window.addEventListener('message', e => {
     if (!panel || e.source !== panel.contentWindow || e.origin !== new URL(chrome.runtime.getURL('')).origin) return;
     const d = e.data || {};
-    if (d.nlx === 'height' && Number.isFinite(d.h)) panel.style.height = Math.min(Math.max(120, d.h), window.innerHeight - 96) + 'px';
+    if (d.nlx === 'height' && Number.isFinite(d.h)) panel.style.height = Math.min(Math.max(120, d.h), maxH()) + 'px';
+    if (d.nlx === 'layout') { panel.classList.toggle('nlx-modal', d.mode === 'modal'); syncBackdrop(); }
     if (d.nlx === 'close') togglePanel(false);
     if (d.nlx === 'collapse') panel.classList.toggle('nlx-collapsed', !!d.on);
   });

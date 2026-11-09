@@ -201,18 +201,6 @@ test('assisted mode: pauses after each section', async () => {
   assert.equal(s.status, 'done');
 });
 
-test('simulation: checks selectors, prepares nothing, sends nothing', async () => {
-  const t = makeEnv({nl: {sections: STANDARD()}});
-  await start(t, {mode: 'simulation'});
-  const s = await finish(t);
-  assert.equal(s.status, 'done');
-  assert.equal(cmds(t, 'nl.prepare').length, 0);
-  assert.equal(cmds(t, 'cg.send').length, 0);
-  assert.equal(cmds(t, 'cg.insert').length, 0);
-  assert.equal(cmds(t, 'cg.probe').length, 1);
-  assert.ok(s.items.filter(i => i.status === 'simulated').length === 3);
-});
-
 test('section checked again on the page (fixed text found when opening) is skipped', async () => {
   const t = makeEnv({nl: {sections: [section('a', 'A'), section('b', 'B')], notEligible: ['a']}});
   await start(t);
@@ -251,7 +239,7 @@ test('one conversation for every section: "@NeuroLaudos IA" and a new chat only 
   assert.equal(cmds(t, 'cg.send').length, 3);
 });
 
-test('default: a new conversation and the mention for each section', async () => {
+test('one conversation off: a new conversation and the mention for each section', async () => {
   const t = makeEnv({nl: {sections: [section('a', 'A'), section('b', 'B')]}});
   await start(t);
   await finish(t);
@@ -270,4 +258,21 @@ test('send not seen on the page but the task is in use in NeuroLaudos IA: counts
   const s = await finish(t);
   assert.equal(s.status, 'done');
   assert.deepEqual(s.items.map(i => i.status), ['received', 'received']);
+});
+
+test('ChatGPT in the background: opened without focus, never brought forward when all goes well', async () => {
+  const t = makeEnv({nl: {sections: [section('a', 'A'), section('b', 'B')]}});
+  await start(t, {policy: {existing: 'skip', onError: 'pause', background: true}});
+  const s = await finish(t);
+  assert.equal(s.status, 'done');
+  assert.ok(t.opened.every(o => o.background === true));
+  assert.ok(!t.activated.includes(s.chatTabId));
+  assert.ok(s.log.some(l => /segundo plano/.test(l.msg)));
+});
+
+test('ChatGPT in the background: the tab comes forward for the authorization', async () => {
+  const t = makeEnv({nl: {sections: [section('a', 'A')]}, cg: {auth: 1}});
+  await start(t, {policy: {existing: 'skip', onError: 'pause', background: true}});
+  const s = await finish(t);
+  assert.ok(t.activated.includes(s.chatTabId));
 });

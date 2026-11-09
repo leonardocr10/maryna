@@ -10,24 +10,23 @@
 const view = new URLSearchParams(location.search).get('view');
 const items = [['habilidades','Habilidades intelectuais','received','NL-7KQ2-M9XD'],['percepcao','Percepção','received','NL-3HJK-PQ7R'],['memoria','Memória e aprendizagem','received','NL-8MNP-2XYZ'],['atencao','Processos atencionais','received','NL-4ABC-5DEF'],['executivas','Funções executivas','received','NL-6GHJ-7KMN'],['comportamento','Comportamento','waiting_chatgpt','NL-9PQR-2STU'],['conclusao','Conclusão','pending',null],['recomendacoes','Indicações e recomendações','pending',null],['fixo','Procedimentos de análise','skipped',null]].map(([key,name,status,code])=>({key,name,status,code,kind:key==='fixo'?'fixed':'ai',reason:key==='fixo'?'Texto fixo do arquivo':null,step:status==='waiting_chatgpt'?'send':null,startedAt:new Date(Date.now()-134000).toISOString()}));
 const run = view==='setup' ? null : {runId:'r',evaluationId:'ev-sint-1',nlTabId:1,chatTabId:2,mode:'auto',status:view==='paused'?'paused':'running',current:5,items,log:[{t:new Date().toISOString(),msg:'Comportamento: comando com NL-9PQR-2STU enviado ao ChatGPT.'}],pause:view==='paused'?{code:'cg_plugin_select',message:'Não foi possível confirmar que o plugin NeuroLaudos IA foi selecionado.',hint:'Selecione o plugin à mão no ChatGPT e clique em "Já selecionei o plugin".',section:'Comportamento',stepLabel:'Selecionar o plugin NeuroLaudos IA',actions:['continue','retry','skip','plugin_done']}:null};
-const scan = {ok:true,evaluationId:'ev-sint-1',readOnly:false,sections:[{key:'anamnese',name:'Anamnese',kind:'ai',state:'ap'},{key:'fixo',name:'Procedimentos de análise',kind:'fixed',state:'file'},{key:'habilidades',name:'Habilidades intelectuais',kind:'ai',state:'pend'},{key:'percepcao',name:'Percepção',kind:'ai',state:'pend'},{key:'memoria',name:'Memória e aprendizagem',kind:'ai',state:'gen'},{key:'hipotese',name:'Hipótese diagnóstica',kind:'hand',state:'pend'},{key:'conclusao',name:'Conclusão',kind:'ai',state:'pend'}]};
+const scan = {ok:true,evaluationId:'ev-sint-1',readOnly:false,sections:[{key:'anamnese',name:'Anamnese',kind:'ai',state:'ap'},{key:'fixo',name:'Procedimentos de análise',kind:'fixed',state:'file'},{key:'habilidades',name:'Habilidades intelectuais',kind:'ai',state:'pend'},{key:'percepcao',name:'Percepção',kind:'ai',state:'pend'},{key:'memoria',name:'Memória e aprendizagem',kind:'ai',state:'gen'},{key:'hipotese',name:'Hipótese diagnóstica',kind:'hand',state:'pend'},{key:'atencao',name:'Processos atencionais',kind:'ai',state:'gen'},{key:'executivas',name:'Funções executivas',kind:'ai',state:'gen'},{key:'linguagem',name:'Linguagem',kind:'ai',state:'gen'},{key:'comportamento',name:'Comportamento',kind:'ai',state:'gen'},{key:'conclusao',name:'Conclusão',kind:'ai',state:'pend'},{key:'recomendacoes',name:'Indicações e recomendações',kind:'ai',state:'pend'}]};
 window.chrome = {runtime:{sendMessage: async m => m.type==='run.get'?{ok:true,run,settings:{}}:m.type==='scan'?scan:{ok:true}}, storage:{onChanged:{addListener(){}}}};
 history.replaceState(null,'',location.pathname+'?tab=1&theme=light&view='+(view||''));
 </script>
 <script src="../../ui/theme.js"></script>
 <link rel="stylesheet" href="../../ui/panel.css">
 </head>
-<body style="max-width:440px">
+<body>
+<script>document.body.style.maxWidth = view==='setup' ? '940px' : '440px'; document.body.style.margin = '0 auto';</script>
 <div class="pn" id="app">
   <header class="hd">
-    <div class="hrow">
-      <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 4v4M9.5 16h5M2 12v3M22 12v3"/><circle cx="12" cy="3.5" r="1"/><circle cx="9" cy="12.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="12.5" r="1.3" fill="currentColor" stroke="none"/></svg></span>
-      <h1>Modo automático</h1>
-      <button class="ic" id="close" type="button" aria-label="Fechar painel" title="Fechar (a execução continua)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
-    </div>
-    <p id="sub">Gerando rascunhos das seções com o ChatGPT e o plugin NeuroLaudos IA</p>
+    <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 4v4M9.5 16h5M2 12v3M22 12v3"/><circle cx="12" cy="3.5" r="1"/><circle cx="9" cy="12.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="12.5" r="1.3" fill="currentColor" stroke="none"/></svg></span>
+    <div class="ht"><h1>Modo automático</h1><p id="sub">Gere rascunhos das seções com o ChatGPT e o plugin NeuroLaudos IA</p></div>
+    <button class="ic" id="close" type="button" aria-label="Fechar painel" title="Fechar (a execução continua)"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
   </header>
-  <main id="body"><p class="muted">Carregando…</p></main>
+  <main id="scroll"><div id="body"><p class="muted">Carregando…</p></div></main>
+  <footer class="ft" id="ft"></footer>
 </div>
 <script src="../../ui/panel.js" type="module"></script>
 </body>

@@ -38,7 +38,6 @@ export function makeEnv(opts = {}) {
       case 'nl.command': { const t = nl.tasks[msg.key]; return {ok: true, command: `@NeuroLaudos IA Utilize o plugin NeuroLaudos IA para buscar a tarefa pendente da seção "${msg.key}" identificada pelo código ${t.code}. Ao concluir, salve como rascunho.`}; }
       case 'nl.waitStatus': { clock += msg.chunkMs || 1000; return {ok: true, modal: view(msg.key)}; }
       case 'nl.closeModal': openModal = null; return {ok: true};
-      case 'nl.simCheck': return {ok: true, checks: [{name: 'Seção aberta', ok: true}]};
     }
     return {ok: false, code: 'connection'};
   }
@@ -71,25 +70,25 @@ export function makeEnv(opts = {}) {
         if (authLeft > 0) { authLeft--; return {ok: true, state: 'auth'}; }
         saveDraft();
         return {ok: true, state: 'done'};
-      case 'cg.probe': return {ok: true, checks: [{name: 'ChatGPT: campo de mensagem', ok: true}]};
     }
     return {ok: false, code: 'connection'};
   }
 
+  const activated = [], opened = [];
   const settings = {...DEFAULT_SETTINGS, ...(opts.settings || {})};
   const env = {
     state: new StateManager(storage, () => clock),
     settings: async () => settings,
     send: async (tabId, msg) => { calls.push({tabId, ...msg}); return tabId === NL_TAB ? nlHandle(msg) : cgHandle(msg); },
     tabExists: async id => id === NL_TAB || id === CHAT_TAB,
-    activate: async () => {},
-    openChat: async () => CHAT_TAB,
+    activate: async id => { activated.push(id); },
+    openChat: async (id, url, o = {}) => { opened.push(o); return CHAT_TAB; },
     notify: (t, m) => notes.push(t),
     sleep: async ms => { clock += ms; },
     now: () => clock,
   };
   const mgr = new AutomationManager(env);
-  return {env, mgr, calls, notes, nl, cg, storage, map, get chipManual() { return chipManual; }, get openModal() { return openModal; }, get lastSent() { return lastSent; }};
+  return {env, mgr, activated, opened, calls, notes, nl, cg, storage, map, get chipManual() { return chipManual; }, get openModal() { return openModal; }, get lastSent() { return lastSent; }};
 }
 
 export const STANDARD = () => [

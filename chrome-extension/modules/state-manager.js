@@ -68,6 +68,6 @@ export const isActive = s => !!s && (s.status === RUN.running || s.status === RU
  */
 export function recoverAfterRestart(s) {
   if (!s || s.status !== RUN.running) return s;
-  const items = s.items.map(it => it.sentAt && !['received', 'needs_review', 'skipped', 'simulated', 'error', 'expired'].includes(it.status) ? {...it, step: 'confirm', status: 'confirming'} : it);
+  const items = s.items.map(it => it.sentAt && !['received', 'needs_review', 'skipped', 'error', 'expired'].includes(it.status) ? {...it, step: 'confirm', status: 'confirming'} : it);
   return {...s, items, status: RUN.paused, pause: {code: 'interrupted', message: 'A execução foi interrompida (navegador ou extensão reiniciados).', hint: 'Confira o status e clique em Continuar; nada é reenviado sem conferência.'}};
 }

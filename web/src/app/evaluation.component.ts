@@ -1516,6 +1516,19 @@ export class EvaluationComponent implements OnDestroy {
     box.addEventListener('keydown', e => this.wordKey(e as KeyboardEvent));
     box.addEventListener('paste', e => { const p = (e.target as HTMLElement).closest?.('p[data-sec]'); if (!p) return; e.preventDefault(); const t = (e as ClipboardEvent).clipboardData?.getData('text/plain') || ''; document.execCommand('insertText', false, t.replace(/\s*\n\s*/g, ' ')); });
   }
+  reopening = false;
+  /** Approved evaluations are locked; the psychologist may reopen one to edit it again (it goes back to review). */
+  async reopenForWord() {
+    if (!this.locked() || !this.canWrite() || this.reopening) return;
+    if (!await this.confirm.ask({title: 'Reabrir a avaliação para editar?', body: 'A avaliação deixa de estar aprovada. As seções editadas voltam para revisão e precisam ser aprovadas de novo antes de baixar o Word final.', facts: ['As seções que você não editar continuam aprovadas', 'O histórico de versões continua guardado'], ok: 'Reabrir para editar'})) return;
+    this.reopening = true;
+    try {
+      await this.api.req('POST', `/evaluations/${this.evaluationId}/reopen`, {});
+      await this.load(); this.changed.emit(); this.timer.start(this.evaluationId, this.current.work_seconds, false);
+      this.api.notify('Avaliação reaberta. Edite os textos das seções direto na página.');
+      this.renderPreview(true);
+    } catch {} finally { this.reopening = false; }
+  }
   private wordChanged(k: string) { this.wordDirty.add(k); this.wordError = ''; clearTimeout(this.wordTimer); this.wordTimer = setTimeout(() => this.flushWord(), 1500); }
   /** Enter splits the paragraph (new paragraph of the same section); Backspace at the start joins it to the previous one. */
   private wordKey(e: KeyboardEvent) {

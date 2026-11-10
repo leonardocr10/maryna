@@ -420,10 +420,10 @@
       </div>
     </ng-container>
 
-    <section [hidden]="mode!=='documento'" class="card docview" [class.doc-only]="docOnly" [attr.role]="docOnly ? 'dialog' : null" [attr.aria-label]="docOnly ? 'Documento' : null">
+    <section [hidden]="mode!=='documento'" class="card docview" [class.word]="wordMode" [class.doc-only]="docOnly" [attr.role]="docOnly ? 'dialog' : null" [attr.aria-label]="docOnly ? 'Documento' : null">
       <div class="doctool">
         <span class="pg">{{pageCount ? (pageCount===1 ? '1 página' : 'Página ' + pageAt + ' de ' + pageCount) : 'Prévia do Word'}}</span>
-        <span class="legend">Textos atuais, inclusive os ainda não aprovados</span>
+        <span class="legend">{{wordMode ? 'Modo Word: edite os textos das seções direto na página' : 'Textos atuais, inclusive os ainda não aprovados'}}</span>
         <span class="sp"></span>
         <span class="em-wwrap doc-wwrap">
           <button type="button" class="btn btn-secondary btn-sm dw-btn" [class.on]="docWidthOpen" [attr.aria-expanded]="docWidthOpen" aria-controls="doc-width" (click)="docWidthOpen=!docWidthOpen; docWidthPreview=''" title="Largura da página na tela"><nl-icon name="layers"/> {{docWidthName()}} <nl-icon [name]="docWidthOpen ? 'chevu' : 'chevd'"/></button>
@@ -448,7 +448,7 @@
       </div>
       <div class="docsplit">
       <!-- Modelo B: section texts on the left (approve or edit here), the Word on the right; a click on a text shows it in the Word -->
-      <aside #side class="docside" [hidden]="docEditing || docOnly" aria-label="Textos das seções" [style.flex-basis.px]="sideW || null">
+      <aside #side class="docside" [hidden]="docEditing || docOnly || wordMode" aria-label="Textos das seções" [style.flex-basis.px]="sideW || null">
         <p class="caption">Clique num texto para vê-lo no Word.</p>
         <div *ngFor="let s of docSideRows(); trackBy: bySection" class="dblk" [class.on]="docActive===s.id" [class.editing]="editing===s.id" (click)="editing!==s.id && showInDoc(s.id)">
           <div class="dblk-head"><b>{{s.name}}</b>
@@ -476,7 +476,7 @@
           </div>
         </div>
       </aside>
-      <div class="dsplit" [hidden]="docEditing || docOnly" role="separator" aria-orientation="vertical" aria-label="Arraste para mudar a largura dos painéis" tabindex="0" title="Arraste para mudar a largura (duplo clique volta ao padrão)" (pointerdown)="startResize($event, side)" (keydown)="resizeKey($event, side)" (dblclick)="resetSide()"><span></span></div>
+      <div class="dsplit" [hidden]="docEditing || docOnly || wordMode" role="separator" aria-orientation="vertical" aria-label="Arraste para mudar a largura dos painéis" tabindex="0" title="Arraste para mudar a largura (duplo clique volta ao padrão)" (pointerdown)="startResize($event, side)" (keydown)="resizeKey($event, side)" (dblclick)="resetSide()"><span></span></div>
       <div class="docmain">
       <div class="docfind">
         <label *ngIf="!docEditing" class="find" [class.none]="findQuery.trim() && !findHits.length">
@@ -506,7 +506,8 @@
         </div>
       </div>
       <div *ngIf="wordMode && !docEditing" class="wordbar" role="status">
-        <nl-icon name="edit"/><span><b>Modo Word:</b> clique nos textos das seções (contorno verde) e edite direto na página. Tabelas, escores, cabeçalho e o resto do arquivo base ficam travados. {{readOnly() ? 'Esta avaliação está somente leitura.' : 'Salva sozinho; a seção editada volta para revisão.'}}</span>
+        <nl-icon name="edit"/><span><b>Modo Word:</b> {{locked() ? 'esta avaliação está aprovada e travada. Reabra para editar os textos das seções direto na página.' : !canWrite() ? 'somente leitura para o seu papel.' : 'clique nos textos das seções (contorno verde) e edite direto na página. Tabelas, escores, cabeçalho e o resto do arquivo base ficam travados. Salva sozinho; a seção editada volta para revisão.'}}</span>
+        <button *ngIf="locked() && canWrite()" type="button" class="btn btn-secondary btn-sm" [disabled]="reopening" (click)="reopenForWord()"><nl-icon name="edit"/> {{reopening ? 'Reabrindo…' : 'Reabrir para editar'}}</button>
         <span class="ws" [class.busy]="wordSaving">{{wordSaving ? 'Salvando…' : wordError ? wordError : wordSavedAt ? 'Salvo às ' + wordSavedAt : ''}}</span>
       </div>
       <div #docScroll class="docscroll" [class.wordon]="wordMode" [hidden]="docEditing" (scroll)="onDocScroll()">

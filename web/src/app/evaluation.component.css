@@ -267,7 +267,11 @@ nl-rich-editor .rte-area { font: 14.5px/1.65 var(--doc-font); color: var(--text)
 .mode-row .mlabel{font-size:13px;font-weight:600;color:var(--text)}
 .mode-row small{font-size:12.5px;color:var(--text-3);flex-basis:100%}
 /* Closing place/date line, in Identificação */
-/* "Word" tab: only the sections' paragraphs are editable on the page */
+/* "Word" tab: only the sections' paragraphs are editable on the page; the page alone, on a grey desk like Word */
+.docview.word .docmain{flex:1 1 auto;max-width:none}
+.docview.word .docscroll{background:#e9ecea}
+:host-context([data-theme="dark"]) .docview.word .docscroll{background:#1b2422}
+.wordbar .btn{flex:none}
 .wordbar{display:flex;align-items:center;gap:10px;margin:0 0 10px;padding:9px 12px;border:1px solid var(--primary-border,var(--border-card));border-radius:10px;background:var(--primary-soft);font-size:13px;color:var(--text-2);--ico-size:16px}
 .wordbar b{color:var(--text)}.wordbar span:first-of-type{flex:1}
 .wordbar .ws{flex:none;font-size:12px;color:var(--primary-text);white-space:nowrap}.wordbar .ws.busy{color:var(--text-3)}

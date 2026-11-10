@@ -282,6 +282,11 @@ test('approval and export: blocked until approved, then the evaluation is locked
   assert.ok(row.approved_at);
   const agendaRow = (await api('GET', '/api/devolutiva-agenda', {token: tokens.psy})).data.rows.find(r => r.evaluation_id === id);
   assert.equal(agendaRow?.readiness, 'Sim', 'approved evaluation: Prontos? turns to Sim');
+  // reopen to edit again: back to draft, audited; only once it is approved
+  assert.equal((await api('POST', ev + '/reopen', {token: tokens.psy, body: {}})).status, 200);
+  assert.equal((await api('POST', ev + '/reopen', {token: tokens.psy, body: {}})).status, 409);
+  { const d2 = db(); assert.equal(d2.prepare('SELECT status FROM evaluations WHERE id=?').get(id).status, 'draft'); d2.close(); }
+  assert.equal((await api('POST', ev + '/approve', {token: tokens.psy, body: {approveSections: true}})).status, 200);
 
   // locked
   const calls = aiRequests.length;

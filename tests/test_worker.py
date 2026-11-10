@@ -139,6 +139,14 @@ class TestWorker(unittest.TestCase):
   self.assertEqual(texts[5],'Nome: não deve mudar depois do primeiro título')
   self.assertEqual(out.tables[1].cell(0,1).text,'123')
 
+ def test_preview_tags_inserted_paragraphs_for_the_word_tab_only(self):
+  nl=chr(10);sec={'anamnesis':'## Sono'+nl+nl+'Texto.'}
+  run('export',stdin={'base':str(self.base),'out':str(self.out),'sections':sec,'tags':True})
+  xml=Document(self.out).element.xml
+  self.assertIn('nlsec_anamnesis_0',xml);self.assertIn('nlsec_anamnesis_1',xml)
+  plain=Path(str(self.out).replace('.docx','-final.docx'))
+  run('export',stdin={'base':str(self.base),'out':str(plain),'sections':sec})
+  self.assertNotIn('nlsec_',Document(plain).element.xml,'the downloaded file has no marks')
  def test_inserted_text_is_arial_11_with_1_5_spacing(self):
   nl=chr(10)
   run('export',stdin={'base':str(self.base),'out':str(self.out),'sections':{'anamnesis':'## Sono'+nl+nl+'Texto.'+nl+nl+'## Escola'+nl+nl+'Outro.'}})

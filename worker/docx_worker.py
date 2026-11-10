@@ -348,10 +348,11 @@ def blocks(content):
    else:out.append((line,False))
  return out
 def insert_after(anchor,content,red=False):
- last=anchor;first=True
+ last=anchor;first=True;made=[]
  for text,bold in blocks(content):
   if not text.strip():continue
-  p=new_paragraph(text,bold,red,title_gap=bold and not first);last.addnext(p);last=p;first=False
+  p=new_paragraph(text,bold,red,title_gap=bold and not first);last.addnext(p);last=p;first=False;made.append(p)
+ return made
 
 # ---------- formatted text from the app's editor (sanitized HTML subset, see web/src/app/rich-text.ts) ----------
 from html.parser import HTMLParser
@@ -506,9 +507,22 @@ def rich_paragraph(b,red=False,title_gap=False):
   if len(r)>1:p.append(r)
  return p
 def insert_rich_after(anchor,html,red=False):
- last=anchor;first=True
+ last=anchor;first=True;made=[]
  for b in rich_blocks(html):
-  p=rich_paragraph(b,red,title_gap=b['kind']=='h3' and not first);last.addnext(p);last=p;first=False
+  p=rich_paragraph(b,red,title_gap=b['kind']=='h3' and not first);last.addnext(p);last=p;first=False;made.append(p)
+ return made
+# Preview only ("Word" tab of the app): every inserted paragraph carries a bookmark nlsec_<key>_<n>, so the screen knows
+# which section it belongs to and makes only those paragraphs editable. Never in the downloaded file.
+_BM=[1000]
+def tag_section(k,paragraphs):
+ for n,p in enumerate(paragraphs):
+  _BM[0]+=1;i=str(_BM[0])
+  st=OxmlElement('w:bookmarkStart');st.set(qn('w:id'),i);st.set(qn('w:name'),('nlsec_'+re.sub(r'[^A-Za-z0-9_]','_',k)+'_'+str(n))[:40])
+  en=OxmlElement('w:bookmarkEnd');en.set(qn('w:id'),i)
+  ppr=p.find(qn('w:pPr'))
+  if ppr is not None:ppr.addnext(st)
+  else:p.insert(0,st)
+  p.append(en)
 def sha256(path):
  h=hashlib.sha256()
  with open(path,'rb') as f:
@@ -628,7 +642,7 @@ def excluded_elements(d,keys):
   s=starts[k];e=min([x for x in stops if x>s],default=len(children))
   out[k]=children[s:e]
  return out
-def export(base,out,sections,highlight=False,fields=None,rich=None,created=None,excluded=None):
+def export(base,out,sections,highlight=False,fields=None,rich=None,created=None,excluded=None,tags=False):
  excluded=[k for k in (excluded or [])]
  sections={k:v for k,v in sections.items() if k not in excluded}
  rich={k:v for k,v in (rich or {}).items() if k in sections and rich_matches(v,sections[k])}
@@ -653,7 +667,8 @@ def export(base,out,sections,highlight=False,fields=None,rich=None,created=None,
    for old in current:
     if clean(ptext(old)):replaced[k]=replaced.get(k,0)+1
     old.getparent().remove(old)
-   insert_rich_after(ch,rich[k],highlight) if k in rich else insert_after(ch,sections[k],highlight)
+   made_p=insert_rich_after(ch,rich[k],highlight) if k in rich else insert_after(ch,sections[k],highlight)
+   if tags:tag_section(k,made_p)
  for ch in body_children(d):
   if ch.getparent() is None:continue
   k=m.key(element_text(ch,d))
@@ -664,12 +679,14 @@ def export(base,out,sections,highlight=False,fields=None,rich=None,created=None,
    for old in current:
     if clean(ptext(old)):replaced[k]=replaced.get(k,0)+1
     old.getparent().remove(old)
-   insert_rich_after(ch,rich[k],highlight) if k in rich else insert_after(ch,sections[k],highlight)
+   made_p=insert_rich_after(ch,rich[k],highlight) if k in rich else insert_after(ch,sections[k],highlight)
+   if tags:tag_section(k,made_p)
  # sections written by hand for a title without field: add the field label and the text after the section's content
  for k,anchor in anchors.items():
   if k in sections and clean(sections[k]) and k not in seen:
    label=new_paragraph(FIELD_LABEL,bold=True);anchor.addnext(label)
-   insert_rich_after(label,rich[k],highlight) if k in rich else insert_after(label,sections[k],highlight)
+   made_p=insert_rich_after(label,rich[k],highlight) if k in rich else insert_after(label,sections[k],highlight)
+   if tags:tag_section(k,made_p)
    seen.append(k);added.append(k)
  # sections the file does not have, created by the psychologist's choice: title (+ field label for an interpretation),
  # the text, and a blank line, right before the next section of the report
@@ -683,7 +700,8 @@ def export(base,out,sections,highlight=False,fields=None,rich=None,created=None,
   title=new_paragraph(clean(created.get('titles',{}).get(k) or k).upper(),bold=True,red=highlight);gap.addprevious(title)
   last=title
   if k in SLOTS:label=new_paragraph(FIELD_LABEL,bold=True,red=highlight);title.addnext(label);last=label
-  insert_rich_after(last,rich[k],highlight) if k in rich else insert_after(last,sections[k],highlight)
+  made_p=insert_rich_after(last,rich[k],highlight) if k in rich else insert_after(last,sections[k],highlight)
+  if tags:tag_section(k,made_p)
   seen.append(k);made_keys.append(k)
  # sections left out by the psychologist's choice: their title, tables and texts are removed from the copy
  for els in gone.values():
@@ -730,7 +748,7 @@ def main():
  sys.stdout.reconfigure(encoding='utf-8')
  if op=='inspect': print(json.dumps(inspect(sys.argv[2]),ensure_ascii=False))
  elif op=='export':
-  spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(export(spec['base'],spec['out'],spec['sections'],spec.get('highlight',False),spec.get('fields'),spec.get('rich'),spec.get('created'),spec.get('excluded')),ensure_ascii=False))
+  spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(export(spec['base'],spec['out'],spec['sections'],spec.get('highlight',False),spec.get('fields'),spec.get('rich'),spec.get('created'),spec.get('excluded'),spec.get('tags',False)),ensure_ascii=False))
  elif op=='images': print(json.dumps(images(sys.argv[2])))
  elif op=='letter':
   spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(letter(spec['out'],spec.get('title',''),spec.get('subtitle',''),spec['content']),ensure_ascii=False))

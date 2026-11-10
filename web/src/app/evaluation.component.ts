@@ -1236,6 +1236,7 @@ export class EvaluationComponent implements OnDestroy {
       const {renderAsync} = await import('docx-preview');
       await renderAsync(data, next, undefined, {className: 'docx', inWrapper: true, ignoreLastRenderedPageBreak: true});
       box.replaceChildren(...Array.from(next.childNodes)); this.docIndex = null;
+      if (this.wordMode) this.enableWord(box);
       this.pageCount = box.querySelectorAll('section.docx').length;
       if (this.docWidth) this.fitDocWidth();
       if (quiet && this.docActive) this.jumpToSection(this.docActive, false);
@@ -1483,5 +1484,81 @@ export class EvaluationComponent implements OnDestroy {
   /** Identificação and files share the first step; a manual evaluation has no AI step. */
   stepIdx() { return this.aiOn() ? [0, 2, 3] : [0, 3]; }
   goStep(i: number) { if (i === 1) i = 0; if (i === 2 && !this.aiOn()) i = 3; if (i !== 3) this.closeRefs(); this.step = i; if (i === 3 && this.mode === 'documento') setTimeout(() => this.renderPreview()); }
-  setMode(m: 'secoes' | 'documento') { if (m === 'documento' && !this.canWrite()) return; if (m !== 'documento' && this.docEditing) this.finishDocEdit(); if (m !== 'secoes') this.closeRefs(); this.mode = m; if (m === 'documento') setTimeout(() => this.renderPreview()); }
+  setMode(m: 'secoes' | 'documento', word = false) {
+    if (m === 'documento' && !this.canWrite()) return;
+    if (m !== 'documento' && this.docEditing) this.finishDocEdit();
+    if (m !== 'secoes') this.closeRefs();
+    const wasWord = this.wordMode;
+    if (wasWord) this.flushWord();
+    this.wordMode = m === 'documento' && word;
+    this.mode = m;
+    if (m === 'documento') setTimeout(() => this.renderPreview(wasWord && this.wordMode));
+  }
+
+  // ---------- "Word" tab: the rendered report with only the sections' own paragraphs editable ----------
+  // The preview marks every inserted paragraph with a bookmark nlsec_<key>_<n> (worker, preview only). Those paragraphs become
+  // editable; everything else of the base file (tables, scores, header, fixed text) stays read-only, as rule 2 requires.
+  wordMode = false; wordSaving = false; wordSavedAt = ''; wordError = '';
+  private wordDirty = new Set<string>(); private wordTimer: any = null; private wordBox: HTMLElement | null = null;
+  private enableWord(box: HTMLElement) {
+    this.wordBox = box;
+    if (this.readOnly()) return;
+    for (const b of Array.from(box.querySelectorAll<HTMLElement>('span[id^="nlsec_"]'))) {
+      const m = b.id.match(/^nlsec_(.+)_(\d+)$/); const p = b.closest('p') as HTMLElement | null;
+      if (!m || !p) continue;
+      p.contentEditable = 'true'; p.spellcheck = true; p.lang = 'pt-BR'; p.dataset['sec'] = m[1]; p.classList.add('nl-word');
+      p.title = this.sectionName(m[1]) + ' · editável';
+    }
+    if ((box as any).__nlWord) return;
+    (box as any).__nlWord = true;
+    box.addEventListener('input', e => { const p = (e.target as HTMLElement).closest?.('p[data-sec]') as HTMLElement | null; if (p) this.wordChanged(p.dataset['sec']!); });
+    box.addEventListener('focusout', () => this.flushWord());
+    box.addEventListener('keydown', e => this.wordKey(e as KeyboardEvent));
+    box.addEventListener('paste', e => { const p = (e.target as HTMLElement).closest?.('p[data-sec]'); if (!p) return; e.preventDefault(); const t = (e as ClipboardEvent).clipboardData?.getData('text/plain') || ''; document.execCommand('insertText', false, t.replace(/\s*\n\s*/g, ' ')); });
+  }
+  private wordChanged(k: string) { this.wordDirty.add(k); this.wordError = ''; clearTimeout(this.wordTimer); this.wordTimer = setTimeout(() => this.flushWord(), 1500); }
+  /** Enter splits the paragraph (new paragraph of the same section); Backspace at the start joins it to the previous one. */
+  private wordKey(e: KeyboardEvent) {
+    const p = (e.target as HTMLElement).closest?.('p[data-sec]') as HTMLElement | null; const sel = document.getSelection();
+    if (!p || !sel?.rangeCount) return;
+    const r = sel.getRangeAt(0);
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      const tail = document.createRange(); tail.setStart(r.endContainer, r.endOffset); tail.setEnd(p, p.childNodes.length);
+      const np = p.cloneNode(false) as HTMLElement; np.appendChild(tail.extractContents()); if (!np.textContent) np.appendChild(document.createElement('br'));
+      p.after(np); np.focus(); const c = document.createRange(); c.setStart(np, 0); c.collapse(true); sel.removeAllRanges(); sel.addRange(c);
+      this.wordChanged(p.dataset['sec']!);
+    } else if (e.key === 'Backspace' && r.collapsed) {
+      const head = document.createRange(); head.setStart(p, 0); head.setEnd(r.startContainer, r.startOffset);
+      const prev = p.previousElementSibling as HTMLElement | null;
+      if (head.toString() !== '' || !prev || prev.dataset['sec'] !== p.dataset['sec']) return;
+      e.preventDefault();
+      const at = prev.childNodes.length; while (p.firstChild) prev.appendChild(p.firstChild); p.remove();
+      prev.focus(); const c = document.createRange(); c.setStart(prev, at); c.collapse(true); sel.removeAllRanges(); sel.addRange(c);
+      this.wordChanged(prev.dataset['sec']!);
+    }
+  }
+  /** Saves every section edited on the page: text with "## " titles (bold paragraphs) and the same as simple HTML. */
+  async flushWord() {
+    clearTimeout(this.wordTimer);
+    const box = this.wordBox; if (!box || !this.wordDirty.size || this.wordSaving) return;
+    const keys = [...this.wordDirty]; this.wordDirty.clear(); this.wordSaving = true;
+    const esc = (t: string) => t.replace(/[&<>]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c]!));
+    try {
+      for (const k of keys) {
+        const parts = Array.from(box.querySelectorAll<HTMLElement>(`p[data-sec="${CSS.escape(k)}"]`)).map(p => {
+          const text = (p.innerText || '').replace(/\s+/g, ' ').trim();
+          const spans = Array.from(p.querySelectorAll('span')).filter(s => s.childElementCount === 0 && (s.textContent || '').trim());
+          const bold = !!spans.length && spans.every(s => Number(getComputedStyle(s).fontWeight) >= 600);
+          return {text, bold};
+        }).filter(x => x.text);
+        const content = parts.map(x => x.bold ? '## ' + x.text : x.text).join('\n\n');
+        const html = parts.map(x => x.bold ? `<h3>${esc(x.text)}</h3>` : `<p>${esc(x.text)}</p>`).join('');
+        await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content, html, merge: true});
+      }
+      const now = new Date(); this.wordSavedAt = now.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+      await this.load(); this.changed.emit();
+    } catch { keys.forEach(k => this.wordDirty.add(k)); this.wordError = 'Não salvou. Tentando de novo ao editar.'; }
+    finally { this.wordSaving = false; if (this.wordDirty.size && !this.wordError) this.flushWord(); }
+  }
 }

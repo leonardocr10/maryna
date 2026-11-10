@@ -207,7 +207,7 @@
         <button *ngIf="!readOnly()" class="btn btn-secondary btn-sm" data-nl-action="approve-all" (click)="openApproveAll()" [disabled]="allApproved()" [title]="allApproved() ? 'Todas já estão aprovadas' : 'Escolher as seções e aprovar'"><nl-icon name="check"/> Aprovar todas</button>
         <!-- Modo automático: opens the Chrome extension's panel; without the extension, how to install it -->
         <button *ngIf="!readOnly()" type="button" class="btn btn-primary btn-sm" data-nl-action="auto-mode" (click)="openAutoMode()" title="Gerar rascunhos automaticamente com ChatGPT" aria-haspopup="dialog"><nl-icon name="robot"/> <span class="nlx-label">Modo automático</span></button>
-        <div class="seg" role="tablist" aria-label="Modo de visualização"><button type="button" role="tab" [attr.aria-selected]="mode==='secoes'" [class.on]="mode==='secoes'" (click)="setMode('secoes')"><nl-icon name="layers"/> Seções</button><button *ngIf="canWrite()" type="button" role="tab" [attr.aria-selected]="mode==='documento'" [class.on]="mode==='documento'" (click)="setMode('documento')"><nl-icon name="doc"/> Documento</button></div>
+        <div class="seg" role="tablist" aria-label="Modo de visualização"><button type="button" role="tab" [attr.aria-selected]="mode==='secoes'" [class.on]="mode==='secoes'" (click)="setMode('secoes')"><nl-icon name="layers"/> Seções</button><button *ngIf="canWrite()" type="button" role="tab" [attr.aria-selected]="mode==='documento' && !wordMode" [class.on]="mode==='documento' && !wordMode" (click)="setMode('documento')"><nl-icon name="doc"/> Documento</button><button *ngIf="canWrite()" type="button" role="tab" [attr.aria-selected]="mode==='documento' && wordMode" [class.on]="mode==='documento' && wordMode" (click)="setMode('documento', true)" title="Editar os textos das seções direto na página do Word"><nl-icon name="edit"/> Word</button></div>
       </div>
     </div>
 
@@ -505,7 +505,11 @@
           </section>
         </div>
       </div>
-      <div #docScroll class="docscroll" [hidden]="docEditing" (scroll)="onDocScroll()">
+      <div *ngIf="wordMode && !docEditing" class="wordbar" role="status">
+        <nl-icon name="edit"/><span><b>Modo Word:</b> clique nos textos das seções (contorno verde) e edite direto na página. Tabelas, escores, cabeçalho e o resto do arquivo base ficam travados. {{readOnly() ? 'Esta avaliação está somente leitura.' : 'Salva sozinho; a seção editada volta para revisão.'}}</span>
+        <span class="ws" [class.busy]="wordSaving">{{wordSaving ? 'Salvando…' : wordError ? wordError : wordSavedAt ? 'Salvo às ' + wordSavedAt : ''}}</span>
+      </div>
+      <div #docScroll class="docscroll" [class.wordon]="wordMode" [hidden]="docEditing" (scroll)="onDocScroll()">
         <p *ngIf="previewLoading" class="caption center">Montando o documento…</p>
         <p *ngIf="!docName('base')" class="caption center">Envie o arquivo base para ver o documento.</p>
         <div #previewBox class="doc" [style.zoom]="zoom"></div>

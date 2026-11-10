@@ -387,6 +387,23 @@ class TestWordConstructs(unittest.TestCase):
   self.assertNotIn('Nome',r['fields_filled']);self.assertIn('Paciente Fictício',xml);self.assertNotIn('Outro Nome',xml)
   self.assertIn('TEXTO APAGADO',xml)   # deleted text stays in the file, as a deletion
 
+class TestEditedReport(unittest.TestCase):
+ def test_blocks_rebuild_the_report_keeping_page_setup_and_formatting(self):
+  with tempfile.TemporaryDirectory() as t:
+   base=Path(t)/'b.docx';synthetic_base(str(base));out=Path(t)/'o.docx'
+   blocks=[{'t':'p','align':'center','runs':[{'text':'TÍTULO','b':True,'size':14}]},
+    {'t':'p','line':1.5,'after':6,'runs':[{'text':'Texto ','i':True},{'text':'vermelho','color':'#FF0000'}]},
+    {'t':'pagebreak'},
+    {'t':'table','rows':[[{'blocks':[{'t':'p','runs':[{'text':'A'}]}]},{'blocks':[{'t':'p','runs':[{'text':'1'}]}]}]]}]
+   before=sha(base);run('blocks',stdin={'base':str(base),'out':str(out),'blocks':blocks})
+   self.assertEqual(sha(base),before,'the base never changes')
+   d=Document(out);ps=[p for p in d.paragraphs if p.text]
+   self.assertEqual([p.text for p in ps],['TÍTULO','Texto vermelho'])
+   self.assertTrue(ps[0].runs[0].bold);self.assertEqual(ps[0].runs[0].font.size.pt,14.0);self.assertEqual(ps[0].alignment,1)
+   self.assertEqual(ps[1].paragraph_format.line_spacing,1.5);self.assertTrue(ps[1].runs[0].italic);self.assertEqual(str(ps[1].runs[1].font.color.rgb),'FF0000')
+   self.assertEqual([c.text for c in d.tables[0].rows[0].cells],['A','1'])
+   self.assertEqual(d.sections[0].page_width,Document(base).sections[0].page_width,'page setup of the report')
+
 class TestLetter(unittest.TestCase):
  def test_letter_builds_a_new_document_with_titles_and_paragraphs(self):
   with tempfile.TemporaryDirectory() as t:

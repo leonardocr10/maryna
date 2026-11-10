@@ -424,20 +424,42 @@
          downloads use the saved copy while it exists. -->
     <section *ngIf="mode==='documento' && wordMode" class="card wordview" aria-label="Editor Word">
       <div class="wv-head">
-        <span class="wv-t"><nl-icon name="doc"/><b>Editor Word</b><small>{{wordState==='saved' ? 'Versão final editada' + (wordFinalAt ? ' · salva em ' + wordFinalAt : '') : wordState==='new' ? 'Gerado agora a partir das seções' : ''}}</small></span>
+        <span class="wv-t"><nl-icon name="doc"/><b>Word</b><small>{{wordState==='saved' ? 'Versão final editada' + (wordFinalAt ? ' · salva em ' + wordFinalAt : '') : wordState==='new' ? 'Gerado agora a partir das seções' : 'Abrindo…'}}</small></span>
         <span class="grow"></span>
-        <button *ngIf="wordState==='saved'" type="button" class="btn btn-secondary btn-sm" (click)="restartWord()" title="Descarta a versão editada e gera de novo a partir das seções"><nl-icon name="restore"/> Recomeçar das seções</button>
+        <span class="ws" [class.err]="wordError">{{wordSaving ? 'Salvando…' : wordError || (wordDirty ? 'Alterações não salvas' : wordSavedAt ? 'Salvo às ' + wordSavedAt : '')}}</span>
+        <button *ngIf="wordState==='saved'" type="button" class="btn btn-secondary btn-sm" [disabled]="wordSaving" (click)="restartWord()" title="Descarta a versão editada e gera de novo a partir das seções"><nl-icon name="restore"/> Recomeçar das seções</button>
+        <button type="button" class="btn btn-primary btn-sm" [disabled]="wordSaving || !wordReady" (click)="saveWord()" title="Salvar (Ctrl+S)"><nl-icon name="save"/> Salvar</button>
         <button type="button" class="btn btn-secondary btn-sm" (click)="setMode('secoes')"><nl-icon name="chevl"/> Voltar às seções</button>
       </div>
       <div *ngIf="wordOutdated" class="alert warn small"><nl-icon name="alert"/><div><p><b>As seções mudaram depois desta versão editada.</b> O Word baixado continua sendo esta versão. Para trazer as mudanças das seções, use "Recomeçar das seções" (as edições feitas aqui são descartadas).</p></div></div>
-      <ng-container *ngIf="wordOff; else ooBox">
-        <div class="alert warn"><nl-icon name="info"/><div><p><b>O editor Word ainda não está instalado neste servidor.</b></p><p>Ele usa o OnlyOffice Docs, instalado no computador do sistema (passo a passo em docs/ONLYOFFICE.md). Depois de configurar ONLYOFFICE_URL e ONLYOFFICE_JWT_SECRET no .env da API, esta aba abre o laudo para edição livre.</p></div></div>
-      </ng-container>
-      <ng-template #ooBox>
-        <p class="caption wv-note">Edição livre de uma cópia do laudo, como no Word. O arquivo base enviado nunca muda. O editor salva sozinho e no botão Salvar dele; enquanto existir esta versão editada, é ela que vai no Word e no PDF baixados.</p>
-        <p *ngIf="wordError" class="alert danger small">{{wordError}}</p>
-        <div class="wv-desk"><div id="nl-oo"></div><p *ngIf="!wordReady && !wordError" class="caption center wv-load">Abrindo o editor Word…</p></div>
-      </ng-template>
+      <div class="wv-bar" role="toolbar" aria-label="Formatação" (mousedown)="wordKeep($event)">
+        <button type="button" title="Desfazer (Ctrl+Z)" aria-label="Desfazer" (click)="wordCmd('undo')"><nl-icon name="undo"/></button>
+        <button type="button" title="Refazer (Ctrl+Y)" aria-label="Refazer" (click)="wordCmd('redo')"><nl-icon name="redo"/></button>
+        <i class="sep"></i>
+        <select aria-label="Fonte" (change)="wordFont($any($event.target).value); $any($event.target).value=''"><option value="">Fonte</option><option *ngFor="let f of WORD_FONTS" [value]="f" [style.font-family]="f">{{f}}</option></select>
+        <select aria-label="Tamanho" (change)="wordSize($any($event.target).value); $any($event.target).value=''"><option value="">Tam.</option><option *ngFor="let s of WORD_SIZES" [value]="s">{{s}}</option></select>
+        <i class="sep"></i>
+        <button type="button" title="Negrito (Ctrl+B)" aria-label="Negrito" (click)="wordCmd('bold')"><b>N</b></button>
+        <button type="button" title="Itálico (Ctrl+I)" aria-label="Itálico" (click)="wordCmd('italic')"><i>I</i></button>
+        <button type="button" title="Sublinhado (Ctrl+U)" aria-label="Sublinhado" (click)="wordCmd('underline')"><u>S</u></button>
+        <button type="button" title="Tachado" aria-label="Tachado" (click)="wordCmd('strikeThrough')"><s>ab</s></button>
+        <label class="clr" title="Cor do texto"><span class="a">A</span><input type="color" value="#c00000" aria-label="Cor do texto" (input)="wordCmd('foreColor', $any($event.target).value)"></label>
+        <label class="clr hl" title="Realce"><span class="a">ab</span><input type="color" value="#ffff00" aria-label="Cor do realce" (input)="wordCmd('hiliteColor', $any($event.target).value)"></label>
+        <i class="sep"></i>
+        <button type="button" title="Alinhar à esquerda" aria-label="Alinhar à esquerda" (click)="wordCmd('justifyLeft')"><span class="al l"></span></button>
+        <button type="button" title="Centralizar" aria-label="Centralizar" (click)="wordCmd('justifyCenter')"><span class="al c"></span></button>
+        <button type="button" title="Alinhar à direita" aria-label="Alinhar à direita" (click)="wordCmd('justifyRight')"><span class="al r"></span></button>
+        <button type="button" title="Justificar" aria-label="Justificar" (click)="wordCmd('justifyFull')"><span class="al j"></span></button>
+        <i class="sep"></i>
+        <button type="button" title="Marcadores" aria-label="Marcadores" (click)="wordCmd('insertUnorderedList')"><nl-icon name="list"/></button>
+        <button type="button" title="Numeração" aria-label="Numeração" (click)="wordCmd('insertOrderedList')">1.</button>
+        <select aria-label="Espaçamento entre linhas" title="Espaçamento entre linhas" (change)="wordLine($any($event.target).value); $any($event.target).value=''"><option value="">Linhas</option><option *ngFor="let l of WORD_LINES" [value]="l">{{l.toString().replace('.', ',')}}</option></select>
+        <span class="grow"></span>
+        <button type="button" aria-label="Diminuir zoom" (click)="wordZoomBy(-0.1)">−</button><span class="zv">{{(wordZoom*100).toFixed(0)}}%</span><button type="button" aria-label="Aumentar zoom" (click)="wordZoomBy(0.1)">+</button>
+      </div>
+      <p *ngIf="wordError && !wordReady" class="alert danger small">{{wordError}}</p>
+      <div class="wv-desk"><div #wordPage class="wv-doc" [style.zoom]="wordZoom" (input)="wordEdited()"></div><p *ngIf="!wordReady && !wordError" class="caption center wv-load">Abrindo o documento…</p></div>
+      <p class="caption wv-note">Edição livre de uma cópia do laudo. O arquivo base enviado nunca muda; enquanto existir esta versão editada, é ela que vai no Word e no PDF baixados. Salva sozinho 30 segundos depois da última edição, no Ctrl+S e ao sair.</p>
     </section>
 
     <section [hidden]="mode!=='documento' || wordMode" class="card docview" [class.doc-only]="docOnly" [attr.role]="docOnly ? 'dialog' : null" [attr.aria-label]="docOnly ? 'Documento' : null">

@@ -1495,39 +1495,144 @@ export class EvaluationComponent implements OnDestroy {
     if (m === 'documento') setTimeout(() => this.renderPreview());
   }
 
-  // ---------- "Word" tab: free editing of a COPY of the report in OnlyOffice Docs (self-hosted Word editor) ----------
-  // The psychologist's choice (AGENTS.md rule 2, exception): the base file never changes; the edited copy is saved in the system
-  // by OnlyOffice itself (callback to the API) and downloads use it while it exists. "Recomeçar das seções" discards it.
-  wordMode = false; wordReady = false; wordError = ''; wordOff = false;
-  wordState: '' | 'new' | 'saved' = ''; wordFinalAt = ''; wordOutdated = false;
-  private oo: any = null; private static ooScript = '';
+  // ---------- "Word" tab: the report edited freely in the browser, like Word (no server, no plugin) ----------
+  // The psychologist's choice (AGENTS.md rule 2, exception): a COPY of the report generated from the sections is shown as Word
+  // pages (docx-preview) with the body editable; formatting comes from the toolbar. Saving sends the edited body as blocks and
+  // the worker rebuilds the .docx with the page setup, header and footer of the report. The uploaded base file never changes;
+  // downloads use the saved copy while it exists. "Recomeçar das seções" discards it.
+  @ViewChild('wordPage') wordPage?: ElementRef<HTMLDivElement>;
+  wordMode = false; wordReady = false; wordSaving = false; wordDirty = false; wordSavedAt = ''; wordError = '';
+  wordState: '' | 'new' | 'saved' = ''; wordFinalAt = ''; wordOutdated = false; wordZoom = 1;
+  private wordSig = ''; private wordTimer: any = null;
+  readonly WORD_FONTS = ['Arial', 'Calibri', 'Cambria', 'Georgia', 'Segoe UI', 'Tahoma', 'Times New Roman', 'Verdana'];
+  readonly WORD_SIZES = [8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 24, 28, 36];
+  readonly WORD_LINES = [1, 1.15, 1.5, 2];
   async openWord() {
-    this.closeWord();
-    this.wordReady = false; this.wordError = ''; this.wordOff = false; this.wordState = '';
-    let r: any;
-    try { r = await this.api.req<any>('POST', `/evaluations/${this.evaluationId}/final/editor`, {}); }
-    catch (e: any) { if (e?.error?.code === 'onlyoffice_off') this.wordOff = true; else this.wordError = 'Não foi possível abrir o editor Word.'; return; }
-    this.wordState = r.state; this.wordOutdated = !!r.outdated;
-    this.wordFinalAt = r.saved_at ? new Date(String(r.saved_at).replace(' ', 'T') + (String(r.saved_at).endsWith('Z') ? '' : 'Z')).toLocaleString('pt-BR', {dateStyle: 'short', timeStyle: 'short'}) : '';
+    this.wordReady = false; this.wordError = ''; this.wordDirty = false; this.wordSavedAt = ''; this.wordState = '';
     try {
-      const src = r.url + '/web-apps/apps/api/documents/api.js';
-      if (EvaluationComponent.ooScript !== src) {
-        await new Promise<void>((ok, bad) => { const sc = document.createElement('script'); sc.src = src; sc.onload = () => ok(); sc.onerror = () => bad(); document.head.appendChild(sc); });
-        EvaluationComponent.ooScript = src;
+      const {blob, headers} = await this.api.blobResp(`/evaluations/${this.evaluationId}/final/source`);
+      this.wordState = headers.get('X-Final') === 'saved' ? 'saved' : 'new';
+      this.wordOutdated = headers.get('X-Final-Outdated') === '1';
+      this.wordSig = headers.get('X-Sections-Sig') || '';
+      const at = headers.get('X-Final-Saved-At') || '';
+      this.wordFinalAt = at ? new Date(at.replace(' ', 'T') + (at.endsWith('Z') ? '' : 'Z')).toLocaleString('pt-BR', {dateStyle: 'short', timeStyle: 'short'}) : '';
+      await new Promise(r => setTimeout(r));
+      const box = this.wordPage?.nativeElement; if (!box || !this.wordMode) return;
+      const next = document.createElement('div');
+      const {renderAsync} = await import('docx-preview');
+      await renderAsync(blob, next, undefined, {className: 'docx', inWrapper: true, ignoreLastRenderedPageBreak: true, renderHeaders: true, renderFooters: true});
+      box.replaceChildren(...Array.from(next.childNodes));
+      // only the body of each page is editable; header and footer (logo) stay as in the report
+      for (const a of Array.from(box.querySelectorAll<HTMLElement>('section.docx > article'))) { a.contentEditable = 'true'; a.spellcheck = true; a.lang = 'pt-BR'; }
+      try { document.execCommand('styleWithCSS', false, 'true'); } catch {}
+      this.wordReady = true;
+    } catch { this.wordError = 'Não foi possível abrir o documento.'; }
+  }
+  wordEdited() { if (!this.wordReady) return; this.wordDirty = true; this.wordError = ''; clearTimeout(this.wordTimer); this.wordTimer = setTimeout(() => this.saveWord(), 30000); }
+  /** Toolbar: keeps the selection in the page (mousedown would move it to the button). */
+  wordKeep(e: MouseEvent) { if ((e.target as HTMLElement).closest('button')) e.preventDefault(); }
+  wordCmd(cmd: string, value?: string) { document.execCommand(cmd, false, value); this.wordEdited(); }
+  wordFont(name: string) { if (name) this.wordCmd('fontName', name); }
+  /** Size in points: execCommand only knows 1–7, so the marked spans get the chosen size. */
+  wordSize(pt: string) {
+    const box = this.wordPage?.nativeElement; if (!box || !pt) return;
+    document.execCommand('fontSize', false, '7');
+    for (const el of Array.from(box.querySelectorAll<HTMLElement>('font[size="7"], span[style*="xxx-large"]'))) { el.removeAttribute('size'); el.style.fontSize = pt + 'pt'; }
+    this.wordEdited();
+  }
+  /** Line spacing of the paragraphs in the selection. */
+  wordLine(v: string) {
+    const sel = document.getSelection(); if (!sel?.rangeCount || !v) return;
+    const r = sel.getRangeAt(0), root = (r.commonAncestorContainer as HTMLElement).nodeType === 1 ? r.commonAncestorContainer as HTMLElement : r.commonAncestorContainer.parentElement!;
+    const art = root.closest('article'); if (!art) return;
+    const ps = Array.from(art.querySelectorAll<HTMLElement>('p, li, div')).filter(p => r.intersectsNode(p));
+    (ps.length ? ps : [root.closest('p, li, div') as HTMLElement].filter(Boolean)).forEach(p => p.style.lineHeight = v);
+    this.wordEdited();
+  }
+  wordZoomBy(d: number) { this.wordZoom = Math.min(2, Math.max(0.5, Math.round((this.wordZoom + d) * 10) / 10)); }
+
+  /** The edited body as blocks: paragraphs (with the computed formatting of each piece of text), tables and pictures. */
+  private wordBlocks(): any[] {
+    const box = this.wordPage?.nativeElement; if (!box) return [];
+    const pt = (px: string) => Math.round(parseFloat(px) * 0.75 * 10) / 10;
+    const hex = (c: string) => { const m = c.match(/\d+(\.\d+)?/g); if (!m || (m.length > 3 && Number(m[3]) === 0)) return ''; return '#' + m.slice(0, 3).map(x => Number(x).toString(16).padStart(2, '0')).join(''); };
+    const counters = new Map<string, number>();
+    const runsOf = (el: HTMLElement) => {
+      const runs: any[] = [];
+      const deco = (n: HTMLElement, what: string) => { for (let x: HTMLElement | null = n; x && x !== el.parentElement; x = x.parentElement) if (getComputedStyle(x).textDecorationLine.includes(what)) return true; return false; };
+      const bgOf = (n: HTMLElement) => { for (let x: HTMLElement | null = n; x && x !== el; x = x.parentElement) { const b = hex(getComputedStyle(x).backgroundColor); if (b) return b; } return ''; };
+      const walk = (n: Node) => {
+        if (n.nodeType === 3) {
+          const t = (n.textContent || '').replace(/ /g, ' '); if (!t) return;
+          const p = n.parentElement!, cs = getComputedStyle(p);
+          const tab = !!p.closest('[class*="tab"]');
+          const r = {text: tab ? '\t' : t, b: Number(cs.fontWeight) >= 600, i: cs.fontStyle === 'italic', u: deco(p, 'underline'), s: deco(p, 'line-through'),
+            sup: cs.verticalAlign === 'super', sub: cs.verticalAlign === 'sub', size: pt(cs.fontSize), font: cs.fontFamily.split(',')[0].replace(/["']/g, '').trim(), color: hex(cs.color), bg: bgOf(p)};
+          const last = runs[runs.length - 1];
+          if (last && !last.img && ['b', 'i', 'u', 's', 'sup', 'sub', 'size', 'font', 'color', 'bg'].every(k => (last as any)[k] === (r as any)[k])) last.text += r.text; else runs.push(r);
+        } else if (n.nodeType === 1) {
+          const e = n as HTMLElement;
+          if (e.tagName === 'BR') { runs.push({text: '\n', br: true}); return; }
+          if (e.tagName === 'IMG') {
+            const img = e as HTMLImageElement;
+            try { const c = document.createElement('canvas'); c.width = img.naturalWidth || img.width; c.height = img.naturalHeight || img.height; c.getContext('2d')!.drawImage(img, 0, 0); runs.push({img: c.toDataURL('image/png'), w: Math.round(img.getBoundingClientRect().width / this.wordZoom * 0.75)}); } catch {}
+            return;
+          }
+          e.childNodes.forEach(walk);
+        }
+      };
+      // numbering drawn by the page (bullets / counters) becomes text, so the copy keeps it
+      const before = getComputedStyle(el, '::before').content;
+      if (before && before !== 'none' && before !== 'normal') {
+        let mark = '';
+        if (/^["'].*["']$/.test(before)) mark = before.slice(1, -1).replace(/\\9/g, '\t');
+        else if (before.includes('counter')) { const k = el.className || 'n'; const v = (counters.get(k) || 0) + 1; counters.set(k, v); mark = v + '.'; }
+        if (mark.trim()) runs.push({text: mark.trim() + '\t', size: pt(getComputedStyle(el).fontSize)});
       }
-      await new Promise(res => setTimeout(res));
-      if (!this.wordMode || !document.getElementById('nl-oo')) return;
-      this.oo = new (window as any).DocsAPI.DocEditor('nl-oo', {...r.config, width: '100%', height: '100%', type: 'desktop',
-        events: {onAppReady: () => this.zone.run(() => this.wordReady = true), onError: () => this.zone.run(() => this.wordError = 'O editor Word mostrou um erro. Feche e abra de novo.')}});
-    } catch { this.wordError = 'O servidor do editor Word (OnlyOffice) não respondeu. Confira se ele está ligado.'; }
+      if (el.tagName === 'LI') runs.push({text: (el.parentElement?.tagName === 'OL' ? (Array.from(el.parentElement.children).indexOf(el) + 1) + '.' : '•') + '\t', size: pt(getComputedStyle(el).fontSize)});
+      el.childNodes.forEach(walk);
+      return runs;
+    };
+    const para = (el: HTMLElement) => {
+      const cs = getComputedStyle(el), fs = parseFloat(cs.fontSize) || 14.67;
+      const lh = cs.lineHeight === 'normal' ? undefined : Math.round(parseFloat(cs.lineHeight) / fs * 100) / 100;
+      return {t: 'p', align: ({start: 'left', left: 'left', center: 'center', right: 'right', end: 'right', justify: 'justify'} as any)[cs.textAlign] || 'left',
+        before: pt(cs.marginTop), after: pt(cs.marginBottom), indent: pt(cs.textIndent), left: pt(cs.marginLeft) + pt(cs.paddingLeft), right: pt(cs.marginRight),
+        line: lh && lh > 0.5 && lh < 4 ? lh : undefined, runs: runsOf(el)};
+    };
+    const blocksOf = (root: Element, out: any[]) => {
+      for (const ch of Array.from(root.children) as HTMLElement[]) {
+        const tag = ch.tagName;
+        if (tag === 'P' || tag === 'H1' || tag === 'H2' || tag === 'H3' || tag === 'H4' || tag === 'LI') out.push(para(ch));
+        else if (tag === 'TABLE') out.push({t: 'table', rows: Array.from(ch.querySelectorAll(':scope > tbody > tr, :scope > thead > tr, :scope > tr')).map(tr =>
+          Array.from(tr.children).map(td => { const cb: any[] = []; blocksOf(td, cb); if (!cb.length) cb.push(para(td as HTMLElement)); return {blocks: cb, bg: hex(getComputedStyle(td).backgroundColor)}; }))});
+        else if (tag === 'STYLE' || tag === 'SCRIPT') continue;
+        else if (ch.children.length && Array.from(ch.children).some(c => /^(P|TABLE|UL|OL|LI|DIV|H\d)$/.test(c.tagName))) blocksOf(ch, out);
+        else if ((ch.textContent || '').trim() || ch.querySelector('img')) out.push(para(ch));
+      }
+    };
+    const out: any[] = [];
+    Array.from(box.querySelectorAll<HTMLElement>('section.docx > article')).forEach((a, i) => { if (i) out.push({t: 'pagebreak'}); blocksOf(a, out); });
+    return out;
+  }
+  async saveWord() {
+    clearTimeout(this.wordTimer);
+    if (!this.wordReady || this.wordSaving) return;
+    this.wordSaving = true; this.wordError = '';
+    try {
+      await this.api.req('POST', `/evaluations/${this.evaluationId}/final/blocks`, {blocks: this.wordBlocks(), sig: this.wordSig});
+      this.wordDirty = false; this.wordState = 'saved'; this.wordOutdated = false;
+      this.wordSavedAt = new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+    } catch { this.wordError = 'Não salvou. Clique em Salvar para tentar de novo.'; }
+    finally { this.wordSaving = false; }
   }
   async restartWord() {
-    if (!await this.confirm.ask({tone: 'danger', title: 'Recomeçar das seções?', body: 'A versão editada no editor Word é descartada e o laudo é gerado de novo a partir dos textos das seções.', facts: ['O arquivo base não muda', 'Os textos das seções não mudam'], ok: 'Descartar e recomeçar'})) return;
-    this.closeWord();
-    try { await this.api.req('DELETE', `/evaluations/${this.evaluationId}/final`); this.api.notify('Versão editada descartada.'); } catch {}
-    setTimeout(() => this.openWord(), 300);
+    if (!await this.confirm.ask({tone: 'danger', title: 'Recomeçar das seções?', body: 'A versão editada no Word é descartada e o laudo é gerado de novo a partir dos textos das seções.', facts: ['O arquivo base não muda', 'Os textos das seções não mudam'], ok: 'Descartar e recomeçar'})) return;
+    try { await this.api.req('DELETE', `/evaluations/${this.evaluationId}/final`); this.wordDirty = false; this.api.notify('Versão editada descartada.'); await this.openWord(); } catch {}
   }
-  /** Closing the editor makes OnlyOffice send the edited file (it saves on close and on "Salvar"). */
-  closeWord() { try { this.oo?.destroyEditor?.(); } catch {} this.oo = null; this.wordReady = false; }
+  /** Leaving the Word tab saves what was not saved yet. */
+  closeWord() { clearTimeout(this.wordTimer); if (this.wordDirty && this.wordReady) this.saveWord(); }
+  @HostListener('window:beforeunload', ['$event']) wordUnload(e: BeforeUnloadEvent) { if (this.wordMode && this.wordDirty) e.preventDefault(); }
+  @HostListener('document:keydown', ['$event']) wordKeys(e: KeyboardEvent) { if (this.wordMode && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); this.saveWord(); } }
 
 }

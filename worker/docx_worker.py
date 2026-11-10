@@ -12,6 +12,9 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
 from docx.table import Table
+import base64,io
+from docx.shared import Pt,RGBColor
+from docx.enum.text import WD_BREAK
 
 SLOTS=['inteligencia','percepcao','memoria','atencao','funcoes_executivas','comportamento','personalidade','comportamento_diva']
 # Fixed (non-interpretation) destinations, matched by label prefix after normalisation.
@@ -743,12 +746,97 @@ def images(path):
    if srcs:out[str(i)]=srcs
   i+=1
  return out
+
+# ---------- "Word" tab of the app: the report edited freely in the browser, rebuilt as .docx ----------
+# The screen sends the edited body as blocks (paragraphs with runs, tables, pictures) with the styles it computed. The page
+# setup, headers, footers (logo) and styles come from the report generated from the sections (base). Never the uploaded base.
+def _rgb(v):
+ m=re.fullmatch(r'#?([0-9a-fA-F]{6})',str(v or ''))
+ return m.group(1).upper() if m else None
+def _blk_paragraph(p,b,d):
+ pf=p.paragraph_format
+ al={'left':0,'center':1,'right':2,'justify':3}.get(b.get('align'))
+ if al is not None:pf.alignment=al
+ for k,attr in (('before','space_before'),('after','space_after'),('indent','first_line_indent'),('left','left_indent'),('right','right_indent')):
+  v=b.get(k)
+  if isinstance(v,(int,float)) and -400<v<400:setattr(pf,attr,Pt(v))
+ ln=b.get('line')
+ if isinstance(ln,(int,float)) and 0.5<=ln<=4:pf.line_spacing=ln
+ for r in b.get('runs') or []:
+  if r.get('img'):
+   try:
+    raw=base64.b64decode(str(r['img']).split(',',1)[-1])
+    w=r.get('w');run=p.add_run()
+    run.add_picture(io.BytesIO(raw),width=Pt(w) if isinstance(w,(int,float)) and 4<w<1000 else None)
+   except Exception:pass
+   continue
+  text=str(r.get('text') or '')
+  if not text:continue
+  if r.get('br'):p.add_run().add_break()
+  parts=text.split('\t')
+  for i,part in enumerate(parts):
+   if i:p.add_run().add_tab()
+   if not part:continue
+   run=p.add_run(part);fo=run.font
+   if r.get('b'):fo.bold=True
+   if r.get('i'):fo.italic=True
+   if r.get('u'):fo.underline=True
+   if r.get('s'):fo.strike=True
+   if r.get('sup'):fo.superscript=True
+   if r.get('sub'):fo.subscript=True
+   sz=r.get('size')
+   if isinstance(sz,(int,float)) and 4<=sz<=96:fo.size=Pt(sz)
+   if r.get('font'):
+    fo.name=str(r['font'])[:60];rpr=run._r.get_or_add_rPr();rf=rpr.find(qn('w:rFonts'))
+    if rf is not None:
+     for a in ('ascii','hAnsi','cs','eastAsia'):rf.set(qn('w:'+a),str(r['font'])[:60])
+   c=_rgb(r.get('color'))
+   if c and c!='000000':fo.color.rgb=RGBColor.from_string(c)
+   bg=_rgb(r.get('bg'))
+   if bg and bg!='FFFFFF':
+    sh=OxmlElement('w:shd');sh.set(qn('w:val'),'clear');sh.set(qn('w:color'),'auto');sh.set(qn('w:fill'),bg);run._r.get_or_add_rPr().append(sh)
+def _blk_table(d,b,where):
+ rows=b.get('rows') or []
+ if not rows:return
+ cols=max(len(r) for r in rows) or 1
+ t=d.add_table(rows=len(rows),cols=cols)
+ try:t.style='Table Grid'
+ except Exception:
+  tblPr=t._tbl.tblPr;bd=OxmlElement('w:tblBorders')
+  for e in ('top','left','bottom','right','insideH','insideV'):
+   x=OxmlElement('w:'+e);x.set(qn('w:val'),'single');x.set(qn('w:sz'),'4');x.set(qn('w:color'),'808080');bd.append(x)
+  tblPr.append(bd)
+ for i,row in enumerate(rows):
+  for j,cell in enumerate(row[:cols]):
+   c=t.cell(i,j);first=True
+   for pb in (cell.get('blocks') if isinstance(cell,dict) else cell) or []:
+    if pb.get('t')!='p':continue
+    p=c.paragraphs[0] if first else c.add_paragraph();first=False
+    _blk_paragraph(p,pb,d)
+   bg=_rgb(cell.get('bg')) if isinstance(cell,dict) else None
+   if bg and bg!='FFFFFF':
+    tcPr=c._tc.get_or_add_tcPr();sh=OxmlElement('w:shd');sh.set(qn('w:val'),'clear');sh.set(qn('w:color'),'auto');sh.set(qn('w:fill'),bg);tcPr.append(sh)
+ return t
+def from_blocks(base,out,blocks):
+ if os.path.abspath(base)==os.path.abspath(out):raise SystemExit('out must differ from base')
+ d=Document(base);body=d.element.body
+ for ch in list(body):
+  if ch.tag!=qn('w:sectPr'):body.remove(ch)
+ for b in blocks:
+  if b.get('t')=='table':_blk_table(d,b,None)
+  elif b.get('t')=='pagebreak':d.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+  elif b.get('t')=='p':_blk_paragraph(d.add_paragraph(),b,d)
+ if not len([c for c in body if c.tag!=qn('w:sectPr')]):d.add_paragraph()
+ d.save(out)
+ return {'out':out,'blocks':len(blocks)}
 def main():
  op=sys.argv[1]
  sys.stdout.reconfigure(encoding='utf-8')
  if op=='inspect': print(json.dumps(inspect(sys.argv[2]),ensure_ascii=False))
  elif op=='export':
   spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(export(spec['base'],spec['out'],spec['sections'],spec.get('highlight',False),spec.get('fields'),spec.get('rich'),spec.get('created'),spec.get('excluded'),spec.get('tags',False)),ensure_ascii=False))
+ elif op=='blocks':
+  spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(from_blocks(spec['base'],spec['out'],spec['blocks']),ensure_ascii=False))
  elif op=='images': print(json.dumps(images(sys.argv[2])))
  elif op=='letter':
   spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(letter(spec['out'],spec.get('title',''),spec.get('subtitle',''),spec['content']),ensure_ascii=False))

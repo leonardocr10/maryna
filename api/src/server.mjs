@@ -3,7 +3,7 @@ import express from 'express';import helmet from 'helmet';import cors from 'cors
 const app=express();
 // Behind Caddy and the local web proxy every request comes from 127.0.0.1: trust only local hops, so rate limits count each real client
 // (otherwise everyone shares one limit and express-rate-limit logs ERR_ERL_UNEXPECTED_X_FORWARDED_FOR). TRUST_PROXY overrides (e.g. 1, false).
-app.set('trust proxy',(v=>v===undefined||v===''?'loopback':v==='false'?false:v==='true'?true:/^\d+$/.test(v)?Number(v):v)(process.env.TRUST_PROXY));app.use(helmet());app.use(cors({origin:process.env.CORS_ORIGIN||'http://localhost:9091'}));app.use(express.json({limit:'2mb'}));app.use('/api',rateLimit({windowMs:60_000,limit:Number(process.env.API_RATE_LIMIT)||120,standardHeaders:'draft-7',legacyHeaders:false}));
+app.set('trust proxy',(v=>v===undefined||v===''?'loopback':v==='false'?false:v==='true'?true:/^\d+$/.test(v)?Number(v):v)(process.env.TRUST_PROXY));app.use(helmet());app.use(cors({origin:process.env.CORS_ORIGIN||'http://localhost:9091'}));app.use((req,res,next)=>express.json({limit:/^\/api\/evaluations\/[^/]+\/final\/blocks$/.test(req.path)?'40mb':'2mb'})(req,res,next));app.use('/api',rateLimit({windowMs:60_000,limit:Number(process.env.API_RATE_LIMIT)||120,standardHeaders:'draft-7',legacyHeaders:false}));
 
 const STORAGE=path.resolve(process.env.STORAGE_DIR||'./storage');const KEY=process.env.FILE_ENCRYPTION_KEY;const JWT=process.env.JWT_SECRET;
 const HERE=path.dirname(fileURLToPath(import.meta.url));
@@ -588,29 +588,20 @@ async function saveFinal(req,e,buffer,sig){if(!buffer||buffer.subarray(0,2).toSt
  const [old]=await pool.execute("SELECT id,storage_path FROM documents WHERE evaluation_id=? AND kind='export' ORDER BY created_at DESC, rowid DESC LIMIT -1 OFFSET 5",[e.id]);
  for(const o of old){await pool.execute('DELETE FROM documents WHERE id=?',[o.id]);if(/^[a-f0-9-]+\.bin$/.test(o.storage_path))await fs.rm(path.join(STORAGE,o.storage_path),{force:true})}
  await pool.execute('UPDATE evaluations SET final_sig=? WHERE id=?',[sig,e.id]);await audit(req,'final_saved',e.id)}
+// The copy to edit in the "Word" tab: the saved edited version, or the report generated now from the sections (no red, no marks).
+app.post('/api/evaluations/:id/final/source',auth,role('admin','psychologist'),wrap(async(req,res)=>{const e=await evaluation(req.params.id);const d=await finalCopy(e);const sig=await sectionsSig(e);
+ res.set('Content-Type',DOCX_TYPE);res.set('X-Sections-Sig',sig);
+ if(d){res.set('X-Final','saved');res.set('X-Final-Saved-At',String(d.created_at||''));res.set('X-Final-Outdated',e.final_sig&&e.final_sig!==sig?'1':'0');await audit(req,'final_opened',e.id);return res.send(await readStorage(d.storage_path))}
+ const {bytes}=await buildReport(e,false,{plain:true});res.set('X-Final','new');await audit(req,'final_started',e.id);res.send(bytes)}));
+// Saves the report edited in the browser: the worker rebuilds the .docx from the edited blocks, keeping page setup, header,
+// footer and styles of the report generated from the sections (the uploaded base file is never touched).
+app.post('/api/evaluations/:id/final/blocks',auth,role('admin','psychologist'),wrap(async(req,res)=>{const e=await evaluation(req.params.id);const blocks=req.body?.blocks;
+ if(!Array.isArray(blocks)||blocks.length>20000)throw fail(400,'Documento inválido');
+ const {bytes}=await buildReport(e,false,{plain:true});await fs.mkdir(STORAGE,{recursive:true,mode:0o700});
+ const tmpBase=path.join(STORAGE,randomUUID()+'.docx'),out=path.join(STORAGE,randomUUID()+'.docx');
+ try{await fs.writeFile(tmpBase,bytes);await docx('blocks',[],{base:tmpBase,out,blocks});await saveFinal(req,e,await fs.readFile(out),req.body?.sig)}finally{await fs.rm(tmpBase,{force:true});await fs.rm(out,{force:true})}
+ res.json({ok:true,saved_at:new Date().toISOString()})}));
 app.put('/api/evaluations/:id/final',auth,role('admin','psychologist'),upload.single('file'),wrap(async(req,res)=>{const e=await evaluation(req.params.id);await saveFinal(req,e,req.file?.buffer,req.body?.sig);res.json({ok:true,saved_at:new Date().toISOString()})}));
-// ---- OnlyOffice Docs (self-hosted, local): the Word editor of the "Word" tab ----
-// Off unless ONLYOFFICE_URL and ONLYOFFICE_JWT_SECRET are set. The document server fetches the file and posts the edited one
-// back through these routes; both directions are signed (JWT) and the file link is a short-lived signed token, not a session.
-const OO={url:(process.env.ONLYOFFICE_URL||'').replace(/\/+$/,''),secret:process.env.ONLYOFFICE_JWT_SECRET||'',api:(process.env.ONLYOFFICE_API_URL||process.env.PUBLIC_BASE_URL||'').replace(/\/+$/,'')};
-const ooOn=()=>!!(OO.url&&OO.secret.length>=32&&OO.api);
-const ooBearer=req=>String(req.headers[(process.env.ONLYOFFICE_JWT_HEADER||'Authorization').toLowerCase()]||'').replace(/^Bearer\s+/i,'');
-async function ooSource(e){const d=await finalCopy(e);if(d)return {bytes:await readStorage(d.storage_path),key:'f'+d.id.replace(/-/g,'').slice(0,20)};const {bytes}=await buildReport(e,false,{plain:true});return {bytes,key:'n'+createHash('sha256').update(bytes).digest('hex').slice(0,24)}}
-app.post('/api/evaluations/:id/final/editor',auth,role('admin','psychologist'),wrap(async(req,res)=>{const e=await evaluation(req.params.id);
- if(!ooOn())return res.status(409).json({error:'O editor Word (OnlyOffice) não está configurado neste servidor.',code:'onlyoffice_off'});
- const d=await finalCopy(e),sig=await sectionsSig(e),src=await ooSource(e);
- const t=jwt.sign({e:e.id,u:req.user.id,sig},OO.secret,{expiresIn:'12h'});
- const config={documentType:'word',document:{fileType:'docx',key:src.key,title:'laudo.docx',url:OO.api+'/api/onlyoffice/file/'+t,permissions:{edit:true,download:false,print:true,review:true,comment:false}},
-  editorConfig:{mode:'edit',lang:'pt',region:'pt-BR',callbackUrl:OO.api+'/api/onlyoffice/callback/'+t,user:{id:req.user.id,name:req.user.name||'Psicóloga'},customization:{forcesave:true,autosave:true,compactHeader:true,toolbarNoTabs:false,hideRightMenu:false,feedback:false,help:false,plugins:false,macros:false,uiTheme:'theme-light'}}};
- config.token=jwt.sign(config,OO.secret);
- await audit(req,'final_editor_opened',e.id);
- res.json({url:OO.url,config,state:d?'saved':'new',saved_at:d?.created_at||null,outdated:!!(d&&e.final_sig&&e.final_sig!==sig)})}));
-app.get('/api/onlyoffice/file/:t',wrap(async(req,res)=>{if(!ooOn())throw fail(404,'Não encontrado');let p;try{p=jwt.verify(req.params.t,OO.secret);jwt.verify(ooBearer(req),OO.secret)}catch{throw fail(403,'Acesso negado')}
- const e=await evaluation(p.e);const {bytes}=await ooSource(e);res.set('Content-Type',DOCX_TYPE);res.send(bytes)}));
-app.post('/api/onlyoffice/callback/:t',wrap(async(req,res)=>{if(!ooOn())throw fail(404,'Não encontrado');let p,b;try{p=jwt.verify(req.params.t,OO.secret);b=jwt.verify(req.body?.token||ooBearer(req),OO.secret);b=b.payload||b}catch{return res.status(403).json({error:1})}
- // 2: closed with changes (save); 6: "Salvar" pressed (force save). Others need nothing.
- if(b.status===2||b.status===6){const e=await evaluation(p.e);const r=await fetch(b.url);if(!r.ok)return res.json({error:1});const buf=Buffer.from(await r.arrayBuffer());await saveFinal({user:{id:p.u}},e,buf,p.sig)}
- res.json({error:0})}));
 app.delete('/api/evaluations/:id/final',auth,role('admin','psychologist'),wrap(async(req,res)=>{const e=await evaluation(req.params.id);const [docs]=await pool.execute("SELECT id,storage_path FROM documents WHERE evaluation_id=? AND kind='export'",[e.id]);
  for(const d of docs){await pool.execute('DELETE FROM documents WHERE id=?',[d.id]);if(/^[a-f0-9-]+\.bin$/.test(d.storage_path))await fs.rm(path.join(STORAGE,d.storage_path),{force:true})}
  await pool.execute('UPDATE evaluations SET final_sig=NULL WHERE id=?',[e.id]);await audit(req,'final_discarded',e.id);res.json({ok:true})}));

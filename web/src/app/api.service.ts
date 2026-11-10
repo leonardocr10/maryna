@@ -43,6 +43,11 @@ export class Api {
     }
   }
 
+  /** POST, file back with the response headers (the Word tab's copy and its state). */
+  async blobResp(url: string): Promise<{blob: Blob; headers: {get(n: string): string | null}}> {
+    try { const r = await firstValueFrom(this.http.post('/api' + url, {}, {...this.opts(), responseType: 'blob', observe: 'response'})); return {blob: r.body as Blob, headers: r.headers}; }
+    catch (e: any) { let msg = 'Não foi possível abrir o documento.'; try { msg = JSON.parse(await (e.error as Blob).text()).error || msg; } catch {} this.notify(msg); throw e; }
+  }
   /** POST with a JSON body, file back (e.g. the password backup). */
   async blobPost(url: string, body: any): Promise<Blob> {
     try { return await firstValueFrom(this.http.post('/api' + url, body, {...this.opts(), responseType: 'blob'})); }

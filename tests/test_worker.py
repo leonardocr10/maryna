@@ -404,6 +404,17 @@ class TestEditedReport(unittest.TestCase):
    self.assertEqual([c.text for c in d.tables[0].rows[0].cells],['A','1'])
    self.assertEqual(d.sections[0].page_width,Document(base).sections[0].page_width,'page setup of the report')
 
+class TestEditedReportKeep(unittest.TestCase):
+ def test_elements_not_edited_are_copied_exactly_and_a_wrong_count_is_refused(self):
+  with tempfile.TemporaryDirectory() as t:
+   src=Path(t)/'s.docx';d=Document();d.add_paragraph('Topo fictício')
+   tb=d.add_table(rows=1,cols=1);tb.style='Light List Accent 1';tb.cell(0,0).paragraphs[0].add_run('TÍTULO FICTÍCIO').bold=True
+   d.add_paragraph('Texto sintético.');d.save(src);out=Path(t)/'o.docx'
+   run('blocks',stdin={'base':str(src),'out':str(out),'count':3,'blocks':[{'t':'keep','i':0},{'t':'keep','i':1},{'t':'p','runs':[{'text':'Texto sintético. Editado.'}]}]})
+   o=Document(out);self.assertEqual(o.tables[0].style.name,'Light List Accent 1');self.assertEqual(o.tables[0].cell(0,0).text,'TÍTULO FICTÍCIO')
+   self.assertEqual([p.text for p in o.paragraphs],['Topo fictício','Texto sintético. Editado.'])
+   with self.assertRaises(AssertionError):run('blocks',stdin={'base':str(src),'out':str(Path(t)/'x.docx'),'count':7,'blocks':[{'t':'keep','i':0}]})
+
 class TestLetter(unittest.TestCase):
  def test_letter_builds_a_new_document_with_titles_and_paragraphs(self):
   with tempfile.TemporaryDirectory() as t:

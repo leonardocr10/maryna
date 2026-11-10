@@ -597,9 +597,12 @@ app.post('/api/evaluations/:id/final/source',auth,role('admin','psychologist'),w
 // footer and styles of the report generated from the sections (the uploaded base file is never touched).
 app.post('/api/evaluations/:id/final/blocks',auth,role('admin','psychologist'),wrap(async(req,res)=>{const e=await evaluation(req.params.id);const blocks=req.body?.blocks;
  if(!Array.isArray(blocks)||blocks.length>20000)throw fail(400,'Documento inválido');
- const {bytes}=await buildReport(e,false,{plain:true});await fs.mkdir(STORAGE,{recursive:true,mode:0o700});
+ // base = the document the screen opened (the saved edited copy, or the report generated now): elements not edited are copied from it
+ const fin=await finalCopy(e);const bytes=fin?await readStorage(fin.storage_path):(await buildReport(e,false,{plain:true})).bytes;await fs.mkdir(STORAGE,{recursive:true,mode:0o700});
  const tmpBase=path.join(STORAGE,randomUUID()+'.docx'),out=path.join(STORAGE,randomUUID()+'.docx');
- try{await fs.writeFile(tmpBase,bytes);await docx('blocks',[],{base:tmpBase,out,blocks});await saveFinal(req,e,await fs.readFile(out),req.body?.sig)}finally{await fs.rm(tmpBase,{force:true});await fs.rm(out,{force:true})}
+ try{await fs.writeFile(tmpBase,bytes);
+  try{await docx('blocks',[],{base:tmpBase,out,blocks,count:Number(req.body?.count)})}catch(err){if(/KEEP_MISMATCH/.test(String(err?.message||'')))return res.status(409).json({error:'O documento mudou desde que foi aberto.',code:'keep_mismatch'});throw err}
+  await saveFinal(req,e,await fs.readFile(out),req.body?.sig)}finally{await fs.rm(tmpBase,{force:true});await fs.rm(out,{force:true})}
  res.json({ok:true,saved_at:new Date().toISOString()})}));
 app.put('/api/evaluations/:id/final',auth,role('admin','psychologist'),upload.single('file'),wrap(async(req,res)=>{const e=await evaluation(req.params.id);await saveFinal(req,e,req.file?.buffer,req.body?.sig);res.json({ok:true,saved_at:new Date().toISOString()})}));
 app.delete('/api/evaluations/:id/final',auth,role('admin','psychologist'),wrap(async(req,res)=>{const e=await evaluation(req.params.id);const [docs]=await pool.execute("SELECT id,storage_path FROM documents WHERE evaluation_id=? AND kind='export'",[e.id]);

@@ -12,7 +12,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
 from docx.table import Table
-import base64,io
+import base64,io,copy
 from docx.shared import Pt,RGBColor
 from docx.enum.text import WD_BREAK
 
@@ -800,12 +800,6 @@ def _blk_table(d,b,where):
  if not rows:return
  cols=max(len(r) for r in rows) or 1
  t=d.add_table(rows=len(rows),cols=cols)
- try:t.style='Table Grid'
- except Exception:
-  tblPr=t._tbl.tblPr;bd=OxmlElement('w:tblBorders')
-  for e in ('top','left','bottom','right','insideH','insideV'):
-   x=OxmlElement('w:'+e);x.set(qn('w:val'),'single');x.set(qn('w:sz'),'4');x.set(qn('w:color'),'808080');bd.append(x)
-  tblPr.append(bd)
  for i,row in enumerate(rows):
   for j,cell in enumerate(row[:cols]):
    c=t.cell(i,j);first=True
@@ -813,17 +807,37 @@ def _blk_table(d,b,where):
     if pb.get('t')!='p':continue
     p=c.paragraphs[0] if first else c.add_paragraph();first=False
     _blk_paragraph(p,pb,d)
+   bd=cell.get('borders') if isinstance(cell,dict) else None
+   if isinstance(bd,dict):
+    tcPr=c._tc.get_or_add_tcPr();tb=OxmlElement('w:tcBorders')
+    for side in ('top','left','bottom','right'):
+     v=bd.get(side) or {};x=OxmlElement('w:'+side)
+     w=v.get('w') if isinstance(v.get('w'),(int,float)) else 0
+     if w>0:x.set(qn('w:val'),'single');x.set(qn('w:sz'),str(max(2,min(48,int(round(w*8))))));x.set(qn('w:color'),_rgb(v.get('color')) or '000000')
+     else:x.set(qn('w:val'),'nil')
+     tb.append(x)
+    tcPr.append(tb)
    bg=_rgb(cell.get('bg')) if isinstance(cell,dict) else None
    if bg and bg!='FFFFFF':
     tcPr=c._tc.get_or_add_tcPr();sh=OxmlElement('w:shd');sh.set(qn('w:val'),'clear');sh.set(qn('w:color'),'auto');sh.set(qn('w:fill'),bg);tcPr.append(sh)
  return t
-def from_blocks(base,out,blocks):
+def from_blocks(base,out,blocks,count=None):
  if os.path.abspath(base)==os.path.abspath(out):raise SystemExit('out must differ from base')
  d=Document(base);body=d.element.body
- for ch in list(body):
-  if ch.tag!=qn('w:sectPr'):body.remove(ch)
+ orig=[ch for ch in body if ch.tag!=qn('w:sectPr')]
+ keeps=[b for b in blocks if b.get('t')=='keep']
+ # the screen numbered the elements of the same document; another count means another document: nothing is copied by index
+ if keeps and count!=len(orig):raise SystemExit('KEEP_MISMATCH '+str(count)+' '+str(len(orig)))
+ sect=body.find(qn('w:sectPr'))
+ for ch in orig:body.remove(ch)
+ def put(el):
+  if sect is not None:sect.addprevious(el)
+  else:body.append(el)
  for b in blocks:
-  if b.get('t')=='table':_blk_table(d,b,None)
+  if b.get('t')=='keep':
+   i=b.get('i')
+   if isinstance(i,int) and 0<=i<len(orig):put(copy.deepcopy(orig[i]))
+  elif b.get('t')=='table':_blk_table(d,b,None)
   elif b.get('t')=='pagebreak':d.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
   elif b.get('t')=='p':_blk_paragraph(d.add_paragraph(),b,d)
  if not len([c for c in body if c.tag!=qn('w:sectPr')]):d.add_paragraph()
@@ -836,7 +850,7 @@ def main():
  elif op=='export':
   spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(export(spec['base'],spec['out'],spec['sections'],spec.get('highlight',False),spec.get('fields'),spec.get('rich'),spec.get('created'),spec.get('excluded'),spec.get('tags',False)),ensure_ascii=False))
  elif op=='blocks':
-  spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(from_blocks(spec['base'],spec['out'],spec['blocks']),ensure_ascii=False))
+  spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(from_blocks(spec['base'],spec['out'],spec['blocks'],spec.get('count')),ensure_ascii=False))
  elif op=='images': print(json.dumps(images(sys.argv[2])))
  elif op=='letter':
   spec=json.loads(sys.stdin.buffer.read().decode('utf-8')); print(json.dumps(letter(spec['out'],spec.get('title',''),spec.get('subtitle',''),spec['content']),ensure_ascii=False))

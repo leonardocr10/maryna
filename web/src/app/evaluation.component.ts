@@ -1507,7 +1507,7 @@ export class EvaluationComponent implements OnDestroy {
   @ViewChild('wordPage') wordPage?: ElementRef<HTMLDivElement>;
   wordMode = false; wordReady = false; wordSaving = false; wordDirty = false; wordSavedAt = ''; wordError = '';
   wordState: '' | 'new' | 'saved' = ''; wordFinalAt = ''; wordOutdated = false; wordZoom = 1;
-  private wordSig = ''; private wordTimer: any = null;
+  private wordSig = ''; private wordTimer: any = null; private wordOrig = new Map<string, string>(); private wordCount = 0;
   readonly WORD_FONTS = ['Arial', 'Calibri', 'Cambria', 'Georgia', 'Segoe UI', 'Tahoma', 'Times New Roman', 'Verdana'];
   readonly WORD_SIZES = [8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 24, 28, 36];
   readonly WORD_LINES = [1, 1.15, 1.5, 2];
@@ -1524,8 +1524,12 @@ export class EvaluationComponent implements OnDestroy {
       const box = this.wordPage?.nativeElement; if (!box || !this.wordMode) return;
       const next = document.createElement('div');
       const {renderAsync} = await import('docx-preview');
-      await renderAsync(blob, next, undefined, {className: 'docx', inWrapper: true, ignoreLastRenderedPageBreak: true, renderHeaders: true, renderFooters: true});
+      await renderAsync(blob, next, undefined, {className: 'docx', inWrapper: true, ignoreLastRenderedPageBreak: true, breakPages: false, renderHeaders: true, renderFooters: true});
       box.replaceChildren(...Array.from(next.childNodes));
+      // every element of the body is numbered as in the file: what is not edited goes back exactly as it was (tables, styles, numbering)
+      this.wordOrig.clear(); let n = 0;
+      for (const a of Array.from(box.querySelectorAll<HTMLElement>('section.docx > article'))) for (const ch of Array.from(a.children) as HTMLElement[]) { ch.dataset['nlo'] = String(n++); this.wordOrig.set(ch.dataset['nlo'], ch.outerHTML); }
+      this.wordCount = n;
       // only the body of each page is editable; header and footer (logo) stay as in the report
       for (const a of Array.from(box.querySelectorAll<HTMLElement>('section.docx > article'))) { a.contentEditable = 'true'; a.spellcheck = true; a.lang = 'pt-BR'; }
       try { document.execCommand('styleWithCSS', false, 'true'); } catch {}
@@ -1556,7 +1560,7 @@ export class EvaluationComponent implements OnDestroy {
   wordZoomBy(d: number) { this.wordZoom = Math.min(2, Math.max(0.5, Math.round((this.wordZoom + d) * 10) / 10)); }
 
   /** The edited body as blocks: paragraphs (with the computed formatting of each piece of text), tables and pictures. */
-  private wordBlocks(): any[] {
+  private wordBlocks(keep = true): any[] {
     const box = this.wordPage?.nativeElement; if (!box) return [];
     const pt = (px: string) => Math.round(parseFloat(px) * 0.75 * 10) / 10;
     const hex = (c: string) => { const m = c.match(/\d+(\.\d+)?/g); if (!m || (m.length > 3 && Number(m[3]) === 0)) return ''; return '#' + m.slice(0, 3).map(x => Number(x).toString(16).padStart(2, '0')).join(''); };
@@ -1609,14 +1613,22 @@ export class EvaluationComponent implements OnDestroy {
         const tag = ch.tagName;
         if (tag === 'P' || tag === 'H1' || tag === 'H2' || tag === 'H3' || tag === 'H4' || tag === 'LI') out.push(para(ch));
         else if (tag === 'TABLE') out.push({t: 'table', rows: Array.from(ch.querySelectorAll(':scope > tbody > tr, :scope > thead > tr, :scope > tr')).map(tr =>
-          Array.from(tr.children).map(td => { const cb: any[] = []; blocksOf(td, cb); if (!cb.length) cb.push(para(td as HTMLElement)); return {blocks: cb, bg: hex(getComputedStyle(td).backgroundColor)}; }))});
+          Array.from(tr.children).map(td => { const cb: any[] = []; blocksOf(td, cb); if (!cb.length) cb.push(para(td as HTMLElement)); const tcs = getComputedStyle(td), side = (w: string, st: string, c: string) => ({w: st === 'none' || st === 'hidden' ? 0 : pt(w), color: hex(c)}); return {blocks: cb, bg: hex(tcs.backgroundColor), borders: {top: side(tcs.borderTopWidth, tcs.borderTopStyle, tcs.borderTopColor), left: side(tcs.borderLeftWidth, tcs.borderLeftStyle, tcs.borderLeftColor), bottom: side(tcs.borderBottomWidth, tcs.borderBottomStyle, tcs.borderBottomColor), right: side(tcs.borderRightWidth, tcs.borderRightStyle, tcs.borderRightColor)}}; }))});
         else if (tag === 'STYLE' || tag === 'SCRIPT') continue;
         else if (ch.children.length && Array.from(ch.children).some(c => /^(P|TABLE|UL|OL|LI|DIV|H\d)$/.test(c.tagName))) blocksOf(ch, out);
         else if ((ch.textContent || '').trim() || ch.querySelector('img')) out.push(para(ch));
       }
     };
-    const out: any[] = [];
-    Array.from(box.querySelectorAll<HTMLElement>('section.docx > article')).forEach((a, i) => { if (i) out.push({t: 'pagebreak'}); blocksOf(a, out); });
+    const out: any[] = [], seen = new Map<string, number>();
+    const tops = Array.from(box.querySelectorAll<HTMLElement>('section.docx > article')).flatMap(a => Array.from(a.children) as HTMLElement[]);
+    for (const el of tops) { const k = el.dataset['nlo']; if (k !== undefined) seen.set(k, (seen.get(k) || 0) + 1); }
+    for (const el of tops) {
+      const k = el.dataset['nlo'];
+      // not edited (same element, same content, only once): copied from the file as it is
+      if (keep && k !== undefined && seen.get(k) === 1 && this.wordOrig.get(k) === el.outerHTML) { out.push({t: 'keep', i: Number(k)}); continue; }
+      const one = document.createElement('div'); one.appendChild(el.cloneNode(true)); const tmp: any[] = [];
+      el.replaceWith(one); blocksOf(one, tmp); one.replaceWith(el); out.push(...tmp);
+    }
     return out;
   }
   async saveWord() {
@@ -1624,7 +1636,12 @@ export class EvaluationComponent implements OnDestroy {
     if (!this.wordReady || this.wordSaving) return;
     this.wordSaving = true; this.wordError = '';
     try {
-      await this.api.req('POST', `/evaluations/${this.evaluationId}/final/blocks`, {blocks: this.wordBlocks(), sig: this.wordSig});
+      try { await this.api.req('POST', `/evaluations/${this.evaluationId}/final/blocks`, {blocks: this.wordBlocks(), count: this.wordCount, sig: this.wordSig}); }
+      catch (e: any) {
+        if (e?.error?.code !== 'keep_mismatch') throw e;
+        // the file is not numbered like the screen: everything is rebuilt from what is shown
+        await this.api.req('POST', `/evaluations/${this.evaluationId}/final/blocks`, {blocks: this.wordBlocks(false), count: 0, sig: this.wordSig});
+      }
       this.wordDirty = false; this.wordState = 'saved'; this.wordOutdated = false;
       this.wordSavedAt = new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
     } catch { this.wordError = 'Não salvou. Clique em Salvar para tentar de novo.'; }

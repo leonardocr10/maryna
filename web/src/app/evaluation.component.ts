@@ -96,7 +96,7 @@ export class EvaluationComponent implements OnDestroy {
   open = ''; editing = ''; editText = ''; sectionInstr = '';
   mode: 'secoes' | 'documento' = 'secoes'; previewLoading = false;
 
-  ngOnDestroy() { this.unwheel(); clearTimeout(this.previewTimer); this.flushEditors(); for (const k of Object.keys(this.docTimers)) { clearTimeout(this.docTimers[k]); this.saveDocSection(k); } if (this.topbar.info === this.topInfo) this.topbar.info = null; this.paint('nl-find', []); this.paint('nl-find-on', []); this.paint('nl-target', []); clearTimeout(this.idTimer); clearTimeout(this.instrSaveTimer); this.reader.stop(); if (this.autoTimer) { clearTimeout(this.autoTimer); this.autosave(this.editing); } }
+  ngOnDestroy() { this.closeWord(); this.unwheel(); clearTimeout(this.previewTimer); this.flushEditors(); for (const k of Object.keys(this.docTimers)) { clearTimeout(this.docTimers[k]); this.saveDocSection(k); } if (this.topbar.info === this.topInfo) this.topbar.info = null; this.paint('nl-find', []); this.paint('nl-find-on', []); this.paint('nl-target', []); clearTimeout(this.idTimer); clearTimeout(this.instrSaveTimer); this.reader.stop(); if (this.autoTimer) { clearTimeout(this.autoTimer); this.autosave(this.editing); } }
 
   // ---------- loading ----------
   async load(first = false) {
@@ -1236,7 +1236,6 @@ export class EvaluationComponent implements OnDestroy {
       const {renderAsync} = await import('docx-preview');
       await renderAsync(data, next, undefined, {className: 'docx', inWrapper: true, ignoreLastRenderedPageBreak: true});
       box.replaceChildren(...Array.from(next.childNodes)); this.docIndex = null;
-      if (this.wordMode) this.enableWord(box);
       this.pageCount = box.querySelectorAll('section.docx').length;
       if (this.docWidth) this.fitDocWidth();
       if (quiet && this.docActive) this.jumpToSection(this.docActive, false);
@@ -1488,90 +1487,47 @@ export class EvaluationComponent implements OnDestroy {
     if (m === 'documento' && !this.canWrite()) return;
     if (m !== 'documento' && this.docEditing) this.finishDocEdit();
     if (m !== 'secoes') this.closeRefs();
-    const wasWord = this.wordMode;
-    if (wasWord) this.flushWord();
-    this.wordMode = m === 'documento' && word;
+    const wasWord = this.wordMode, toWord = m === 'documento' && word;
+    if (wasWord && !toWord) this.closeWord();
+    this.wordMode = toWord;
     this.mode = m;
-    if (m === 'documento') setTimeout(() => this.renderPreview(wasWord && this.wordMode));
+    if (toWord) { if (!wasWord) setTimeout(() => this.openWord()); return; }
+    if (m === 'documento') setTimeout(() => this.renderPreview());
   }
 
-  // ---------- "Word" tab: the rendered report with only the sections' own paragraphs editable ----------
-  // The preview marks every inserted paragraph with a bookmark nlsec_<key>_<n> (worker, preview only). Those paragraphs become
-  // editable; everything else of the base file (tables, scores, header, fixed text) stays read-only, as rule 2 requires.
-  wordMode = false; wordSaving = false; wordSavedAt = ''; wordError = '';
-  private wordDirty = new Set<string>(); private wordTimer: any = null; private wordBox: HTMLElement | null = null;
-  private enableWord(box: HTMLElement) {
-    this.wordBox = box;
-    if (this.readOnly()) return;
-    for (const b of Array.from(box.querySelectorAll<HTMLElement>('span[id^="nlsec_"]'))) {
-      const m = b.id.match(/^nlsec_(.+)_(\d+)$/); const p = b.closest('p') as HTMLElement | null;
-      if (!m || !p) continue;
-      p.contentEditable = 'true'; p.spellcheck = true; p.lang = 'pt-BR'; p.dataset['sec'] = m[1]; p.classList.add('nl-word');
-      p.title = this.sectionName(m[1]) + ' · editável';
-    }
-    if ((box as any).__nlWord) return;
-    (box as any).__nlWord = true;
-    box.addEventListener('input', e => { const p = (e.target as HTMLElement).closest?.('p[data-sec]') as HTMLElement | null; if (p) this.wordChanged(p.dataset['sec']!); });
-    box.addEventListener('focusout', () => this.flushWord());
-    box.addEventListener('keydown', e => this.wordKey(e as KeyboardEvent));
-    box.addEventListener('paste', e => { const p = (e.target as HTMLElement).closest?.('p[data-sec]'); if (!p) return; e.preventDefault(); const t = (e as ClipboardEvent).clipboardData?.getData('text/plain') || ''; document.execCommand('insertText', false, t.replace(/\s*\n\s*/g, ' ')); });
-  }
-  reopening = false;
-  /** Approved evaluations are locked; the psychologist may reopen one to edit it again (it goes back to review). */
-  async reopenForWord() {
-    if (!this.locked() || !this.canWrite() || this.reopening) return;
-    if (!await this.confirm.ask({title: 'Reabrir a avaliação para editar?', body: 'A avaliação deixa de estar aprovada. As seções editadas voltam para revisão e precisam ser aprovadas de novo antes de baixar o Word final.', facts: ['As seções que você não editar continuam aprovadas', 'O histórico de versões continua guardado'], ok: 'Reabrir para editar'})) return;
-    this.reopening = true;
+  // ---------- "Word" tab: free editing of a COPY of the report in OnlyOffice Docs (self-hosted Word editor) ----------
+  // The psychologist's choice (AGENTS.md rule 2, exception): the base file never changes; the edited copy is saved in the system
+  // by OnlyOffice itself (callback to the API) and downloads use it while it exists. "Recomeçar das seções" discards it.
+  wordMode = false; wordReady = false; wordError = ''; wordOff = false;
+  wordState: '' | 'new' | 'saved' = ''; wordFinalAt = ''; wordOutdated = false;
+  private oo: any = null; private static ooScript = '';
+  async openWord() {
+    this.closeWord();
+    this.wordReady = false; this.wordError = ''; this.wordOff = false; this.wordState = '';
+    let r: any;
+    try { r = await this.api.req<any>('POST', `/evaluations/${this.evaluationId}/final/editor`, {}); }
+    catch (e: any) { if (e?.error?.code === 'onlyoffice_off') this.wordOff = true; else this.wordError = 'Não foi possível abrir o editor Word.'; return; }
+    this.wordState = r.state; this.wordOutdated = !!r.outdated;
+    this.wordFinalAt = r.saved_at ? new Date(String(r.saved_at).replace(' ', 'T') + (String(r.saved_at).endsWith('Z') ? '' : 'Z')).toLocaleString('pt-BR', {dateStyle: 'short', timeStyle: 'short'}) : '';
     try {
-      await this.api.req('POST', `/evaluations/${this.evaluationId}/reopen`, {});
-      await this.load(); this.changed.emit(); this.timer.start(this.evaluationId, this.current.work_seconds, false);
-      this.api.notify('Avaliação reaberta. Edite os textos das seções direto na página.');
-      this.renderPreview(true);
-    } catch {} finally { this.reopening = false; }
-  }
-  private wordChanged(k: string) { this.wordDirty.add(k); this.wordError = ''; clearTimeout(this.wordTimer); this.wordTimer = setTimeout(() => this.flushWord(), 1500); }
-  /** Enter splits the paragraph (new paragraph of the same section); Backspace at the start joins it to the previous one. */
-  private wordKey(e: KeyboardEvent) {
-    const p = (e.target as HTMLElement).closest?.('p[data-sec]') as HTMLElement | null; const sel = document.getSelection();
-    if (!p || !sel?.rangeCount) return;
-    const r = sel.getRangeAt(0);
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      const tail = document.createRange(); tail.setStart(r.endContainer, r.endOffset); tail.setEnd(p, p.childNodes.length);
-      const np = p.cloneNode(false) as HTMLElement; np.appendChild(tail.extractContents()); if (!np.textContent) np.appendChild(document.createElement('br'));
-      p.after(np); np.focus(); const c = document.createRange(); c.setStart(np, 0); c.collapse(true); sel.removeAllRanges(); sel.addRange(c);
-      this.wordChanged(p.dataset['sec']!);
-    } else if (e.key === 'Backspace' && r.collapsed) {
-      const head = document.createRange(); head.setStart(p, 0); head.setEnd(r.startContainer, r.startOffset);
-      const prev = p.previousElementSibling as HTMLElement | null;
-      if (head.toString() !== '' || !prev || prev.dataset['sec'] !== p.dataset['sec']) return;
-      e.preventDefault();
-      const at = prev.childNodes.length; while (p.firstChild) prev.appendChild(p.firstChild); p.remove();
-      prev.focus(); const c = document.createRange(); c.setStart(prev, at); c.collapse(true); sel.removeAllRanges(); sel.addRange(c);
-      this.wordChanged(prev.dataset['sec']!);
-    }
-  }
-  /** Saves every section edited on the page: text with "## " titles (bold paragraphs) and the same as simple HTML. */
-  async flushWord() {
-    clearTimeout(this.wordTimer);
-    const box = this.wordBox; if (!box || !this.wordDirty.size || this.wordSaving) return;
-    const keys = [...this.wordDirty]; this.wordDirty.clear(); this.wordSaving = true;
-    const esc = (t: string) => t.replace(/[&<>]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c]!));
-    try {
-      for (const k of keys) {
-        const parts = Array.from(box.querySelectorAll<HTMLElement>(`p[data-sec="${CSS.escape(k)}"]`)).map(p => {
-          const text = (p.innerText || '').replace(/\s+/g, ' ').trim();
-          const spans = Array.from(p.querySelectorAll('span')).filter(s => s.childElementCount === 0 && (s.textContent || '').trim());
-          const bold = !!spans.length && spans.every(s => Number(getComputedStyle(s).fontWeight) >= 600);
-          return {text, bold};
-        }).filter(x => x.text);
-        const content = parts.map(x => x.bold ? '## ' + x.text : x.text).join('\n\n');
-        const html = parts.map(x => x.bold ? `<h3>${esc(x.text)}</h3>` : `<p>${esc(x.text)}</p>`).join('');
-        await this.api.req('PUT', `/evaluations/${this.evaluationId}/sections/${k}`, {content, html, merge: true});
+      const src = r.url + '/web-apps/apps/api/documents/api.js';
+      if (EvaluationComponent.ooScript !== src) {
+        await new Promise<void>((ok, bad) => { const sc = document.createElement('script'); sc.src = src; sc.onload = () => ok(); sc.onerror = () => bad(); document.head.appendChild(sc); });
+        EvaluationComponent.ooScript = src;
       }
-      const now = new Date(); this.wordSavedAt = now.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
-      await this.load(); this.changed.emit();
-    } catch { keys.forEach(k => this.wordDirty.add(k)); this.wordError = 'Não salvou. Tentando de novo ao editar.'; }
-    finally { this.wordSaving = false; if (this.wordDirty.size && !this.wordError) this.flushWord(); }
+      await new Promise(res => setTimeout(res));
+      if (!this.wordMode || !document.getElementById('nl-oo')) return;
+      this.oo = new (window as any).DocsAPI.DocEditor('nl-oo', {...r.config, width: '100%', height: '100%', type: 'desktop',
+        events: {onAppReady: () => this.zone.run(() => this.wordReady = true), onError: () => this.zone.run(() => this.wordError = 'O editor Word mostrou um erro. Feche e abra de novo.')}});
+    } catch { this.wordError = 'O servidor do editor Word (OnlyOffice) não respondeu. Confira se ele está ligado.'; }
   }
+  async restartWord() {
+    if (!await this.confirm.ask({tone: 'danger', title: 'Recomeçar das seções?', body: 'A versão editada no editor Word é descartada e o laudo é gerado de novo a partir dos textos das seções.', facts: ['O arquivo base não muda', 'Os textos das seções não mudam'], ok: 'Descartar e recomeçar'})) return;
+    this.closeWord();
+    try { await this.api.req('DELETE', `/evaluations/${this.evaluationId}/final`); this.api.notify('Versão editada descartada.'); } catch {}
+    setTimeout(() => this.openWord(), 300);
+  }
+  /** Closing the editor makes OnlyOffice send the edited file (it saves on close and on "Salvar"). */
+  closeWord() { try { this.oo?.destroyEditor?.(); } catch {} this.oo = null; this.wordReady = false; }
+
 }

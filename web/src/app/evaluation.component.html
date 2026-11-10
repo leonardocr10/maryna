@@ -420,10 +420,30 @@
       </div>
     </ng-container>
 
-    <section [hidden]="mode!=='documento'" class="card docview" [class.word]="wordMode" [class.doc-only]="docOnly" [attr.role]="docOnly ? 'dialog' : null" [attr.aria-label]="docOnly ? 'Documento' : null">
+    <!-- "Word": the report as a COPY edited freely in a Word-like editor (SuperDoc, in the browser). The base file never changes;
+         downloads use the saved copy while it exists. -->
+    <section *ngIf="mode==='documento' && wordMode" class="card wordview" aria-label="Editor Word">
+      <div class="wv-head">
+        <span class="wv-t"><nl-icon name="doc"/><b>Editor Word</b><small>{{wordState==='saved' ? 'Versão final editada' + (wordFinalAt ? ' · salva em ' + wordFinalAt : '') : wordState==='new' ? 'Gerado agora a partir das seções' : ''}}</small></span>
+        <span class="grow"></span>
+        <button *ngIf="wordState==='saved'" type="button" class="btn btn-secondary btn-sm" (click)="restartWord()" title="Descarta a versão editada e gera de novo a partir das seções"><nl-icon name="restore"/> Recomeçar das seções</button>
+        <button type="button" class="btn btn-secondary btn-sm" (click)="setMode('secoes')"><nl-icon name="chevl"/> Voltar às seções</button>
+      </div>
+      <div *ngIf="wordOutdated" class="alert warn small"><nl-icon name="alert"/><div><p><b>As seções mudaram depois desta versão editada.</b> O Word baixado continua sendo esta versão. Para trazer as mudanças das seções, use "Recomeçar das seções" (as edições feitas aqui são descartadas).</p></div></div>
+      <ng-container *ngIf="wordOff; else ooBox">
+        <div class="alert warn"><nl-icon name="info"/><div><p><b>O editor Word ainda não está instalado neste servidor.</b></p><p>Ele usa o OnlyOffice Docs, instalado no computador do sistema (passo a passo em docs/ONLYOFFICE.md). Depois de configurar ONLYOFFICE_URL e ONLYOFFICE_JWT_SECRET no .env da API, esta aba abre o laudo para edição livre.</p></div></div>
+      </ng-container>
+      <ng-template #ooBox>
+        <p class="caption wv-note">Edição livre de uma cópia do laudo, como no Word. O arquivo base enviado nunca muda. O editor salva sozinho e no botão Salvar dele; enquanto existir esta versão editada, é ela que vai no Word e no PDF baixados.</p>
+        <p *ngIf="wordError" class="alert danger small">{{wordError}}</p>
+        <div class="wv-desk"><div id="nl-oo"></div><p *ngIf="!wordReady && !wordError" class="caption center wv-load">Abrindo o editor Word…</p></div>
+      </ng-template>
+    </section>
+
+    <section [hidden]="mode!=='documento' || wordMode" class="card docview" [class.doc-only]="docOnly" [attr.role]="docOnly ? 'dialog' : null" [attr.aria-label]="docOnly ? 'Documento' : null">
       <div class="doctool">
         <span class="pg">{{pageCount ? (pageCount===1 ? '1 página' : 'Página ' + pageAt + ' de ' + pageCount) : 'Prévia do Word'}}</span>
-        <span class="legend">{{wordMode ? 'Modo Word: edite os textos das seções direto na página' : 'Textos atuais, inclusive os ainda não aprovados'}}</span>
+        <span class="legend">Textos atuais, inclusive os ainda não aprovados</span>
         <span class="sp"></span>
         <span class="em-wwrap doc-wwrap">
           <button type="button" class="btn btn-secondary btn-sm dw-btn" [class.on]="docWidthOpen" [attr.aria-expanded]="docWidthOpen" aria-controls="doc-width" (click)="docWidthOpen=!docWidthOpen; docWidthPreview=''" title="Largura da página na tela"><nl-icon name="layers"/> {{docWidthName()}} <nl-icon [name]="docWidthOpen ? 'chevu' : 'chevd'"/></button>
@@ -448,7 +468,7 @@
       </div>
       <div class="docsplit">
       <!-- Modelo B: section texts on the left (approve or edit here), the Word on the right; a click on a text shows it in the Word -->
-      <aside #side class="docside" [hidden]="docEditing || docOnly || wordMode" aria-label="Textos das seções" [style.flex-basis.px]="sideW || null">
+      <aside #side class="docside" [hidden]="docEditing || docOnly" aria-label="Textos das seções" [style.flex-basis.px]="sideW || null">
         <p class="caption">Clique num texto para vê-lo no Word.</p>
         <div *ngFor="let s of docSideRows(); trackBy: bySection" class="dblk" [class.on]="docActive===s.id" [class.editing]="editing===s.id" (click)="editing!==s.id && showInDoc(s.id)">
           <div class="dblk-head"><b>{{s.name}}</b>
@@ -476,7 +496,7 @@
           </div>
         </div>
       </aside>
-      <div class="dsplit" [hidden]="docEditing || docOnly || wordMode" role="separator" aria-orientation="vertical" aria-label="Arraste para mudar a largura dos painéis" tabindex="0" title="Arraste para mudar a largura (duplo clique volta ao padrão)" (pointerdown)="startResize($event, side)" (keydown)="resizeKey($event, side)" (dblclick)="resetSide()"><span></span></div>
+      <div class="dsplit" [hidden]="docEditing || docOnly" role="separator" aria-orientation="vertical" aria-label="Arraste para mudar a largura dos painéis" tabindex="0" title="Arraste para mudar a largura (duplo clique volta ao padrão)" (pointerdown)="startResize($event, side)" (keydown)="resizeKey($event, side)" (dblclick)="resetSide()"><span></span></div>
       <div class="docmain">
       <div class="docfind">
         <label *ngIf="!docEditing" class="find" [class.none]="findQuery.trim() && !findHits.length">
@@ -505,12 +525,7 @@
           </section>
         </div>
       </div>
-      <div *ngIf="wordMode && !docEditing" class="wordbar" role="status">
-        <nl-icon name="edit"/><span><b>Modo Word:</b> {{locked() ? 'esta avaliação está aprovada e travada. Reabra para editar os textos das seções direto na página.' : !canWrite() ? 'somente leitura para o seu papel.' : 'clique nos textos das seções (contorno verde) e edite direto na página. Tabelas, escores, cabeçalho e o resto do arquivo base ficam travados. Salva sozinho; a seção editada volta para revisão.'}}</span>
-        <button *ngIf="locked() && canWrite()" type="button" class="btn btn-secondary btn-sm" [disabled]="reopening" (click)="reopenForWord()"><nl-icon name="edit"/> {{reopening ? 'Reabrindo…' : 'Reabrir para editar'}}</button>
-        <span class="ws" [class.busy]="wordSaving">{{wordSaving ? 'Salvando…' : wordError ? wordError : wordSavedAt ? 'Salvo às ' + wordSavedAt : ''}}</span>
-      </div>
-      <div #docScroll class="docscroll" [class.wordon]="wordMode" [hidden]="docEditing" (scroll)="onDocScroll()">
+      <div #docScroll class="docscroll" [hidden]="docEditing" (scroll)="onDocScroll()">
         <p *ngIf="previewLoading" class="caption center">Montando o documento…</p>
         <p *ngIf="!docName('base')" class="caption center">Envie o arquivo base para ver o documento.</p>
         <div #previewBox class="doc" [style.zoom]="zoom"></div>

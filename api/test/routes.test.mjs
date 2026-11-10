@@ -12,6 +12,8 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {DatabaseSync} from 'node:sqlite';
 import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+const OO_SECRET = 'oo-segredo-sintetico-de-teste-com-mais-de-32-caracteres';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '../..');
@@ -97,7 +99,7 @@ before(async () => {
     env: {...process.env, ADMIN_EMAIL: '', ADMIN_PASSWORD: '', TTS_PROVIDER: '', DICTATION_ENABLED: 'false', API_RATE_LIMIT: '100000', PORT: String(port), HOST: '127.0.0.1',
       DB_FILE: path.join(tmp, 'data.db'), STORAGE_DIR: path.join(tmp, 'storage'), JWT_SECRET: randomBytes(32).toString('hex'),
       FILE_ENCRYPTION_KEY: KEY, PYTHON_BIN: PYTHON, OPENAI_API_KEY: 'sk-test-sintetica', OPENAI_BASE_URL: `http://127.0.0.1:${fakeAI.address().port}/v1`,
-      AI_ENABLED: 'true', ALLOW_EXTERNAL_AI: 'true', CHATGPT_MCP_ENABLED: 'true', PUBLIC_BASE_URL: base, TTS_WARMUP: 'false', BACKUP_DIR: path.join(tmp, 'backups'), BACKUP_AUTO: 'false', GENERATED_TEXT_RED: 'false'},
+      AI_ENABLED: 'true', ALLOW_EXTERNAL_AI: 'true', CHATGPT_MCP_ENABLED: 'true', PUBLIC_BASE_URL: base, TTS_WARMUP: 'false', BACKUP_DIR: path.join(tmp, 'backups'), BACKUP_AUTO: 'false', ONLYOFFICE_URL: 'http://127.0.0.1:9', ONLYOFFICE_JWT_SECRET: OO_SECRET, GENERATED_TEXT_RED: 'false'},
   });
   let stderr = '';
   server.stderr.on('data', d => stderr += d);
@@ -1088,4 +1090,29 @@ test('list progress follows the evaluation screen (all sections of the report); 
   assert.equal((await api('PUT', `/api/evaluations/${id}/progress`, {token: tokens.psy, body: {total: 16, done: 11}})).status, 200);
   const row = (await api('GET', '/api/evaluations', {token: tokens.psy})).data.find(e => e.id === id);
   assert.equal(row.section_total, 16); assert.equal(row.approved_count, 11);
+});
+
+test('Word editor (OnlyOffice): signed config, signed file link, edited copy saved by the callback and used by the download', async () => {
+  const id = await withFiles();
+  assert.equal((await api('POST', `/api/evaluations/${id}/final/editor`, {token: tokens.psy, body: {}})).status, 200);
+  const r = (await api('POST', `/api/evaluations/${id}/final/editor`, {token: tokens.psy, body: {}})).data;
+  assert.equal(r.state, 'new'); assert.equal(r.url, 'http://127.0.0.1:9');
+  assert.equal(jwt.verify(r.config.token, OO_SECRET).document.key, r.config.document.key, 'config signed with the shared secret');
+  const fileUrl = r.config.document.url.replace(base, ''), cbUrl = r.config.editorConfig.callbackUrl.replace(base, '');
+  // the document server must sign its request
+  assert.equal((await fetch(base + fileUrl)).status, 403);
+  const got = await fetch(base + fileUrl, {headers: {authorization: 'Bearer ' + jwt.sign({payload: {url: 'x'}}, OO_SECRET)}});
+  assert.equal(got.status, 200); const bytes = Buffer.from(await got.arrayBuffer()); assert.equal(bytes.subarray(0, 2).toString(), 'PK');
+  // the edited file comes back through the callback (status 6 = "Salvar"); unsigned callbacks are refused
+  const edited = createServer((q, s2) => { s2.setHeader('content-type', 'application/octet-stream'); s2.end(bytes); });
+  await new Promise(ok => edited.listen(0, '127.0.0.1', ok));
+  const body = {key: r.config.document.key, status: 6, url: `http://127.0.0.1:${edited.address().port}/x.docx`};
+  assert.equal((await fetch(base + cbUrl, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body)})).status, 403);
+  const ok = await fetch(base + cbUrl, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({...body, token: jwt.sign(body, OO_SECRET)})});
+  assert.deepEqual(await ok.json(), {error: 0});
+  edited.close();
+  const again = (await api('POST', `/api/evaluations/${id}/final/editor`, {token: tokens.psy, body: {}})).data;
+  assert.equal(again.state, 'saved'); assert.notEqual(again.config.document.key, r.config.document.key, 'a new version has a new key');
+  assert.equal((await api('DELETE', `/api/evaluations/${id}/final`, {token: tokens.psy})).status, 200);
+  assert.equal((await api('POST', `/api/evaluations/${id}/final/editor`, {token: tokens.psy, body: {}})).data.state, 'new');
 });

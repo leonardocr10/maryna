@@ -267,6 +267,12 @@ nl-rich-editor .rte-area { font: 14.5px/1.65 var(--doc-font); color: var(--text)
 .mode-row .mlabel{font-size:13px;font-weight:600;color:var(--text)}
 .mode-row small{font-size:12.5px;color:var(--text-3);flex-basis:100%}
 /* Closing place/date line, in Identificação */
+/* arrow to hide / show the top (app bar + this bar) */
+.top-hide{flex:none;width:30px;height:30px;display:grid;place-items:center;border:1px solid var(--border-card);border-radius:8px;background:var(--card);color:var(--text-2);cursor:pointer;--ico-size:16px}
+.top-hide:hover{background:var(--primary-soft);color:var(--primary-text)}
+.top-show{position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:30;width:48px;height:20px;display:grid;place-items:center;border:1px solid var(--border-card);border-top:0;border-radius:0 0 10px 10px;background:var(--card);color:var(--text-2);cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.08);--ico-size:14px}
+.top-show:hover{color:var(--primary-text)}
+.top-hide:focus-visible,.top-show:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
 /* "Word" tab: the report as Word pages, body editable, with a Word-like toolbar */
 .wordview{display:flex;flex-direction:column;gap:8px;padding:12px 14px}
 .wv-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}

@@ -1,6 +1,7 @@
 <ng-container *ngIf="current">
   <!-- One line: steps | pending strip | actions as icons (same pill style as the steps) -->
-  <div class="evbar">
+  <button *ngIf="topHidden" type="button" class="top-show" (click)="setTopHidden(false)" title="Mostrar o topo" aria-label="Mostrar o topo"><nl-icon name="chevd"/></button>
+  <div class="evbar" [hidden]="topHidden">
     <nav class="steps-mini" aria-label="Etapas da avaliação">
       <ng-container *ngFor="let i of stepIdx(); let n=index; let last=last">
         <button type="button" class="sm-step" [attr.aria-current]="step===i ? 'step' : null" [class.current]="step===i" [class.done]="stepDone(i) && step!==i" (click)="goStep(i)" [title]="steps[i] + ' · ' + stepSub(i)">
@@ -16,6 +17,7 @@
     <span class="grow"></span>
     <nl-review-panel #rp [slim]="true" [evaluationId]="evaluationId" [locked]="locked()" [canWrite]="canWrite()" [docsReady]="docsReady()" [pendings]="pendings()"
       (state)="review=$event" (changed)="changed.emit()" (goStep)="goStep($event)"></nl-review-panel>
+    <button type="button" class="top-hide" (click)="setTopHidden(true)" title="Recolher o topo (mais espaço para o texto)" aria-label="Recolher o topo"><nl-icon name="chevu"/></button>
     <div class="iconpill" role="toolbar" aria-label="Ações da avaliação">
       <button *ngIf="canWrite()" type="button" class="ip danger" [disabled]="generating" (click)="remove()" title="Excluir avaliação (pede confirmação)" aria-label="Excluir avaliação"><nl-icon name="trash"/></button>
       <button *ngIf="canWrite()" type="button" class="ip" (click)="showDocument()" [disabled]="!docName('base')" title="Pré-visualizar o Word" aria-label="Pré-visualizar o Word"><nl-icon name="eye"/></button>
@@ -207,7 +209,7 @@
         <button *ngIf="!readOnly()" class="btn btn-secondary btn-sm" data-nl-action="approve-all" (click)="openApproveAll()" [disabled]="allApproved()" [title]="allApproved() ? 'Todas já estão aprovadas' : 'Escolher as seções e aprovar'"><nl-icon name="check"/> Aprovar todas</button>
         <!-- Modo automático: opens the Chrome extension's panel; without the extension, how to install it -->
         <button *ngIf="!readOnly()" type="button" class="btn btn-primary btn-sm" data-nl-action="auto-mode" (click)="openAutoMode()" title="Gerar rascunhos automaticamente com ChatGPT" aria-haspopup="dialog"><nl-icon name="robot"/> <span class="nlx-label">Modo automático</span></button>
-        <div class="seg" role="tablist" aria-label="Modo de visualização"><button type="button" role="tab" [attr.aria-selected]="mode==='secoes'" [class.on]="mode==='secoes'" (click)="setMode('secoes')"><nl-icon name="layers"/> Seções</button><button *ngIf="canWrite()" type="button" role="tab" [attr.aria-selected]="mode==='documento' && !wordMode" [class.on]="mode==='documento' && !wordMode" (click)="setMode('documento')"><nl-icon name="doc"/> Documento</button><button *ngIf="canWrite()" type="button" role="tab" [attr.aria-selected]="mode==='documento' && wordMode" [class.on]="mode==='documento' && wordMode" (click)="setMode('documento', true)" title="Editar os textos das seções direto na página do Word"><nl-icon name="edit"/> Word</button></div>
+        <div class="seg" role="tablist" aria-label="Modo de visualização"><button type="button" role="tab" [attr.aria-selected]="mode==='secoes'" [class.on]="mode==='secoes'" (click)="setMode('secoes')"><nl-icon name="layers"/> Seções</button><button *ngIf="false" type="button" role="tab" [attr.aria-selected]="mode==='documento' && !wordMode" [class.on]="mode==='documento' && !wordMode" (click)="setMode('documento')"><nl-icon name="doc"/> Documento</button><button *ngIf="canWrite()" type="button" role="tab" [attr.aria-selected]="mode==='documento' && wordMode" [class.on]="mode==='documento' && wordMode" (click)="setMode('documento', true)" title="Editar os textos das seções direto na página do Word"><nl-icon name="edit"/> Word</button></div>
       </div>
     </div>
 

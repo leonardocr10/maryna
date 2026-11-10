@@ -96,11 +96,11 @@ export class EvaluationComponent implements OnDestroy {
   open = ''; editing = ''; editText = ''; sectionInstr = '';
   mode: 'secoes' | 'documento' = 'secoes'; previewLoading = false;
 
-  ngOnDestroy() { this.closeWord(); this.unwheel(); clearTimeout(this.previewTimer); this.flushEditors(); for (const k of Object.keys(this.docTimers)) { clearTimeout(this.docTimers[k]); this.saveDocSection(k); } if (this.topbar.info === this.topInfo) this.topbar.info = null; this.paint('nl-find', []); this.paint('nl-find-on', []); this.paint('nl-target', []); clearTimeout(this.idTimer); clearTimeout(this.instrSaveTimer); this.reader.stop(); if (this.autoTimer) { clearTimeout(this.autoTimer); this.autosave(this.editing); } }
+  ngOnDestroy() { document.documentElement.classList.remove('nl-top-hidden'); this.closeWord(); this.unwheel(); clearTimeout(this.previewTimer); this.flushEditors(); for (const k of Object.keys(this.docTimers)) { clearTimeout(this.docTimers[k]); this.saveDocSection(k); } if (this.topbar.info === this.topInfo) this.topbar.info = null; this.paint('nl-find', []); this.paint('nl-find-on', []); this.paint('nl-target', []); clearTimeout(this.idTimer); clearTimeout(this.instrSaveTimer); this.reader.stop(); if (this.autoTimer) { clearTimeout(this.autoTimer); this.autosave(this.editing); } }
 
   // ---------- loading ----------
   async load(first = false) {
-    if (first) { this.previous = null; this.prevOpen = ''; this.loadPrevious(); }
+    if (first) { document.documentElement.classList.toggle('nl-top-hidden', this.topHidden); this.previous = null; this.prevOpen = ''; this.loadPrevious(); }
     try {
       const r = await this.api.req('GET', '/evaluations/' + this.evaluationId);
       this.current = r.evaluation; this.documents = r.documents || []; this.sections = r.sections || []; this.usage = r.usage;
@@ -1494,6 +1494,10 @@ export class EvaluationComponent implements OnDestroy {
     if (toWord) { if (!wasWord) setTimeout(() => this.openWord()); return; }
     if (m === 'documento') setTimeout(() => this.renderPreview());
   }
+
+  // ---------- top of the screen: the arrow hides the app bar and this bar (more room for the text); kept per browser ----------
+  topHidden = (() => { try { return localStorage.getItem('nl-top-hidden') === '1'; } catch { return false; } })();
+  setTopHidden(v: boolean) { this.topHidden = v; document.documentElement.classList.toggle('nl-top-hidden', v); try { localStorage.setItem('nl-top-hidden', v ? '1' : '0'); } catch {} }
 
   // ---------- "Word" tab: the report edited freely in the browser, like Word (no server, no plugin) ----------
   // The psychologist's choice (AGENTS.md rule 2, exception): a COPY of the report generated from the sections is shown as Word

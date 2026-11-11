@@ -1,5 +1,5 @@
 import {Injectable, inject, signal} from '@angular/core';
-import {HttpClient, HttpHeaders} from '@angular/common/http';
+import {HttpClient, HttpEventType, HttpHeaders} from '@angular/common/http';
 import {firstValueFrom} from 'rxjs';
 
 export type Role = 'admin' | 'psychologist' | 'assistant';
@@ -26,12 +26,12 @@ export class Api {
 
   async req<T = any>(method: string, url: string, body?: any): Promise<T> {
     try { return await firstValueFrom(this.http.request<T>(method, '/api' + url, {...this.opts(), body, responseType: 'json' as any})); }
-    catch (e: any) {
-      if (e?.status === 401 && !url.startsWith('/login')) { this.logout(); this.notify('Sessão encerrada. Entre novamente.'); }
-      else if (e?.status === 403 && e?.error?.code === 'password_change_required') { const m = this.me(); if (m) this.me.set({...m, must_change_password: true}); }
-      else this.notify(e?.status === 0 ? 'API indisponível. Abra o iniciar.bat.' : e?.error?.error || e.message);
-      throw e;
-    }
+    catch (e: any) { this.fail(e, url); throw e; }
+  }
+  private fail(e: any, url: string) {
+    if (e?.status === 401 && !url.startsWith('/login')) { this.logout(); this.notify('Sessão encerrada. Entre novamente.'); }
+    else if (e?.status === 403 && e?.error?.code === 'password_change_required') { const m = this.me(); if (m) this.me.set({...m, must_change_password: true}); }
+    else this.notify(e?.status === 0 ? 'API indisponível. Abra o iniciar.bat.' : e?.error?.error || e.message);
   }
 
   async blob(url: string): Promise<Blob> {
@@ -79,8 +79,16 @@ export class Api {
   isAdmin() { return this.me()?.role === 'admin'; }
   logout() { sessionStorage.removeItem('token'); this.me.set(null); this.loggedIn.set(false); }
 
-  async upload(evaluationId: string, kind: 'base' | 'anamnesis', file: File) {
+  /** Sends one DOCX; onProgress gets the sent share (0-100) while the file goes up. */
+  async upload(evaluationId: string, kind: 'base' | 'anamnesis', file: File, onProgress?: (pct: number) => void) {
     const fd = new FormData(); fd.append('file', file);
-    return this.req('POST', `/evaluations/${evaluationId}/upload/${kind}`, fd);
+    const url = `/evaluations/${evaluationId}/upload/${kind}`;
+    if (!onProgress) return this.req('POST', url, fd);
+    try {
+      return await new Promise<any>((resolve, reject) => this.http.request('POST', '/api' + url, {...this.opts(), body: fd, reportProgress: true, observe: 'events'}).subscribe({
+        next: ev => { if (ev.type === HttpEventType.UploadProgress && ev.total) onProgress(Math.round(100 * ev.loaded / ev.total)); else if (ev.type === HttpEventType.Response) resolve(ev.body); },
+        error: reject,
+      }));
+    } catch (e: any) { this.fail(e, url); throw e; }
   }
 }

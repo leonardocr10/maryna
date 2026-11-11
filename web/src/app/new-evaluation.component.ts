@@ -8,6 +8,8 @@ import {Identity, IdentityFormComponent, emptyIdentity, identityMissing} from '.
 import {IconComponent} from './ui/icon.component';
 import {FilterSelectComponent} from './ui/filter-select.component';
 
+interface Step {key: 'eval' | 'base' | 'anamnesis' | 'open'; label: string; state: 'wait' | 'now' | 'ok' | 'err'; pct?: number}
+
 /** Full-screen "Nova avaliação": identification + optional files + checklist. */
 @Component({
   selector: 'nl-new-evaluation',
@@ -80,11 +82,43 @@ import {FilterSelectComponent} from './ui/filter-select.component';
     </section>
     <div class="privacy"><nl-icon name="shield"/><span>Dados de saúde são sensíveis. Nomes e dados pessoais são ocultados antes de qualquer envio à IA, e a geração só acontece quando autorizada nas Configurações.</span></div>
   </aside>
+</div>
+<div *ngIf="busy" class="modal-bg">
+  <div class="modal mk" role="dialog" aria-modal="true" aria-labelledby="mk-title" aria-describedby="mk-hint">
+    <div class="mk-ico" aria-hidden="true"><span class="spin"></span></div>
+    <h2 id="mk-title">Criando avaliação</h2>
+    <p id="mk-hint" class="muted">Não feche esta página. Arquivos grandes podem levar alguns segundos.</p>
+    <ol class="mk-steps" aria-live="polite">
+      <li *ngFor="let s of steps" [class]="s.state">
+        <span class="mk-dot" aria-hidden="true"><nl-icon *ngIf="s.state==='ok'" name="check"/><span *ngIf="s.state==='now'" class="spin sm"></span></span>
+        <span class="grow">{{stepText(s)}}<i *ngIf="s.state==='now' && s.pct != null && s.pct < 100" class="mk-bar"><b [style.width.%]="s.pct"></b></i></span>
+      </li>
+    </ol>
+  </div>
 </div>`,
   styles: [`.need-hint{display:block;margin-top:4px;font-size:12px;color:var(--danger,#c0392b)}
 :host ::ng-deep nl-filter-select.need button{border-color:var(--danger,#c0392b)}
 
 nl-icon{--ico-size:16px}
+.mk{width:min(420px,100%)}
+.mk-ico{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;margin-bottom:14px;background:var(--primary-soft)}
+.mk .muted{font-size:13px;color:var(--text-3);margin-bottom:16px}
+.mk-steps{list-style:none;margin:0;padding:0;display:grid;gap:10px;font-size:14px}
+.mk-steps li{display:flex;align-items:flex-start;gap:10px;color:var(--text-3)}
+.mk-steps li.now{color:var(--text);font-weight:500}
+.mk-steps li.ok{color:var(--text)}
+.mk-steps li.err{color:var(--danger)}
+.mk-steps .grow{flex:1;min-width:0}
+.mk-dot{flex:none;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;border:1.5px solid var(--border-card);--ico-size:12px}
+.mk-steps li.ok .mk-dot{background:var(--primary);border-color:var(--primary);color:#fff}
+.mk-steps li.now .mk-dot{border-color:transparent}
+.mk-steps li.err .mk-dot{border-color:var(--danger)}
+.mk-bar{display:block;height:4px;margin-top:6px;border-radius:2px;background:var(--chip);overflow:hidden}
+.mk-bar b{display:block;height:100%;background:var(--primary);transition:width .2s}
+.spin{width:22px;height:22px;border-radius:50%;border:2.5px solid var(--primary-soft);border-top-color:var(--primary);animation:mkSpin .8s linear infinite}
+.spin.sm{width:16px;height:16px;border-width:2px}
+@keyframes mkSpin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.spin{animation-duration:2s}}
 .layout{display:grid;grid-template-columns:minmax(0,1fr) clamp(280px,calc(24vw / var(--zoom, 1)),360px);gap:16px;align-items:start}
 .form{min-width:0;display:flex;flex-direction:column;gap:16px}
 .form>.card{padding:22px 24px}
@@ -188,19 +222,44 @@ export class NewEvaluationComponent {
     this[kind] = f;
   }
 
+  /** Steps shown in the "Criando avaliação" dialog while the evaluation is created and the files go up. */
+  steps: Step[] = [];
+  private step(key: Step['key'], patch: Partial<Step>) { const s = this.steps.find(x => x.key === key); if (s) Object.assign(s, patch); }
+
   async create(generate: boolean) {
     if (!this.valid() || this.busy) return;
     this.busy = true;
+    const files = (['base', 'anamnesis'] as const).filter(k => this[k]);
+    this.steps = [
+      {key: 'eval', label: 'Cadastrando paciente e avaliação', state: 'now'},
+      ...files.map(k => ({key: k, label: k === 'base' ? 'Arquivo base' : 'Anamnese', state: 'wait' as const})),
+      {key: 'open', label: generate ? 'Abrindo a avaliação e iniciando a IA' : 'Abrindo a avaliação', state: 'wait'},
+    ];
     try {
       const v = this.id;
       const p = await this.api.req('POST', '/patients', {name: v.name.trim(), birth_date: v.birth_date || null});
       const e = await this.api.req('POST', '/evaluations', {patient_id: p.id, ...v, model_id: this.modelId || null, ai_mode: this.aiMode});
-      for (const kind of ['base', 'anamnesis'] as const) {
-        const f = this[kind];
-        if (f) { try { await this.api.upload(e.id, kind, f); } catch { generate = false; } }
-      }
+      this.step('eval', {state: 'ok'});
+      // Both files go up at the same time; each one is read on the server as it arrives.
+      const sent = await Promise.all(files.map(async kind => {
+        this.step(kind, {state: 'now', pct: 0});
+        try {
+          await this.api.upload(e.id, kind, this[kind]!, pct => this.step(kind, {pct}));
+          this.step(kind, {state: 'ok'}); return true;
+        } catch { this.step(kind, {state: 'err'}); return false; }
+      }));
+      if (sent.includes(false)) generate = false;
+      this.step('open', {state: 'now'});
       this.api.notify(generate ? 'Avaliação criada. Gerando textos…' : 'Avaliação criada.');
+      // The dialog stays until the evaluation screen replaces this one.
       this.created.emit({id: e.id, generate});
-    } catch {} finally { this.busy = false; }
+    } catch { this.busy = false; }
+  }
+  stepText(s: Step) {
+    if (s.key !== 'base' && s.key !== 'anamnesis') return s.label;
+    if (s.state === 'ok') return s.label + ': enviado e lido';
+    if (s.state === 'err') return s.label + ': não foi enviado';
+    if (s.state === 'wait') return s.label + ': aguardando';
+    return s.pct != null && s.pct < 100 ? `${s.label}: enviando ${s.pct}%` : s.label + ': lendo o arquivo';
   }
 }

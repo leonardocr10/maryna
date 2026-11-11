@@ -324,3 +324,24 @@ test('ChatGPT in the background: the tab comes forward for the authorization', a
   const s = await finish(t);
   assert.ok(t.activated.includes(s.chatTabId));
 });
+
+const PNG = 'data:image/png;base64,iVBORw0KGgo=';
+test('section images go with the ChatGPT message only when "enviar imagens" is on', async () => {
+  const on = makeEnv({nl: {sections: [section('percepcao', 'Percepção')], images: {percepcao: [PNG, PNG]}}});
+  await start(on, {policy: {existing: 'skip', onError: 'pause', sendImages: true}});
+  assert.equal((await finish(on)).status, 'done');
+  assert.deepEqual(cmds(on, 'cg.insert')[0].images, [PNG, PNG]);
+  const off = makeEnv({nl: {sections: [section('percepcao', 'Percepção')], images: {percepcao: [PNG]}}});
+  await start(off);
+  assert.equal((await finish(off)).status, 'done');
+  assert.deepEqual(cmds(off, 'cg.insert')[0].images, []);
+});
+
+test('images not attached in ChatGPT: pauses before sending', async () => {
+  const t = makeEnv({nl: {sections: [section('percepcao', 'Percepção')], images: {percepcao: [PNG]}}, cg: {imagesFail: true}});
+  await start(t, {policy: {existing: 'skip', onError: 'pause', sendImages: true}});
+  const s = await finish(t);
+  assert.equal(s.status, 'paused');
+  assert.equal(s.pause.code, 'cg_images');
+  assert.equal(cmds(t, 'cg.send').length, 0, 'never sent without the images');
+});

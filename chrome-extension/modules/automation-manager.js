@@ -22,7 +22,7 @@ const GLOBAL = ['nl_not_logged', 'nl_not_review', 'nl_readonly', 'nl_mcp_off', '
  * }
  */
 export class AutomationManager {
-  constructor(env) { this.env = env; this.looping = false; this.commands = new Map(); }
+  constructor(env) { this.env = env; this.looping = false; this.commands = new Map(); this.images = new Map(); }
 
   // ---------- controls ----------
   async start({nlTabId, nlOrigin, mode, policy, selected}) {
@@ -35,7 +35,7 @@ export class AutomationManager {
     const {items} = buildQueue(scan, {existing: policy.existing, selected});
     if (!items.some(i => i.status !== 'skipped')) throw Object.assign(new AutoError('nl_selector'), {message: 'Nenhuma seção elegível para gerar com as opções escolhidas.', hint: 'Mude a seleção ou a política de seções com texto.'});
     // Every run starts clean: no command, task or conversation of an earlier run (another patient) is used again.
-    this.commands.clear(); this.lastDiag = null;
+    this.commands.clear(); this.images.clear(); this.lastDiag = null;
     const oldChat = cur?.chatTabId && (await this.env.tabExists(cur.chatTabId)) ? cur.chatTabId : null;   // the same ChatGPT tab, on a NEW conversation
     await state.create({evaluationId: scan.evaluationId, nlTabId, nlOrigin, mode, policy, items, chatTabId: oldChat});
     this.kick();
@@ -57,7 +57,7 @@ export class AutomationManager {
         // Explicit retry by the person: a new conversation and, if the task is no longer open, a new task.
         await state.setItem(idx, {status: 'pending', step: 'navigate', error: null, sentAt: null, attempts: 0, pluginManual: false, authNotified: false, chatDone: false, noSaveRetries: 0});
         await state.setRun({chatPluginOk: false});   // a retry starts a new conversation
-        this.commands.delete(it.key);
+        this.commands.delete(it.key); this.images.delete(it.key);
       } else await state.setItem(idx, {status: it.status === 'error' || it.status === 'expired' ? 'pending' : it.status, error: null, ...(action === 'plugin_done' ? {pluginManual: true} : {})});
     }
     await state.setRun({status: RUN.running, pause: null, ...(nlTabId ? {nlTabId} : {})});
@@ -77,7 +77,7 @@ export class AutomationManager {
     const again = s.items.map((it, i) => (!FINAL_ITEM.includes(it.status) || (it.status === 'skipped' && it.reason === 'Pulada por você')) ? i : -1).filter(i => i >= 0);
     if (!again.length) return s;
     for (const i of again) await state.setItem(i, {status: 'pending', step: 'navigate', error: null, reason: null, sentAt: null, attempts: 0, chatDone: false, noSaveRetries: 0, pluginManual: false, authNotified: false});
-    this.commands.clear(); this.lastDiag = null;
+    this.commands.clear(); this.images.clear(); this.lastDiag = null;
     await state.setRun({status: RUN.running, pause: null, finishedAt: null, chatPluginOk: false, current: -1, ...(nlTabId ? {nlTabId} : {})});
     await state.log(`Continuando de onde parou: ${again.length} ${again.length === 1 ? 'seção' : 'seções'} sem rascunho; as recebidas ficam como estão.`);
     this.kick();
@@ -173,7 +173,7 @@ export class AutomationManager {
     if (info.code === 'cg_no_save' && (it.noSaveRetries || 0) < NO_SAVE_RETRIES) {
       await state.setItem(idx, {status: 'pending', step: 'navigate', error: info, sentAt: null, chatDone: false, pluginManual: false, authNotified: false, noSaveRetries: (it.noSaveRetries || 0) + 1});
       await state.setRun({chatPluginOk: false});   // the new try starts a new conversation
-      this.commands.delete(it.key);
+      this.commands.delete(it.key); this.images.delete(it.key);
       await state.log(`${it.name}: o ChatGPT respondeu sem salvar o rascunho; nova tentativa automática em uma conversa nova.`);
       return false;
     }
@@ -250,6 +250,7 @@ export class AutomationManager {
     const chk = checkCommand(r.command, it.code);
     if (!chk.ok) throw new AutoError(r.command ? 'nl_bad_command' : 'nl_no_command', 'command', chk.reason);
     this.commands.set(it.key, r.command);   // kept in memory only
+    this.images.set(it.key, s.policy?.sendImages ? r.images || [] : []);
     await this.env.state.setItem(idx, {status: 'waiting_chatgpt'});
   }
 
@@ -297,9 +298,12 @@ export class AutomationManager {
       const r = await this.nl(s, {cmd: 'nl.command', key: it.key}, LIMITS.command + 5000);
       if (!checkCommand(r.command, it.code).ok) throw new AutoError('nl_bad_command', 'insert');
       command = r.command; this.commands.set(it.key, command);
+      this.images.set(it.key, s.policy?.sendImages ? r.images || [] : []);
       if (!s.policy?.background) await this.env.activate(s.chatTabId);
     }
-    await this.inFront(s, it, () => this.cg(s, {cmd: 'cg.insert', text: command, code: it.code, name: PLUGIN_NAME}, 15000));
+    const images = this.images.get(it.key) || [];
+    await this.inFront(s, it, () => this.cg(s, {cmd: 'cg.insert', text: command, code: it.code, name: PLUGIN_NAME, images}, images.length ? 60000 : 15000));
+    if (images.length) await this.env.state.log(`${it.name}: ${images.length} ${images.length === 1 ? 'imagem anexada' : 'imagens anexadas'} à mensagem do ChatGPT.`);
   }
 
   /**
@@ -326,7 +330,7 @@ export class AutomationManager {
       if (!(err instanceof AutoError) || err.code !== 'cg_send' || !(await this.taskMoved(s, it, 30000))) throw err;
       await this.env.state.log(`${it.name}: envio confirmado pelo NeuroLaudos IA (tarefa em uso pelo plugin).`);
     }
-    this.commands.delete(it.key);
+    this.commands.delete(it.key); this.images.delete(it.key);
     await this.env.state.log(`${it.name}: comando com ${it.code} enviado ao ChatGPT.`);
   }
 

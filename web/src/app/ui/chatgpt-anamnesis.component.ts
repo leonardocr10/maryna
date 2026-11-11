@@ -68,6 +68,8 @@ const newOpId = () => 'op-' + (crypto.randomUUID?.() || Math.random().toString(3
         <li>Quando o ChatGPT pedir para salvar no NeuroLaudos IA, confira e confirme. O rascunho aparece aqui sozinho.</li>
       </ol>
       <textarea class="input mono" readonly rows="4" data-nl-command [value]="task?.command || ''" aria-label="Comando para o ChatGPT" (focus)="$any($event.target).select()"></textarea>
+      <!-- Images chosen to go with the task, read by the Modo automático extension to attach them to the ChatGPT message -->
+      <span *ngFor="let src of (task?.include_images ? images : [])" hidden data-nl-image [attr.data-src]="src"></span>
       <div class="row">
         <button class="btn btn-secondary btn-sm" (click)="copy('@NeuroLaudos IA', 'Copiado. No ChatGPT, cole e, se aparecer a lista, escolha NeuroLaudos IA.')"><nl-icon name="copy"/> Copiar &#64;NeuroLaudos IA</button>
         <button class="btn btn-secondary btn-sm" data-nl-action="copy-command" (click)="copy(task?.command || '', 'Comando copiado.')"><nl-icon name="copy"/> Copiar comando</button>

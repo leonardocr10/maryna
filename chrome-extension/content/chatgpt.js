@@ -125,7 +125,34 @@
   }
 
   // ---------- message ----------
-  async function insert(text, code, name) {
+  /** Files from the data: URLs of the section images (decoded here: no network call). */
+  function imageFiles(list) {
+    return list.map((src, i) => {
+      const m = /^data:(image\/(png|jpeg|gif|webp));base64,(.+)$/.exec(src || '');
+      if (!m) return null;
+      const bin = atob(m[3]), bytes = new Uint8Array(bin.length);
+      for (let j = 0; j < bin.length; j++) bytes[j] = bin.charCodeAt(j);
+      return new File([bytes], `imagem-${i + 1}.${m[2] === 'jpeg' ? 'jpg' : m[2]}`, {type: m[1]});
+    }).filter(Boolean);
+  }
+  /** Attaches images to the message like a person pasting them; the file input of the box is the fallback. */
+  async function attachImages(c, list) {
+    const files = imageFiles(list);
+    if (!files.length) return true;
+    // Attached files show as previews next to the field (an <img>, or a box with the picture as background)
+    const thumbs = () => { const area = container(composer() || c); return area.querySelectorAll('img').length + [...area.querySelectorAll('[style*="blob:"]')].length; };
+    const want = thumbs() + files.length;
+    const dt = () => { const d = new DataTransfer(); files.forEach(f => d.items.add(f)); return d; };
+    c.focus(); placeCaretAtEnd(c);
+    c.dispatchEvent(new ClipboardEvent('paste', {clipboardData: dt(), bubbles: true, cancelable: true}));
+    if (await waitFor(() => thumbs() >= want, {timeout: 8000})) return true;
+    const input = container(c).querySelector('input[type="file"]') || document.querySelector('form input[type="file"]');
+    if (!input) return false;
+    input.files = dt().files;
+    input.dispatchEvent(new Event('change', {bubbles: true}));
+    return !!await waitFor(() => thumbs() >= want, {timeout: 8000});
+  }
+  async function insert(text, code, name, images) {
     const c = composer();
     if (!c) return fail('cg_composer');
     // The command already starts with the mention placed in the previous step: the rest is pasted after it.
@@ -134,7 +161,9 @@
     if (rest.startsWith(mention)) rest = rest.slice(mention.length).trimStart();
     if (!await pasteText(c, (norm(textOf(c)) ? ' ' : '') + rest)) return fail('cg_insert');
     const ok = await waitFor(() => textOf(c).includes(code), {timeout: 4000});
-    return ok ? {ok: true} : fail('cg_insert');
+    if (!ok) return fail('cg_insert');
+    if (images?.length && !await attachImages(c, images)) return fail('cg_images');
+    return {ok: true};
   }
 
   /** Sends with Enter, like a person; the send button is the fallback. */
@@ -238,7 +267,7 @@
       switch (msg.cmd) {
         case 'cg.ping': { const c = composer(); return {ok: true, ready: !!c && !loginShown(), loggedIn: !loginShown(), composer: !!c, hasMessages: allMsgs().length > 0}; }
         case 'cg.selectPlugin': return selectPlugin(msg.name, msg.trustManual);
-        case 'cg.insert': return insert(msg.text, msg.code, msg.name);
+        case 'cg.insert': return insert(msg.text, msg.code, msg.name, msg.images);
         case 'cg.send': return sendMessage(msg.code);
         case 'cg.wait': return waitAnswer(Math.min(Math.max(msg.chunkMs || 30000, 1000), 60000));
         default: return fail('connection', 'comando desconhecido');

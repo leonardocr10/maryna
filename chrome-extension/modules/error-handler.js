@@ -24,6 +24,7 @@ export const ERRORS = {
   cg_plugin_missing: {msg: 'O plugin NeuroLaudos IA não apareceu no seletor do ChatGPT.', hint: 'Conecte o plugin no ChatGPT (Configurações > Aplicativos) ou selecione-o à mão e clique em "Já selecionei o plugin".'},
   cg_plugin_select: {msg: 'Não foi possível confirmar que o plugin NeuroLaudos IA foi selecionado.', hint: 'Selecione o plugin à mão no ChatGPT (@ e NeuroLaudos IA) e clique em "Já selecionei o plugin".'},
   cg_insert: {msg: 'O comando não ficou no campo de mensagem.', hint: 'Cole o comando à mão (Copiar comando) e envie; depois clique em Continuar.'},
+  cg_images: {msg: 'As imagens da seção não foram anexadas à mensagem do ChatGPT.', hint: 'Confira a mensagem no ChatGPT: as imagens que faltarem, copie do Word e cole nela. Depois envie e clique em Continuar.'},
   cg_send: {msg: 'A mensagem não foi enviada.', hint: 'Envie à mão no ChatGPT e clique em Continuar.'},
   cg_diverge: {msg: 'O ChatGPT encontrou dados divergentes e não redigiu a seção.', hint: 'Ex.: idade, sexo ou pessoa diferentes entre a identificação e a anamnese. Veja o motivo em "Mostrar detalhes da tarefa" (janela da seção), corrija no NeuroLaudos IA e clique em Tentar de novo, ou Pular seção.'},
   cg_insufficient: {msg: 'O ChatGPT achou os dados insuficientes e não redigiu a seção.', hint: 'Veja o motivo em "Mostrar detalhes da tarefa" (janela da seção), corrija no NeuroLaudos IA e clique em Tentar de novo, ou Pular seção.'},

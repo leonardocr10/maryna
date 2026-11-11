@@ -35,7 +35,7 @@ export function makeEnv(opts = {}) {
       case 'nl.openModal': if (nl.notEligible.includes(msg.key)) return {ok: true, notEligible: true, reason: 'Texto fixo do arquivo'}; openModal = msg.key; return {ok: true, modal: view(msg.key)};
       case 'nl.modalInfo': return {ok: true, modal: view(msg.key)};
       case 'nl.prepare': { const code = newCode(); nl.tasks[msg.key] = {code, status: 'pending'}; return {ok: true, modal: view(msg.key)}; }
-      case 'nl.command': { const t = nl.tasks[msg.key]; return {ok: true, command: `@NeuroLaudos IA Utilize o plugin NeuroLaudos IA para buscar a tarefa pendente da seção "${msg.key}" identificada pelo código ${t.code}. Ao concluir, salve como rascunho.`}; }
+      case 'nl.command': { const t = nl.tasks[msg.key]; return {ok: true, command: `@NeuroLaudos IA Utilize o plugin NeuroLaudos IA para buscar a tarefa pendente da seção "${msg.key}" identificada pelo código ${t.code}. Ao concluir, salve como rascunho.`, images: (nl.images || {})[msg.key] || []}; }
       case 'nl.waitStatus': { clock += msg.chunkMs || 1000; return {ok: true, modal: view(msg.key)}; }
       case 'nl.closeModal': openModal = null; return {ok: true};
     }
@@ -60,7 +60,7 @@ export function makeEnv(opts = {}) {
         if (cg.plugin === 'missing') return {ok: false, code: 'cg_plugin_missing'};
         if (cg.plugin === 'unverified') return {ok: false, code: 'cg_plugin_select'};
         return {ok: true};
-      case 'cg.insert': return msg.text.includes(msg.code) ? {ok: true} : {ok: false, code: 'cg_insert'};
+      case 'cg.insert': if (!msg.text.includes(msg.code)) return {ok: false, code: 'cg_insert'}; return msg.images?.length && cg.imagesFail ? {ok: false, code: 'cg_images'} : {ok: true};
       case 'cg.send': {
         if (cg.sendFails) throw new Error('Could not establish connection. Receiving end does not exist.');
         lastSent = msg.code; authLeft = cg.auth;

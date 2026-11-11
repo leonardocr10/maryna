@@ -19,6 +19,7 @@
   const evaluationId = () => review()?.getAttribute('data-nl-evaluation') || (compat() ? location.pathname.match(/([0-9a-f-]{8,})/i)?.[1] || location.pathname : null);
   const approveAllBtn = () => document.querySelector(NL.approveAll) || NL_FALLBACK.approveAll();
 
+  const IMAGE_RE = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/;
   const LABEL_STATE = {pendente: 'pend', revisar: 'gen', aprovada: 'ap', 'aprovado · do arquivo': 'file'};
   function sectionsFromPage() {
     const bars = [...document.querySelectorAll(NL.sectionBar)];
@@ -150,7 +151,10 @@
     const el = modalEl(key);
     if (!el) return fail('nl_modal');
     const ta = await waitFor(() => { const t = el.querySelector(NL.command) || el.querySelector('textarea[aria-label="Comando para o ChatGPT"]'); return t && t.value.trim() ? t : null; }, {timeout: 10000});
-    return ta ? {ok: true, command: ta.value.trim()} : fail('nl_no_command');
+    if (!ta) return fail('nl_no_command');
+    // Images the task carries (she chose to send them): attached to the ChatGPT message, where ChatGPT can always see them.
+    const images = [...el.querySelectorAll('[data-nl-image]')].map(x => x.getAttribute('data-src') || '').filter(s => IMAGE_RE.test(s)).slice(0, 8);
+    return {ok: true, command: ta.value.trim(), images};
   }
 
   /** Waits for the task to leave pending/processing. The app's window refreshes on its own every 5 s while visible;

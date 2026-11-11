@@ -27,6 +27,16 @@ import {WheelZoom} from './wheel-zoom.service';
 import {Narrator, highlight, segmentsOf} from './ui/reading-narrator';
 import {AI_MODE_CONFIRM, CONCLUSION_GUIDANCE, HAND_ONLY, niceTitle, OPTIONAL_SECTIONS, PERCEPTION_MAX_AGE, SECTIONS, SECTION_STATE, STATUS, SectionState, ageText, ageYears, brDate, brl, int, sectionIcon, words} from './shared';
 /** Interpretation sections: written from their own tables in the base document. */
+/** Two sections with the same title (the behaviour part has its own field and the DIVA-5 one, both under "Comportamento"):
+ * the DIVA-5 one says so, any other repeat gets its order, so the lists never show the same name twice. */
+function sameNamesApart<T extends {id: string; name: string}>(list: T[]): T[] {
+  const seen = new Map<string, number>();
+  return list.map(s => {
+    const k = s.name.trim().toLowerCase(), n = (seen.get(k) || 0) + 1; seen.set(k, n);
+    if (n === 1) return s;
+    return {...s, name: s.id === 'comportamento_diva' ? `${s.name} (DIVA-5)` : `${s.name} (${n})`};
+  });
+}
 const INTERPRETATION_SLOTS = ['inteligencia', 'percepcao', 'memoria', 'atencao', 'funcoes_executivas', 'comportamento', 'personalidade', 'comportamento_diva'];
 
 /** Section the AI only writes from the psychologist's own guidance (never in "Gerar laudo"). */
@@ -224,7 +234,7 @@ export class EvaluationComponent implements OnDestroy {
       !(this.inspection && OPTIONAL_SECTIONS.includes(s.id) && !found.has(s.id)) &&
       !(s.id === 'percepcao' && !this.text(s.id).trim() && ((age !== null && age >= PERCEPTION_MAX_AGE) || (age === null && !!this.inspection && !found.has(s.id)))));
     // names as written in the document ("Comportamento social", "Sugestões e encaminhamentos")
-    const named = list.map(s => ({...s, name: this.docTitle(s.id) || s.name}));
+    const named = sameNamesApart(list.map(s => ({...s, name: this.docTitle(s.id) || s.name})));
     if (!this.fixedBlocks().length) return named;
     // fixed parts of the file join the list in the order they appear in the Word document
     const all = [...named, ...this.fixedBlocks().map((b: any) => ({id: b.key, name: b.name}))];

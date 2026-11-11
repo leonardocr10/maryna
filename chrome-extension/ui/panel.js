@@ -97,6 +97,9 @@ function defaults() {
 }
 const mineActive = () => run && run.nlTabId === tabId && (run.status === 'running' || run.status === 'paused');
 const otherActive = () => run && run.nlTabId !== tabId && (run.status === 'running' || run.status === 'paused');
+// A finished or stopped run is shown only on its own evaluation; any other one opens on the setup screen.
+// No scan yet (panel opened while the run was working) means it is still the run's own evaluation.
+const mineShown = () => run && run.nlTabId === tabId && run.status !== 'idle' && (mineActive() || (scan ? scan.evaluationId === run.evaluationId : !scanErr));
 const errText = code => ({nl_not_logged: 'Entre no NeuroLaudos IA para usar o Modo automático.', nl_not_review: 'Abra a avaliação na tela Conferir seções.', nl_selector: 'A lista de seções não foi encontrada nesta tela.'}[code] || 'Não foi possível ler as seções desta tela.');
 
 chrome.storage.onChanged.addListener((ch, area) => {
@@ -111,7 +114,7 @@ function render() {
   if (pending) return renderConfirm();
   if (review) return renderReview();
   if (otherActive()) { setLayout('modal'); return renderOther(); }
-  if (run && run.nlTabId === tabId && run.status !== 'idle') { setLayout('run'); return renderRun(); }
+  if (mineShown()) { setLayout('run'); return renderRun(); }
   setLayout('modal');
   return renderSetup();
 }

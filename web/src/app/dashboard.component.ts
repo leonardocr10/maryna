@@ -68,7 +68,7 @@ const ORDERS = ['Mais recentes', 'Mais antigas', 'Nome (A–Z)', 'Nome (Z–A)',
   </div>
   <div class="tablewrap">
     <table class="tbl">
-      <thead><tr><th><span class="thi">Paciente <nl-icon name="chevud"/></span></th><th>Idade</th><th class="c">Sexo</th><th><span class="thi"><nl-icon name="calendar"/> Início</span></th><th><span class="thi"><nl-icon name="tag"/> Status</span></th><th><span class="thi"><nl-icon name="layers"/> Progresso</span></th></tr></thead>
+      <thead><tr><th><span class="thi">Paciente <nl-icon name="chevud"/></span></th><th>Idade</th><th class="c">Sexo</th><th><span class="thi"><nl-icon name="calendar"/> Início</span></th><th><span class="thi"><nl-icon name="tag"/> Status</span></th><th><span class="thi"><nl-icon name="layers"/> Progresso</span></th><th class="dl"><span class="sr-only">Baixar</span></th></tr></thead>
       <tbody>
         <tr *ngFor="let e of pageRows()" tabindex="0" (click)="open.emit(e.id)" (keydown.enter)="open.emit(e.id)">
           <td><div class="who"><span class="av"><nl-icon name="userfill"/></span><span><b>{{e.patient_name}}</b><small>{{e.schooling || 'Avaliação neuropsicológica'}}</small></span></div></td>
@@ -77,6 +77,7 @@ const ORDERS = ['Mais recentes', 'Mais antigas', 'Nome (A–Z)', 'Nome (Z–A)',
           <td><span class="thi"><nl-icon name="calendar"/> {{brDate(e.start_date || e.created_at)}}</span></td>
           <td><span *ngIf="e.delivered_at" class="badge ok due" [title]="'Entregue a ' + (e.delivered_to || '—')"><nl-icon name="checkc"/> Entregue</span><span *ngIf="fix(e)" class="badge danger due" title="A psicóloga pediu correções"><nl-icon name="chat"/> Correção pedida</span><span *ngIf="queued(e)" class="badge warn due" [title]="'Enviada por ' + (e.submitted_by_name || '—')"><nl-icon name="upload"/> Enviada</span><span *ngIf="late(e)" class="badge danger due" [title]="'Prazo: ' + brDate(e.end_date)"><nl-icon name="alert"/> Atrasada</span><span *ngIf="soon(e)" class="badge warn due" [title]="'Prazo: ' + brDate(e.end_date)"><nl-icon name="calendar"/> Vence {{brDate(e.end_date).slice(0,5)}}</span><span [class]="'badge '+STATUS[st(e)].css"><nl-icon [name]="st(e)==='ap' ? 'checkfill' : st(e)==='rv' ? 'clock' : 'edit'"/> {{STATUS[st(e)].label}}</span></td>
           <td class="prog"><span class="pm">{{e.approved_count||0}} de {{e.section_total||0}} seções</span><span class="pbar"><span class="progress" [class.full]="pct(e)===100"><span [style.width.%]="pct(e)"></span></span><b>{{pct(e)}}%</b></span></td>
+          <td class="dl"><button *ngIf="canDownload(e)" type="button" class="dlbtn" [disabled]="busy===e.id" [title]="'Baixar o Word do laudo de ' + e.patient_name" [attr.aria-label]="'Baixar o Word do laudo de ' + e.patient_name" (click)="download(e, $event)" (keydown.enter)="$event.stopPropagation()"><nl-icon [name]="busy===e.id ? 'clock' : 'download'"/> Word</button></td>
         </tr>
       </tbody>
     </table>
@@ -135,6 +136,13 @@ const ORDERS = ['Mais recentes', 'Mais antigas', 'Nome (A–Z)', 'Nome (Z–A)',
 @media(max-width:1100px){.dk{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){.dk .kpi-label{white-space:normal;line-height:1.25}.dk .kpi-value{font-size:20px}.dh p{display:none}.dlist .listhead h2{flex-basis:100%}.pop{right:auto;left:0}}
 .due{margin-right:6px}
+.dlist .tbl th.dl,.dlist .tbl td.dl{width:1%;white-space:nowrap;text-align:right}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.dlbtn{display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 11px;border:1px solid var(--border-card);border-radius:var(--radius-pill);background:var(--card);color:var(--text);font:500 12.5px var(--font);cursor:pointer;--ico-size:15px}
+.dlbtn nl-icon{color:var(--primary)}
+.dlbtn:hover{border-color:var(--primary);background:var(--primary-soft)}
+.dlbtn:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.dlbtn:disabled{opacity:.6;cursor:wait}
 .c{text-align:center}
 .sx{display:inline-grid;place-items:center;--ico-size:20px}
 .sx.female{color:#8b3fd9}
@@ -193,6 +201,20 @@ export class DashboardComponent implements OnInit {
   /** Review workflow: sent by the assistant and waiting, or sent back with open correction requests. */
   queued(e: any) { return listStatus(e) !== 'ap' && !!e.submitted_at && !+e.open_notes; }
   fix(e: any) { return listStatus(e) !== 'ap' && +e.open_notes > 0; }
+  /** Word ready to download: approved evaluation, and only who can export it (psychologist/admin). */
+  canDownload(e: any) { return e.status === 'approved' && this.canWrite(); }
+  busy = '';
+  async download(e: any, ev: Event) {
+    ev.stopPropagation();
+    if (this.busy) return;
+    this.busy = e.id;
+    try {
+      const data = await this.api.blob(`/evaluations/${e.id}/export`);
+      const url = URL.createObjectURL(data), a = document.createElement('a');
+      a.href = url; a.download = 'laudo-' + (e.patient_name || 'revisado').replace(/[^\p{L}\p{N}]+/gu, '-') + '.docx'; a.click(); URL.revokeObjectURL(url);
+      this.api.notify('Word baixado.');
+    } catch {} finally { this.busy = ''; }
+  }
   canWrite() { const r = this.api.me()?.role; return r === 'admin' || r === 'psychologist'; }
   private matches(e: any, f: Filter) { return f === 'all' || (f === 'late' ? this.late(e) : f === 'soon' ? this.soon(e) : f === 'queue' ? this.queued(e) : f === 'fix' ? this.fix(e) : f === 'deliver' ? listStatus(e) === 'ap' && !e.delivered_at : listStatus(e) === f); }
   count(f: Filter) { return this.evaluations.filter(e => this.matches(e, f)).length; }

@@ -392,19 +392,22 @@ def topic_layout(bl):
    else:items.insert(0,{**t,'runs':runs})
   out.append(items)
  return out
+def _drop_blanks(el):
+ """Empty paragraphs right after el (layout only: no text, picture or section break) are removed."""
+ nxt=el.getnext()
+ while _blank(nxt):gone=nxt;nxt=nxt.getnext();gone.getparent().remove(gone)
 def insert_blocks(anchor,bl,red=False):
- """Blank line, the topics separated by blank lines, blank line. A blank line already under the heading is reused."""
- made=[];last=anchor
+ """Exactly one blank line (1.15, Arial 11) under the heading, between topics and after the text, whatever blank
+ lines the file had there (a blank line of the template may be 1.5 with space before/after, two lines tall)."""
+ made=[]
  if not bl:return made
- nxt=anchor.getnext()
- if _blank(nxt):last=nxt
- else:last=new_paragraph('');anchor.addnext(last)
+ _drop_blanks(anchor);last=new_paragraph('');anchor.addnext(last)
  for i,group in enumerate(topic_layout(bl)):
   if i:gap=new_paragraph('');last.addnext(gap);last=gap
   for b in group:
    p=rich_paragraph(b,red);last.addnext(p);last=p;made.append(p)
- nxt=last.getnext()
- if nxt is not None and nxt.tag!=_W+'sectPr' and not _blank(nxt):last.addnext(new_paragraph(''))
+ _drop_blanks(last);nxt=last.getnext()
+ if nxt is not None and nxt.tag!=_W+'sectPr':last.addnext(new_paragraph(''))
  return made
 
 # ---------- formatted text from the app's editor (sanitized HTML subset, see web/src/app/rich-text.ts) ----------

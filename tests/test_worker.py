@@ -3,6 +3,7 @@
 All fixtures are 100% synthetic (AGENTS.md rule 7)."""
 import unittest,tempfile,subprocess,sys,json,hashlib
 from docx import Document
+from docx.shared import Pt
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 WORKER=str(ROOT/'worker/docx_worker.py')
@@ -176,6 +177,23 @@ class TestWorker(unittest.TestCase):
   self.assertEqual([p.text for p in ps if p.text.startswith('Paciente')][0],'Paciente: Fulano Fictício')
   self.assertFalse(next(p for p in ps if p.text.startswith('Paciente')).paragraph_format.keep_with_next)
 
+ def test_template_blank_lines_around_the_text_become_one_each(self):
+  # the template had two tall blank lines (1.5, 5 pt before/after) under the label and three after it
+  d=Document();d.add_table(rows=1,cols=1).cell(0,0).text='MEMÓRIA E APRENDIZAGEM:'
+  d.add_table(rows=1,cols=1).cell(0,0).text='Interpretação e Observações Clínicas:'
+  for _ in range(2):
+   p=d.add_paragraph('');p.paragraph_format.line_spacing=1.5;p.paragraph_format.space_before=Pt(5);p.paragraph_format.space_after=Pt(5)
+  for _ in range(3):d.add_paragraph('')
+  d.add_table(rows=1,cols=1).cell(0,0).text='ATENÇÃO:'
+  d.save(self.base)
+  run('export',stdin={'base':str(self.base),'out':str(self.out),'sections':{'memoria':'Texto sintético.'}})
+  out=Document(self.out);body=[e for e in out.element.body.iterchildren() if e.tag.endswith('}p') or e.tag.endswith('}tbl')]
+  W='{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+  texts=[''.join(t.text or '' for t in e.iter(W+'t')) for e in body]
+  self.assertEqual(texts,['MEMÓRIA E APRENDIZAGEM:','Interpretação e Observações Clínicas:','','Texto sintético.','','ATENÇÃO:'])
+  for i in (2,4):
+   blank=[p for p in out.paragraphs if p._p is body[i]][0]
+   self.assertEqual((blank.paragraph_format.line_spacing,blank.paragraph_format.space_before,blank.paragraph_format.space_after.pt),(1.15,None,0.0))
  def filled_report(self):
   """Report already written by someone: old narrative, chart, fixed text and references around the destinations."""
   d=Document()

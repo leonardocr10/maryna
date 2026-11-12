@@ -314,7 +314,9 @@ async function go(c) {
 const DOT = '<svg class="k" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><svg class="w" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"><path d="M12 6v8M12 18.5v.5"/></svg><svg class="x" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>';
 
 const dotClass = (it, current) => it.status === 'received' ? 'ok' : it.status === 'needs_review' ? 'warn' : it.status === 'error' || it.status === 'expired' ? 'err' : it.status === 'skipped' ? 'skip' : current && run.status === 'running' ? 'run' : '';
-const elapsed = iso => { const s = Math.max(0, Math.floor((Date.now() - Date.parse(iso || Date.now())) / 1000)); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
+const elapsed = (iso, end) => { const s = Math.max(0, Math.floor(((end ? Date.parse(end) : Date.now()) - Date.parse(iso || Date.now())) / 1000)), p = n => String(n).padStart(2, '0'); return s >= 3600 ? `${Math.floor(s / 3600)}:${p(Math.floor(s / 60) % 60)}:${p(s % 60)}` : `${p(Math.floor(s / 60))}:${p(s % 60)}`; };
+/** Total time of the run since it started (pauses included); stops at the end of a finished or stopped run. */
+const totalTime = () => elapsed(run.startedAt, run.status === 'running' || run.status === 'paused' ? null : run.finishedAt);
 const STEPS4 = ['Tarefa preparada', 'Comando enviado ao ChatGPT', 'ChatGPT escrevendo o texto', 'Texto salvo no NeuroLaudos IA'];
 /** Which of the four plain steps the section is on. */
 function phase(it) {
@@ -391,6 +393,7 @@ function renderRun() {
     <b>Progresso da avaliação</b>
     <div class="bar" role="progressbar" aria-label="Progresso da avaliação" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p.pct}"><i style="width:${p.pct}%"></i></div>
     <span>${p.done} de ${p.total} seções — ${p.pct}%${extra ? `<small>${esc(extra)}</small>` : ''}</span>
+    ${run.startedAt ? `<span class="timer total" title="Tempo total desde o início da execução">${ic('clock', 15)} Tempo total <span id="tt">${totalTime()}</span></span>` : ''}
   </div>
   <div class="runcols">
     <section class="card now-col">${left}</section>
@@ -420,7 +423,7 @@ function renderRun() {
   $('#tochat') && ($('#tochat').onclick = () => ask({type: 'run.focus', which: 'chat'}));
   // The section's own window (code, command): this window steps aside and the run keeps going.
   $('#showmodal') && ($('#showmodal').onclick = () => { post({nlx: 'showModal', on: true}); close(); });
-  if (it && active) timer = setInterval(() => { const t = $('#tm'); if (t) t.textContent = elapsed(it.startedAt || it.updatedAt); }, 1000);
+  if (active) timer = setInterval(() => { const t = $('#tm'); if (t && it) t.textContent = elapsed(it.startedAt || it.updatedAt); const tt = $('#tt'); if (tt) tt.textContent = totalTime(); }, 1000);
 }
 
 load();

@@ -317,14 +317,29 @@ def run_props(bold=False,red=False):
  if red:c=OxmlElement('w:color');c.set(qn('w:val'),'FF0000');rpr.append(c)
  for tag in ('w:sz','w:szCs'):s=OxmlElement(tag);s.set(qn('w:val'),REPORT_HALF_POINTS);rpr.append(s)
  return rpr
-# Inserted text: line spacing 1.5, 6 pt after each paragraph, topic titles 12 pt before; never blank paragraphs as spacing.
-LINE_15='360';AFTER_PARA='120';BEFORE_TITLE='240'
-def new_paragraph(text,bold=False,red=False,title_gap=False):
- """Body paragraph matching the report layout: Arial 11 pt, justified, 1.5 line spacing, 6 pt after (12 pt before a topic title)."""
+# Inserted text follows the reports finished by hand in Word: Arial 11, justified, line spacing 1.15, no space before
+# or after; one blank line between the heading (title box or "Interpretação..." label) and the text, between topics
+# and after the text. A topic title is bold at the start of its first paragraph ("1. Sono: texto..."), numbered when
+# the section has two or more topics. Headings are kept with the text that follows (keepNext).
+LINE_115='276';AFTER_PARA='120';BEFORE_TITLE='240'
+def keep_next(p):
+ """Word keeps this paragraph on the same page as the next one (a title is never left alone at the page end)."""
+ ppr=p.find(qn('w:pPr'))
+ if ppr is None:ppr=OxmlElement('w:pPr');p.insert(0,ppr)
+ if ppr.find(qn('w:keepNext')) is None:
+  k=OxmlElement('w:keepNext')
+  # schema order: pStyle first, keepNext right after it
+  st=ppr.find(qn('w:pStyle'))
+  if st is not None:st.addnext(k)
+  else:ppr.insert(0,k)
+def new_paragraph(text,bold=False,red=False,title_gap=False,after='0'):
+ """Body paragraph matching the report layout: Arial 11 pt, justified, 1.15 line spacing, no space after (the
+ devolutiva passes 6 pt). A bold one is a title: kept with the next paragraph."""
  p=OxmlElement('w:p');ppr=OxmlElement('w:pPr')
+ if bold:ppr.append(OxmlElement('w:keepNext'))
  sp=OxmlElement('w:spacing')
  if title_gap:sp.set(qn('w:before'),BEFORE_TITLE)
- sp.set(qn('w:after'),AFTER_PARA);sp.set(qn('w:line'),LINE_15);sp.set(qn('w:lineRule'),'auto');ppr.append(sp)
+ sp.set(qn('w:after'),after);sp.set(qn('w:line'),LINE_115);sp.set(qn('w:lineRule'),'auto');ppr.append(sp)
  ind=OxmlElement('w:ind');ind.set(qn('w:left'),'0');ind.set(qn('w:firstLine'),'0');ppr.append(ind)
  jc=OxmlElement('w:jc');jc.set(qn('w:val'),'both');ppr.append(jc)
  ppr.append(run_props(bold))  # paragraph mark too, so blank lines between topics are also Arial 11
@@ -351,10 +366,45 @@ def blocks(content):
    else:out.append((line,False))
  return out
 def insert_after(anchor,content,red=False):
- last=anchor;first=True;made=[]
- for text,bold in blocks(content):
-  if not text.strip():continue
-  p=new_paragraph(text,bold,red,title_gap=bold and not first);last.addnext(p);last=p;first=False;made.append(p)
+ bl=[{'kind':'h3' if bold else 'p','list':None,'n':0,'style':{},'runs':[(text,{})],'text':clean(text)} for text,bold in blocks(content) if text.strip()]
+ return insert_blocks(anchor,bl,red)
+def _blank(p):return p is not None and p.tag==_W+'p' and not clean(ptext(p)) and not has_protected_content(p)
+def topic_layout(bl):
+ """Blocks grouped by topic. Each group: its title merged in bold at the start of its first paragraph
+ ("2. Histórico escolar: texto..."), numbered when there are two or more topics."""
+ groups=[]
+ for b in bl:
+  if b['kind']=='h3':groups.append({'title':b,'items':[]})
+  else:
+   if not groups:groups.append({'title':None,'items':[]})
+   groups[-1]['items'].append(b)
+ numbered=sum(1 for g in groups if g['title'])>=2;n=0;out=[]
+ for g in groups:
+  items=list(g['items']);t=g['title']
+  if t:
+   n+=1
+   # the title keeps its own formatting (font, color...), always bold; number in front, colon after
+   runs=[(x,{**f,'b':True}) for x,f in t['runs'] if x]
+   if runs:
+    runs[0]=((str(n)+'. ' if numbered else '')+re.sub(r'^\s*\d+\s*[.)-]\s*','',runs[0][0]).lstrip(),runs[0][1])
+    runs[-1]=(runs[-1][0].rstrip().rstrip(':').rstrip(),runs[-1][1])
+   if items and items[0]['kind']=='p':items[0]={**items[0],'runs':runs[:-1]+[(runs[-1][0]+': ',runs[-1][1])]+list(items[0]['runs'])}
+   else:items.insert(0,{**t,'runs':runs})
+  out.append(items)
+ return out
+def insert_blocks(anchor,bl,red=False):
+ """Blank line, the topics separated by blank lines, blank line. A blank line already under the heading is reused."""
+ made=[];last=anchor
+ if not bl:return made
+ nxt=anchor.getnext()
+ if _blank(nxt):last=nxt
+ else:last=new_paragraph('');anchor.addnext(last)
+ for i,group in enumerate(topic_layout(bl)):
+  if i:gap=new_paragraph('');last.addnext(gap);last=gap
+  for b in group:
+   p=rich_paragraph(b,red);last.addnext(p);last=p;made.append(p)
+ nxt=last.getnext()
+ if nxt is not None and nxt.tag!=_W+'sectPr' and not _blank(nxt):last.addnext(new_paragraph(''))
  return made
 
 # ---------- formatted text from the app's editor (sanitized HTML subset, see web/src/app/rich-text.ts) ----------
@@ -479,7 +529,7 @@ def _rich_props(f,title=False,red=False):
  if f.get('va'):v=OxmlElement('w:vertAlign');v.set(qn('w:val'),f['va']);rpr.append(v)
  return rpr
 def rich_paragraph(b,red=False,title_gap=False):
- """Body paragraph with the report defaults (Arial 11, justified, 1.5, 6 pt after) overridden by the editor's formatting."""
+ """Body paragraph with the report defaults (Arial 11, justified, 1.15, no space after) overridden by the editor's formatting."""
  st=b['style'];title=b['kind']=='h3'
  p=new_paragraph('',bold=title,title_gap=title_gap);ppr=p.find(qn('w:pPr'));sp=ppr.find(qn('w:spacing'))
  lh=st.get('line-height','')
@@ -509,11 +559,7 @@ def rich_paragraph(b,red=False,title_gap=False):
    t=OxmlElement('w:t');t.set(qn('xml:space'),'preserve');t.text=part;r.append(t);start=False
   if len(r)>1:p.append(r)
  return p
-def insert_rich_after(anchor,html,red=False):
- last=anchor;first=True;made=[]
- for b in rich_blocks(html):
-  p=rich_paragraph(b,red,title_gap=b['kind']=='h3' and not first);last.addnext(p);last=p;first=False;made.append(p)
- return made
+def insert_rich_after(anchor,html,red=False):return insert_blocks(anchor,rich_blocks(html),red)
 # Preview only ("Word" tab of the app): every inserted paragraph carries a bookmark nlsec_<key>_<n>, so the screen knows
 # which section it belongs to and makes only those paragraphs editable. Never in the downloaded file.
 _BM=[1000]
@@ -645,6 +691,33 @@ def excluded_elements(d,keys):
   s=starts[k];e=min([x for x in stops if x>s],default=len(children))
   out[k]=children[s:e]
  return out
+def is_heading(ch,doc):
+ """Section heading of the report: a one-cell title box, a section title ("MEMÓRIA E APRENDIZAGEM:"), an
+ interpretation label ("Interpretação e observações clínicas:") or another short all-caps title."""
+ if ch.tag==_W+'tbl':
+  try:t=Table(ch,doc);cells=list(dict.fromkeys(clean(cell_text(c)) for r in t.rows for c in r.cells if clean(cell_text(c))))
+  except Exception:return False
+  return len(t.rows)==1 and len(cells)==1 and 2<len(cells[0])<=80
+ if ch.tag!=_W+'p' or has_protected_content(ch):return False
+ text=clean(ptext(ch))
+ if not text or len(text)>80:return False
+ label=text.upper()
+ if is_interpretation(label):return True
+ caps=text==label and re.search(r'[A-ZÀ-Ý]{3}',text) is not None
+ return caps or (text.endswith(':') and domain_of(text) is not None)
+def keep_titles(doc):
+ """Pagination only (no text, value or style changes): every heading, and the blank lines right under it, stays on the
+ page of the first text, table or chart that follows, so a title is never left alone at the bottom of a page."""
+ els=list(body_elements(doc.element.body))
+ for i,ch in enumerate(els):
+  if not is_heading(ch,doc):continue
+  chain=[ch];j=i+1
+  while j<len(els) and els[j].tag==_W+'p' and not clean(ptext(els[j])) and not has_protected_content(els[j]):chain.append(els[j]);j+=1
+  if j>=len(els):continue
+  for el in chain:
+   if el.tag==_W+'tbl':
+    for p in el.iter(_W+'p'):keep_next(p)
+   else:keep_next(el)
 def export(base,out,sections,highlight=False,fields=None,rich=None,created=None,excluded=None,tags=False):
  excluded=[k for k in (excluded or [])]
  sections={k:v for k,v in sections.items() if k not in excluded}
@@ -710,6 +783,7 @@ def export(base,out,sections,highlight=False,fields=None,rich=None,created=None,
  for els in gone.values():
   for el in els:
    if el.getparent() is not None:el.getparent().remove(el)
+ keep_titles(d)
  d.save(out)
  after=sha256(base)
  if before!=after:raise SystemExit('base document changed during export')
@@ -725,7 +799,7 @@ def letter(out,title,subtitle,content):
  first=True
  for text,bold in blocks(content):
   if not text.strip():continue
-  sect.addprevious(new_paragraph(text,bold,title_gap=bold and not first));first=False
+  sect.addprevious(new_paragraph(text,bold,title_gap=bold and not first,after=AFTER_PARA));first=False
  d.save(out)
  return {'out':out,'paragraphs':len(blocks(content))}
 # Pictures inside body paragraphs (score tables pasted as images, charts saved as pictures), by element index -- the
@@ -841,6 +915,7 @@ def from_blocks(base,out,blocks,count=None):
   elif b.get('t')=='pagebreak':d.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
   elif b.get('t')=='p':_blk_paragraph(d.add_paragraph(),b,d)
  if not len([c for c in body if c.tag!=qn('w:sectPr')]):d.add_paragraph()
+ keep_titles(d)
  d.save(out)
  return {'out':out,'blocks':len(blocks)}
 def main():

@@ -48,15 +48,15 @@ class TestWorker(unittest.TestCase):
   self.assertEqual(sha(self.base),before);self.assertEqual(r['base_sha256'],before)
   texts=[p.text for p in Document(self.out).paragraphs]
   for k,v in sections.items():self.assertEqual(texts.count(v),1,k)
-  # inserted right after its marker
-  self.assertEqual(texts[texts.index('ANAMNESE')+1],'Histórico fictício.')
+  # inserted under its marker, after one blank line
+  self.assertEqual(texts[texts.index('ANAMNESE')+1:texts.index('ANAMNESE')+3],['','Histórico fictício.'])
 
  def test_export_preserves_tables_header_and_existing_text(self):
   run('export',stdin={'base':str(self.base),'out':str(self.out),'sections':{'inteligencia':'X.'}})
   a,b=Document(self.base),Document(self.out)
   self.assertEqual([[c.text for r in t.rows for c in r.cells] for t in a.tables],[[c.text for r in t.rows for c in r.cells] for t in b.tables])
   self.assertEqual(b.sections[0].header.paragraphs[0].text,'Cabeçalho fictício')
-  original=[p.text for p in a.paragraphs];result=[p.text for p in b.paragraphs]
+  original=[p.text for p in a.paragraphs if p.text];result=[p.text for p in b.paragraphs if p.text]
   result.remove('X.');self.assertEqual(original,result)
 
  def test_export_reports_missing_destination(self):
@@ -79,17 +79,20 @@ class TestWorker(unittest.TestCase):
   out=Document(self.out)
   self.assertEqual([t.cell(0,0).text for t in out.tables],['DESCRIÇÃO DA DEMANDA','ANAMNESE:','Interpretação e Observações Clínicas:','Indicações e Recomendações Clínicas:'])
   paras=[p for p in out.paragraphs if p.text]
-  self.assertEqual([p.text for p in paras],['Demanda fictícia.','Queixa','Texto da queixa.','Sono','Texto do sono.','Interp.','Rec.'])
-  self.assertTrue(paras[1].runs[0].bold);self.assertFalse(paras[2].runs[0].bold)
-  self.assertEqual(paras[2].runs[0].font.name,'Arial')
+  # topics numbered, the title in bold at the start of its paragraph, a blank line between them (as reports finished by hand)
+  self.assertEqual([p.text for p in paras],['Demanda fictícia.','1. Queixa: Texto da queixa.','2. Sono: Texto do sono.','Interp.','Rec.'])
+  self.assertEqual([(r.text,bool(r.bold)) for r in paras[1].runs],[('1. Queixa: ',True),('Texto da queixa.',False)])
+  self.assertEqual(paras[1].runs[1].font.name,'Arial')
+  allp=out.paragraphs;k=[p.text for p in allp].index('1. Queixa: Texto da queixa.')
+  self.assertEqual([p.text for p in allp[k-1:k+3]],['','1. Queixa: Texto da queixa.','','2. Sono: Texto do sono.'])
 
  def test_chatgpt_bold_line_becomes_topic_title(self):
   d=Document();d.add_paragraph('ANAMNESE');d.save(self.base)
   nl=chr(10)
   run('export',stdin={'base':str(self.base),'out':str(self.out),'sections':{'anamnesis':'**Sono**'+nl+nl+'Dorme **pouco**.'}})
   paras=[p for p in Document(self.out).paragraphs if p.text]
-  self.assertEqual([p.text for p in paras],['ANAMNESE','Sono','Dorme pouco.'])
-  self.assertTrue(paras[1].runs[0].bold)
+  self.assertEqual([p.text for p in paras],['ANAMNESE','Sono: Dorme pouco.'])
+  self.assertTrue(paras[1].runs[0].bold);self.assertFalse(paras[1].runs[1].bold)
 
  def test_highlight_marks_generated_text_red_only(self):
   run('export',stdin={'base':str(self.base),'out':str(self.out),'sections':{'anamnesis':'Gerado.'},'highlight':True})
@@ -140,26 +143,38 @@ class TestWorker(unittest.TestCase):
   self.assertEqual(out.tables[1].cell(0,1).text,'123')
 
  def test_preview_tags_inserted_paragraphs_for_the_word_tab_only(self):
-  nl=chr(10);sec={'anamnesis':'## Sono'+nl+nl+'Texto.'}
+  nl=chr(10);sec={'anamnesis':'## Sono'+nl+nl+'Texto.'+nl+nl+'Mais.'}
   run('export',stdin={'base':str(self.base),'out':str(self.out),'sections':sec,'tags':True})
   xml=Document(self.out).element.xml
   self.assertIn('nlsec_anamnesis_0',xml);self.assertIn('nlsec_anamnesis_1',xml)
   plain=Path(str(self.out).replace('.docx','-final.docx'))
   run('export',stdin={'base':str(self.base),'out':str(plain),'sections':sec})
   self.assertNotIn('nlsec_',Document(plain).element.xml,'the downloaded file has no marks')
- def test_inserted_text_is_arial_11_with_1_5_spacing(self):
+ def test_inserted_text_is_arial_11_with_1_15_spacing(self):
   nl=chr(10)
   run('export',stdin={'base':str(self.base),'out':str(self.out),'sections':{'anamnesis':'## Sono'+nl+nl+'Texto.'+nl+nl+'## Escola'+nl+nl+'Outro.'}})
   ps=Document(self.out).paragraphs
-  start=[p.text for p in ps].index('Sono')
-  # no blank paragraphs as spacing: 1.5 lines, 6 pt after each paragraph, 12 pt before a topic title (not the first)
-  self.assertEqual([p.text for p in ps[start:start+4]],['Sono','Texto.','Escola','Outro.'])
-  for p in ps[start:start+4]:
-   self.assertEqual(p.paragraph_format.line_spacing,1.5)
-   self.assertEqual(p.paragraph_format.space_after.pt,6.0)
-   self.assertEqual((p.runs[0].font.name,p.runs[0].font.size.pt),('Arial',11.0))
-  self.assertIsNone(ps[start].paragraph_format.space_before)
-  self.assertEqual(ps[start+2].paragraph_format.space_before.pt,12.0)
+  start=[p.text for p in ps].index('ANAMNESE')
+  # as reports finished by hand: blank line, topic, blank line, topic, blank line; 1.15 lines, no space after
+  self.assertEqual([p.text for p in ps[start:start+6]],['ANAMNESE','','1. Sono: Texto.','','2. Escola: Outro.',''])
+  for p in ps[start+1:start+6]:
+   self.assertEqual(p.paragraph_format.line_spacing,1.15)
+   self.assertEqual(p.paragraph_format.space_after.pt,0.0)
+   self.assertIsNone(p.paragraph_format.space_before)
+  for p in (ps[start+2],ps[start+4]):self.assertEqual([(r.font.name,r.font.size.pt) for r in p.runs],[('Arial',11.0)]*2)
+  # the heading and the blank line under it stay with the text on the same page
+  self.assertEqual([bool(p.paragraph_format.keep_with_next) for p in ps[start:start+3]],[True,True,False])
+ def test_text_without_topics_has_a_gap_under_the_label_and_headings_keep_with_next(self):
+  run('export',stdin={'base':str(self.base),'out':str(self.out),'sections':{SLOTS[0]:'Primeiro parágrafo.'+chr(10)+chr(10)+'Segundo.'}})
+  ps=Document(self.out).paragraphs;i=[p.text for p in ps].index('Primeiro parágrafo.')
+  # paragraphs of one text follow each other; a blank line under the label and after the text
+  self.assertEqual([p.text for p in ps[i-2:i+3]],['Interpretação e observações clínicas'.upper(),'','Primeiro parágrafo.','Segundo.',''])
+  # the interpretation label and the section titles are never left alone at the bottom of a page
+  self.assertTrue(ps[i-2].paragraph_format.keep_with_next);self.assertTrue(ps[i-1].paragraph_format.keep_with_next)
+  self.assertTrue(next(p for p in ps if p.text=='ANAMNESE').paragraph_format.keep_with_next)
+  self.assertFalse(ps[i].paragraph_format.keep_with_next)
+  self.assertEqual([p.text for p in ps if p.text.startswith('Paciente')][0],'Paciente: Fulano Fictício')
+  self.assertFalse(next(p for p in ps if p.text.startswith('Paciente')).paragraph_format.keep_with_next)
 
  def filled_report(self):
   """Report already written by someone: old narrative, chart, fixed text and references around the destinations."""
@@ -182,7 +197,7 @@ class TestWorker(unittest.TestCase):
   r=run('export',stdin={'base':str(self.base),'out':str(self.out),'sections':sections})
   self.assertEqual(r['missing'],[]);self.assertEqual(r['replaced'],{'demanda':1,'anamnesis':2,'memoria':1,'conclusao':1,'recomendacoes':1})
   out=Document(self.out);texts=[p.text for p in out.paragraphs if p.text]
-  self.assertEqual(texts,['Demanda nova.','Sono','Anamnese nova.','Memória nova.','Tabela 3. Legenda fixa.','Conclusão nova.','Salienta-se que a avaliação é um retrato do momento.','Psicoterapia: nova.','REFERÊNCIAS:','AUTOR, Fictício. Livro. 2020.'])
+  self.assertEqual(texts,['Demanda nova.','Sono: Anamnese nova.','Memória nova.','Tabela 3. Legenda fixa.','Conclusão nova.','Salienta-se que a avaliação é um retrato do momento.','Psicoterapia: nova.','REFERÊNCIAS:','AUTOR, Fictício. Livro. 2020.'])
   self.assertEqual(out.tables[3].cell(0,1).text,'42')
   self.assertEqual(len(out.element.body.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing')),1)
 
@@ -260,8 +275,8 @@ class TestWorker(unittest.TestCase):
   body=[e for e in Document(self.out).element.body.iterchildren() if e.tag.endswith('}p') or e.tag.endswith('}tbl')]
   texts=[''.join(t.text or '' for t in e.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t')) for e in body]
   i=texts.index('Tabela 1. Resultados fictícios.')
-  self.assertEqual(texts[i+1:i+3],['Interpretação Clínica:','Texto manual sintético.'])
-  self.assertEqual(texts.index('MEMÓRIA E APRENDIZAGEM:'),i+4)
+  self.assertEqual(texts[i+1:i+5],['Interpretação Clínica:','','Texto manual sintético.',''])
+  self.assertEqual(texts.index('MEMÓRIA E APRENDIZAGEM:'),i+5)
 
  def test_export_creates_missing_section_before_the_next_one(self):
   d=Document()
@@ -280,15 +295,15 @@ class TestWorker(unittest.TestCase):
   body=[e for e in Document(self.out).element.body.iterchildren() if e.tag.endswith('}p') or e.tag.endswith('}tbl')]
   texts=[''.join(t.text or '' for t in e.iter('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t')) for e in body]
   i=texts.index('PERCEPÇÃO')
-  self.assertEqual(texts[i+1:i+4],['Interpretação Clínica:','Percepção sintética.',''])
-  self.assertEqual(texts[i+4],'MEMÓRIA E APRENDIZAGEM:')
+  self.assertEqual(texts[i+1:i+5],['Interpretação Clínica:','','Percepção sintética.',''])
+  self.assertEqual(texts[i+5],'MEMÓRIA E APRENDIZAGEM:')
   self.assertLess(texts.index('Inteligência sintética.'),i)
   # not an interpretation: no field label; goes before the next section the file has
   j=texts.index('CONCLUSÃO')
-  self.assertEqual(texts[j+1:j+4],['Conclusão sintética.','','HIPÓTESE DIAGNÓSTICA'])
+  self.assertEqual(texts[j+1:j+5],['','Conclusão sintética.','','HIPÓTESE DIAGNÓSTICA'])
   # nothing after it in the file: right above the closing place/date line
   j=texts.index('INDICAÇÕES E RECOMENDAÇÕES')
-  self.assertEqual(texts[j+1:j+4],['Recomendações sintéticas.','','Cidade Fictícia, 1 de janeiro de 2026.'])
+  self.assertEqual(texts[j+1:j+5],['','Recomendações sintéticas.','','Cidade Fictícia, 1 de janeiro de 2026.'])
   # not chosen: still missing, file untouched there
   spec['created']['keys']=[];r=run('export',stdin=spec)
   self.assertEqual(sorted(r['missing']),['conclusao','percepcao','recomendacoes'])

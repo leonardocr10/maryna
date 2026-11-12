@@ -34,13 +34,14 @@ def val(e,path,attr='w:val'):
  x=e.find(path);return None if x is None else x.get(qn(attr))
 body=ps[1];ppr=body.find(qn('w:pPr'))
 runs=body.findall(qn('w:r'))
-props=lambda i:runs[i].find(qn('w:rPr'))
-print(json.dumps({'title_bold':ps[0].find('.//'+qn('w:b')) is not None,'jc':val(ppr,qn('w:jc')),'line':val(ppr,qn('w:spacing'),'w:line'),
+props=lambda i:runs[i+1].find(qn('w:rPr'))
+print(json.dumps({'blank':''.join(t.text for t in ps[0].iter(qn('w:t'))),'title':runs[0].find(qn('w:t')).text,'title_bold':runs[0].find('.//'+qn('w:b')) is not None,'jc':val(ppr,qn('w:jc')),'line':val(ppr,qn('w:spacing'),'w:line'),
  'before':val(ppr,qn('w:spacing'),'w:before'),'after':val(ppr,qn('w:spacing'),'w:after'),'left':val(ppr,qn('w:ind'),'w:left'),
  'bold':props(1).find(qn('w:b')) is not None,'size':val(props(3),qn('w:sz')),'color':val(props(3),qn('w:color')),
  'fill':val(props(5),qn('w:shd'),'w:fill'),'italic':props(7).find(qn('w:i')) is not None,'u':val(props(9),qn('w:u')),
  'strike':props(11).find(qn('w:strike')) is not None,'items':[''.join(t.text for t in p.iter(qn('w:t'))) for p in ps[2:]]}))`);
-  assert.deepEqual(r, {title_bold: true, jc: 'center', line: '480', before: '240', after: '120', left: '720', bold: true, size: '28', color: 'C00000',
+  // blank line under the heading; the topic title in bold at the start of its paragraph
+  assert.deepEqual(r, {blank: '', title: 'Atenção: ', title_bold: true, jc: 'center', line: '480', before: '240', after: '120', left: '720', bold: true, size: '28', color: 'C00000',
     fill: 'FFFF00', italic: true, u: 'single', strike: true, items: ['•um', '1.dois']});
 });
 
@@ -69,8 +70,9 @@ def run_info(r):
  return [r.text,g('w:sz'),g('w:rFonts','w:ascii'),g('w:color'),rpr.find(qn('w:b')) is not None,rpr.find(qn('w:i')) is not None,g('w:u')]
 def jc(p):
  e=p._p.find(qn('w:pPr')).find(qn('w:jc'));return e.get(qn('w:val'))
-print(json.dumps({'same_base':w.sha256(base)==before,'paras':[[jc(p),[run_info(r) for r in p.runs]] for p in ps[i+1:i+5]]}))`);
+print(json.dumps({'same_base':w.sha256(base)==before,'paras':[[jc(p),[run_info(r) for r in p.runs]] for p in ps[i+2:i+6]],'blank':ps[i+1].text}))`);
   assert.equal(r.same_base, true);
+  assert.equal(r.blank, '', 'one blank line under the heading');
   assert.deepEqual(r.paras, [
     ['both', [['Motivo fictício:', '22', 'Arial', null, true, false, null], [' ', '22', 'Arial', null, false, false, null],
       ['texto', '26', 'Georgia', '1F4E79', false, true, null], [' ', '26', 'Georgia', '1F4E79', false, false, null], ['sintético', '26', 'Georgia', '1F4E79', false, false, 'single']]],

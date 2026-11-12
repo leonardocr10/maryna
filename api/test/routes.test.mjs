@@ -304,9 +304,9 @@ test('approval and export: blocked until approved, then the evaluation is locked
   const after = docxText(file);
   assert.equal(after.filter(t => t === 'Anamnese sintética revisada.').length, 1);
   assert.equal(after.filter(t => t === 'Interpretação sintética revisada.').length, 1);
-  // every paragraph of the base is still there, in order (only insertions)
-  const kept = after.filter(t => !['Anamnese sintética revisada.', 'Interpretação sintética revisada.'].includes(t));
-  assert.deepEqual(kept.filter(t => t !== 'Paciente: ' + PATIENT), before.filter(t => t !== 'Paciente: ' + PATIENT));
+  // every paragraph of the base is still there, in order (only insertions, plus blank lines around the inserted text)
+  const kept = after.filter(t => t && !['Anamnese sintética revisada.', 'Interpretação sintética revisada.'].includes(t));
+  assert.deepEqual(kept.filter(t => t !== 'Paciente: ' + PATIENT), before.filter(t => t && t !== 'Paciente: ' + PATIENT));
 });
 
 test('a section missing from the base is created in the Word only when the psychologist chooses it', async () => {
@@ -322,10 +322,10 @@ test('a section missing from the base is created in the Word only when the psych
   assert.deepEqual(on.data.created_sections, ['recomendacoes']);
   const after = await text(), before = docxText(path.join(tmp, 'base.docx'));
   const i = after.indexOf('INDICAÇÕES E RECOMENDAÇÕES');
-  assert.ok(i >= 0 && after[i + 1] === 'Recomendação sintética criada.');
+  assert.ok(i >= 0 && after[i + 1] === '' && after[i + 2] === 'Recomendação sintética criada.');
   // only insertions: every base paragraph is kept, in order
   const added = ['INDICAÇÕES E RECOMENDAÇÕES', 'Recomendação sintética criada.', ''];
-  const kept = after.filter((t, j) => !(j >= i && j < i + 3 && added.includes(t)));
+  const kept = after.filter((t, j) => !(j >= i && j < i + 4 && added.includes(t)));
   assert.deepEqual(kept.filter(t => t !== 'Paciente: ' + PATIENT), before.filter(t => t !== 'Paciente: ' + PATIENT));
   const off = await api('PUT', ev + '/created-sections', {token: tokens.psy, body: {key: 'recomendacoes', create: false}});
   assert.deepEqual(off.data.created_sections, []);

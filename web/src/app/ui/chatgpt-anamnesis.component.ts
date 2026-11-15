@@ -199,7 +199,7 @@ export class ChatgptAnamnesisComponent implements OnInit, OnDestroy {
   async refresh() {
     try {
       const before = this.task;
-      this.task = await this.api.req<Task | null>('GET', `/evaluations/${this.evaluationId}/chatgpt-tasks/current?section=${encodeURIComponent(this.sectionKey)}`);
+      this.task = await this.api.req<Task | null>('GET', `/evaluations/${this.evaluationId}/chatgpt-tasks/current?section=${encodeURIComponent(this.sectionKey)}`, undefined, true);
       if (before && OPEN.includes(before.status) && this.task && this.task.id === before.id && this.task.status === 'draft_received') {
         this.api.notify(this.task.needs_confirmation ? `Rascunho do ChatGPT recebido em ${this.sectionName}: confirme se quer substituir o texto.` : `Rascunho do ChatGPT salvo em ${this.sectionName}.`);
         if (this.task.applied) this.saved.emit();

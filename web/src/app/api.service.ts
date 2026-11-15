@@ -24,9 +24,10 @@ export class Api {
 
   private opts() { return {headers: new HttpHeaders({Authorization: 'Bearer ' + sessionStorage.getItem('token')})}; }
 
-  async req<T = any>(method: string, url: string, body?: any): Promise<T> {
+  /** `quiet`: background polling; a failure (a busy server answering 429, for one) is not shown, the next round tries again. */
+  async req<T = any>(method: string, url: string, body?: any, quiet = false): Promise<T> {
     try { return await firstValueFrom(this.http.request<T>(method, '/api' + url, {...this.opts(), body, responseType: 'json' as any})); }
-    catch (e: any) { this.fail(e, url); throw e; }
+    catch (e: any) { if (!(quiet && (e?.status === 429 || e?.status === 0 || e?.status >= 500))) this.fail(e, url); throw e; }
   }
   private fail(e: any, url: string) {
     if (e?.status === 401 && !url.startsWith('/login')) { this.logout(); this.notify('Sessão encerrada. Entre novamente.'); }

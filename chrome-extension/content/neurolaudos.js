@@ -177,7 +177,7 @@
     if (!modalEl(key)) { const r = await openSection(key); if (!r.ok) return r; const o = await openModal(key); if (!o.ok) return o; }
     const ping = () => { try { modalEl(key)?.dispatchEvent(new CustomEvent('nlrefresh')); } catch {} };
     ping();
-    const t = setInterval(ping, 4000);
+    const t = setInterval(ping, run?.lanes ? 10000 : 4000);   // several evaluations at once: fewer calls to the server
     try {
       const r = await waitFor(() => {
         const el = modalEl(key);

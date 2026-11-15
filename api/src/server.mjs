@@ -311,7 +311,7 @@ const AI_SECTION_KEYS=SECTION_KEYS.filter(k=>k!=='hipotese');
 /** Fixed parts of the base document under a heading box (worker fixed_blocks), rewritten by hand only. */
 const FIXED_KEY_RE=/^fixo_[a-z0-9_]{2,60}$/;
 const isSectionKey=k=>SECTION_KEYS.includes(k)||FIXED_KEY_RE.test(String(k));
-const SECTION_NAMES={demanda:'Descrição da demanda',anamnesis:'Anamnese',inteligencia:'Habilidades intelectuais',percepcao:'Percepção',memoria:'Memória e aprendizagem',atencao:'Processos atencionais',funcoes_executivas:'Funções executivas',comportamento:'Comportamento',personalidade:'Bateria Fatorial da Personalidade',comportamento_diva:'Comportamento',conclusao:'Conclusão',hipotese:'Hipótese diagnóstica',recomendacoes:'Indicações e recomendações'};
+const SECTION_NAMES={demanda:'Descrição da demanda',anamnesis:'Anamnese',inteligencia:'Habilidades intelectuais',percepcao:'Percepção',memoria:'Memória e aprendizagem',atencao:'Processos atencionais',funcoes_executivas:'Funções executivas',comportamento:'Comportamento',personalidade:'Bateria Fatorial da Personalidade',comportamento_diva:'Comportamento (DIVA-5)',conclusao:'Conclusão',hipotese:'Hipótese diagnóstica',recomendacoes:'Indicações e recomendações'};
 function excludedSections(e){try{const v=JSON.parse(e.excluded_sections||'[]');return Array.isArray(v)?v.filter(k=>SECTION_NAMES[k]):[]}catch{return []}}
 function createdSections(e){try{const v=JSON.parse(e.created_sections||'[]');return Array.isArray(v)?v.filter(k=>SECTION_NAMES[k]):[]}catch{return []}}
 // Behaviour sub-sections not every base document has; old text in them is skipped, not an export error.

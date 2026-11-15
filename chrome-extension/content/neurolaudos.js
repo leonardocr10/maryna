@@ -46,6 +46,10 @@
 
   async function scan() {
     if (!review() && !compat()) return document.querySelector(NL.login) ? fail('nl_not_logged') : fail('nl_not_review');
+    // the app marks the page once it has read the base file: before that, sections the file lacks still look like
+    // AI sections (the server then refuses them with "não existe no arquivo base"). "0" = still reading; older apps
+    // have no mark at all and are not waited for.
+    if (review()?.getAttribute('data-nl-inspected') === '0') await waitFor(() => review()?.getAttribute('data-nl-inspected') !== '0', {timeout: 20000, interval: 300});
     await showAllBars();
     const sections = sectionsFromPage();
     if (!sections.length) return fail('nl_selector', 'lista de seções não encontrada');

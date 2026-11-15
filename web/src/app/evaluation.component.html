@@ -203,7 +203,7 @@
 
   <!-- 4. Conferir e baixar -->
   <div *ngIf="step===3" class="conf">
-    <div class="card confbar" data-nl-review [attr.data-nl-evaluation]="evaluationId" [attr.data-nl-readonly]="readOnly() ? '1' : null">
+    <div class="card confbar" data-nl-review [attr.data-nl-evaluation]="evaluationId" [attr.data-nl-readonly]="readOnly() ? '1' : null" [attr.data-nl-inspected]="inspection ? '1' : '0'">
       <h2>Conferir seções</h2>
       <div class="head-tools" data-nl-head-tools>
         <button *ngIf="!readOnly()" class="btn btn-secondary btn-sm" data-nl-action="approve-all" (click)="openApproveAll()" [disabled]="allApproved()" [title]="allApproved() ? 'Todas já estão aprovadas' : 'Escolher as seções e aprovar'"><nl-icon name="check"/> Aprovar todas</button>

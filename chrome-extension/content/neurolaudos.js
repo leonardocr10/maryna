@@ -243,6 +243,7 @@
       switch (msg.cmd) {
         case 'nl.openEvaluation': return openEvaluation(msg.evaluationId);
         case 'nl.scan': return scan();
+        case 'nl.sectionError': { if (msg.evaluationId && evaluationId() !== msg.evaluationId) return fail('nl_changed'); window.dispatchEvent(new CustomEvent('nlx-section-error', {detail: JSON.stringify({key: msg.key, evaluationId: msg.evaluationId, message: String(msg.message || '').slice(0, 300)})})); return {ok: true}; }
         case 'nl.openSection': return openSection(msg.key);
         case 'nl.openModal': return openModal(msg.key);
         case 'nl.modalInfo': { const el = modalEl(msg.key); return el ? {ok: true, modal: readModal(el)} : fail('nl_modal'); }

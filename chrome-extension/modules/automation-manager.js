@@ -335,6 +335,8 @@ export class AutomationManager {
     }
     const status = info.code === 'nl_expired' ? 'expired' : 'error';
     await state.setItem(idx, {status, error: info, attempts});
+    // the NeuroLaudos IA page shows the section in red with this reason (kept with the evaluation until the text changes)
+    if (s.nlTabId && it.key && !String(it.key).startsWith('pos-')) this.env.send(s.nlTabId, {cmd: 'nl.sectionError', key: it.key, evaluationId: it.evaluationId || s.evaluationId, message: `${info.message}${info.stepLabel ? ` (etapa: ${info.stepLabel})` : ''}`}, 5000).catch(() => {});
     if (s.policy?.onError === 'next' && !GLOBAL.includes(info.code)) { await this.safeClose(s, it); return true; }
     const actions = ['continue', 'retry', 'skip', ...(info.code.startsWith('cg_plugin') ? ['plugin_done'] : []), ...(s.batch ? ['skip_eval'] : [])];
     await state.pause({...info, section: it.name, actions});

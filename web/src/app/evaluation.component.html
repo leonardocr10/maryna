@@ -230,9 +230,9 @@
             </div>
             <!-- While the section list is open, its filter also applies here: only the bars of that status -->
             <div class="sn-bars" [style.grid-template-columns]="'repeat(' + barRows().length + ', minmax(0, 1fr))'">
-              <button *ngFor="let s of barRows(); trackBy: bySection" type="button" class="sn-seg" [ngClass]="'st-' + secKind(s.id)" [class.on]="cur()===s.id" (click)="pickSection(s.id)"
+              <button *ngFor="let s of barRows(); trackBy: bySection" type="button" class="sn-seg" [ngClass]="'st-' + secKind(s.id)" [class.st-err]="!!autoError(s.id)" [class.on]="cur()===s.id" (click)="pickSection(s.id)"
                 [attr.data-nl-section]="s.id" [attr.data-nl-name]="s.name" [attr.data-nl-kind]="autoKind(s.id)" [attr.data-nl-state]="state(s.id)"
-                [attr.aria-current]="cur()===s.id ? 'true' : null" [attr.aria-label]="secNum(s.id) + '. ' + s.name + ' · ' + secLabel(s.id)" [title]="secNum(s.id) + '. ' + s.name + ' · ' + secLabel(s.id)"></button>
+                [attr.aria-current]="cur()===s.id ? 'true' : null" [attr.aria-label]="secNum(s.id) + '. ' + s.name + ' · ' + secLabel(s.id)" [title]="secNum(s.id) + '. ' + s.name + ' · ' + secLabel(s.id) + (autoError(s.id) ? ' · Erro no Modo automático: ' + autoError(s.id)?.message : '')"></button>
             </div>
           </div>
 
@@ -248,7 +248,7 @@
               </div>
             </div>
             <ol class="sn-list">
-              <li *ngFor="let s of secMenuRows(); trackBy: bySection"><button type="button" class="sn-row" [class.on]="cur()===s.id" [class.missing]="isMissing(s.id)" (click)="pickSection(s.id)" [attr.aria-current]="cur()===s.id ? 'true' : null"><span class="mono">{{secNum(s.id)}}</span><span class="nm">{{s.name}}</span><span [class]="secBadge(s.id)">{{secLabel(s.id)}}</span></button></li>
+              <li *ngFor="let s of secMenuRows(); trackBy: bySection"><button type="button" class="sn-row" [class.on]="cur()===s.id" [class.missing]="isMissing(s.id)" [class.err]="!!autoError(s.id)" (click)="pickSection(s.id)" [attr.aria-current]="cur()===s.id ? 'true' : null"><span class="mono">{{secNum(s.id)}}</span><span class="nm">{{s.name}}</span><span [class]="secBadge(s.id)">{{secLabel(s.id)}}</span></button></li>
             </ol>
             <p *ngIf="!secMenuRows().length" class="muted" style="margin:8px 10px">Nenhuma seção neste filtro.</p>
           </div>
@@ -261,7 +261,9 @@
         <section *ngIf="cur()===s.id" class="card editor" [attr.data-nl-editor]="s.id">
           <div class="edhead">
             <span class="ei"><nl-icon [name]="sectionIcon(s.name)"/></span>
-            <div class="edt"><h2>{{s.name}}</h2><small>Seção {{(i+1).toString().padStart(2,'0')}} · {{sourceLabel(s.id)}}</small></div>
+            <div class="edt"><h2>{{s.name}}</h2><small>Seção {{(i+1).toString().padStart(2,'0')}} · {{sourceLabel(s.id)}}</small>
+              <p *ngIf="autoError(s.id) as ae" class="auto-err" role="alert"><nl-icon name="alert"/> <span><b>Erro no Modo automático</b> ({{ae.at | date:'dd/MM HH:mm'}}): {{ae.message}}</span>
+                <button *ngIf="canWrite()" type="button" class="linkbtn" (click)="dismissAutoError(s.id)">Dispensar</button></p></div>
             <!-- Status and the section's actions, side by side in the header (they wrap to a second line when there is no room) -->
             <div class="edacts-h" role="group" aria-label="Ações da seção">
               <span *ngIf="isMissing(s.id)" class="badge danger">Falta no documento</span>

@@ -938,6 +938,22 @@ export class EvaluationComponent implements OnDestroy {
     try { const j = JSON.parse(d); if (j && typeof j === 'object') return {key: String(j.key || ''), evaluationId: String(j.evaluationId || '')}; } catch {}
     return {key: d, evaluationId: ''};
   }
+  /** Reason a section failed in the Modo automático (kept by the server until the section text changes). */
+  autoError(k: string): {message: string; at: string} | null { return this.current?.auto_errors?.[k] || null; }
+  /** The extension tells this page that a section failed: {key, evaluationId, message}. Saved with the evaluation. */
+  @HostListener('window:nlx-section-error', ['$event'])
+  async onExtSectionError(e: Event) {
+    let key = '', evaluationId = '', message = '';
+    try { ({key = '', evaluationId = '', message = ''} = JSON.parse(String((e as CustomEvent).detail || '{}'))); } catch { return; }
+    if (!key || !message || evaluationId !== this.evaluationId || this.readOnly()) return;
+    try {
+      const r: any = await this.api.req('PUT', `/evaluations/${this.evaluationId}/auto-errors/${encodeURIComponent(key)}`, {message});
+      if (evaluationId === this.evaluationId && this.current) this.current = {...this.current, auto_errors: {...(this.current.auto_errors || {}), [key]: r.error}};
+    } catch {}
+  }
+  async dismissAutoError(k: string) {
+    try { await this.api.req('DELETE', `/evaluations/${this.evaluationId}/auto-errors/${encodeURIComponent(k)}`); const rest = {...(this.current?.auto_errors || {})}; delete rest[k]; this.current = {...this.current, auto_errors: rest}; } catch {}
+  }
   @HostListener('window:nlx-instruction-get', ['$event'])
   async onExtInstructionGet(e: Event) {
     const {key, evaluationId} = this.extAsk(e);

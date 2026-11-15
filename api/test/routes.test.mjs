@@ -1156,3 +1156,19 @@ test('Conclusão instruction is saved per evaluation; default only when none is 
   assert.equal((await put(a, 'Texto do auxiliar sintético, que não deve gravar.', tokens.assistant)).status, 403);
   assert.equal(concl(await get(a)).custom, TEXT_A);
 });
+
+test('Modo automático errors stay on the section until its text changes', async () => {
+  const id = await withFiles();
+  const ev = `/api/evaluations/${id}`;
+  assert.equal((await api('PUT', ev + '/auto-errors/inteligencia', {token: tokens.psy, body: {message: 'A tarefa expirou antes do rascunho.'}})).status, 200);
+  assert.equal((await api('PUT', ev + '/auto-errors/nao-existe', {token: tokens.psy, body: {message: 'x'}})).status, 400);
+  let g = await api('GET', ev, {token: tokens.psy});
+  assert.equal(g.data.evaluation.auto_errors.inteligencia.message, 'A tarefa expirou antes do rascunho.');
+  await api('PUT', ev + '/sections/inteligencia', {token: tokens.psy, body: {content: 'Interpretação sintética nova.'}});
+  g = await api('GET', ev, {token: tokens.psy});
+  assert.deepEqual(g.data.evaluation.auto_errors, {}, 'a new text clears the error');
+  await api('PUT', ev + '/auto-errors/memoria', {token: tokens.psy, body: {message: 'Erro sintético.'}});
+  assert.equal((await api('DELETE', ev + '/auto-errors/memoria', {token: tokens.psy})).status, 200);
+  g = await api('GET', ev, {token: tokens.psy});
+  assert.deepEqual(g.data.evaluation.auto_errors, {});
+});

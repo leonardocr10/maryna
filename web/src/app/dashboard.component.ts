@@ -83,7 +83,7 @@ const ORDERS = ['Mais recentes', 'Mais antigas', 'Nome (A–Z)', 'Nome (Z–A)',
           <td class="c"><span *ngIf="sexIcon(e.sex) as sx" class="sx" [class]="'sx ' + sx" [title]="e.sex" [attr.aria-label]="e.sex"><nl-icon [name]="sx"/></span><span *ngIf="!sexIcon(e.sex)" class="muted" [title]="e.sex || 'Não informado'">—</span></td>
           <td><span class="thi"><nl-icon name="calendar"/> {{brDate(e.start_date || e.created_at)}}</span></td>
           <td><span *ngIf="e.delivered_at" class="badge ok due" [title]="'Entregue a ' + (e.delivered_to || '—')"><nl-icon name="checkc"/> Entregue</span><span *ngIf="fix(e)" class="badge danger due" title="A psicóloga pediu correções"><nl-icon name="chat"/> Correção pedida</span><span *ngIf="queued(e)" class="badge warn due" [title]="'Enviada por ' + (e.submitted_by_name || '—')"><nl-icon name="upload"/> Enviada</span><span *ngIf="late(e)" class="badge danger due" [title]="'Prazo: ' + brDate(e.end_date)"><nl-icon name="alert"/> Atrasada</span><span *ngIf="soon(e)" class="badge warn due" [title]="'Prazo: ' + brDate(e.end_date)"><nl-icon name="calendar"/> Vence {{brDate(e.end_date).slice(0,5)}}</span><span [class]="'badge '+STATUS[st(e)].css"><nl-icon [name]="st(e)==='ap' ? 'checkfill' : st(e)==='rv' ? 'clock' : 'edit'"/> {{STATUS[st(e)].label}}</span></td>
-          <td class="prog"><span class="pm">{{e.approved_count||0}} de {{e.section_total||0}} seções</span><span class="pbar"><span class="progress" [class.full]="pct(e)===100"><span [style.width.%]="pct(e)"></span></span><b>{{pct(e)}}%</b></span></td>
+          <td class="prog" [attr.title]="progTitle(e)"><span class="pm"><b>{{e.approved_count||0}}</b>/{{e.section_total||0}} aprovadas<ng-container *ngIf="+e.review_count"> · <i class="dot warn"></i>{{e.review_count}} a revisar</ng-container><ng-container *ngIf="pend(e)"> · <i class="dot idle"></i>{{pend(e)}} pend.</ng-container></span><span class="pbar"><span class="stack" role="img" [attr.aria-label]="progTitle(e)"><span class="ok" [style.width.%]="share(e, e.approved_count)"></span><span class="warn" [style.width.%]="share(e, e.review_count)"></span></span><b>{{pct(e)}}%</b></span></td>
           <td class="dl"><button *ngIf="canDownload(e)" type="button" class="dlbtn" [disabled]="busy===e.id" [title]="'Baixar o Word do laudo de ' + e.patient_name" [attr.aria-label]="'Baixar o Word do laudo de ' + e.patient_name" (click)="download(e, $event)" (keydown.enter)="$event.stopPropagation()"><nl-icon [name]="busy===e.id ? 'clock' : 'download'"/> Word</button></td>
         </tr>
       </tbody>
@@ -263,6 +263,10 @@ export class DashboardComponent implements OnInit {
   private matches(e: any, f: Filter) { return f === 'all' || (f === 'late' ? this.late(e) : f === 'soon' ? this.soon(e) : f === 'queue' ? this.queued(e) : f === 'fix' ? this.fix(e) : f === 'deliver' ? listStatus(e) === 'ap' && !e.delivered_at : listStatus(e) === f); }
   count(f: Filter) { return this.evaluations.filter(e => this.matches(e, f)).length; }
   pct(e: any) { const t = +e.section_total || 0; return t ? Math.round((+e.approved_count || 0) / t * 100) : 0; }
+  /** Same counts as the sections bar inside the evaluation: approved, with a text to review, still pending. */
+  pend(e: any) { return Math.max(0, (+e.section_total || 0) - (+e.approved_count || 0) - (+e.review_count || 0)); }
+  share(e: any, n: any) { const t = +e.section_total || 0; return t ? (+n || 0) / t * 100 : 0; }
+  progTitle(e: any) { return `${+e.approved_count || 0} aprovadas, ${+e.review_count || 0} para revisar, ${this.pend(e)} pendentes de ${+e.section_total || 0} seções`; }
   setQuery(v: string) { this.query = v; this.page = 1; this.queryChange.emit(v); }
   private inMonth(d: any) { if (!d) return false; const x = new Date(d), n = new Date(); return x.getFullYear() === n.getFullYear() && x.getMonth() === n.getMonth(); }
   monthNew() { return this.evaluations.filter(e => this.inMonth(e.created_at)).length; }

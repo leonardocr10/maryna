@@ -138,10 +138,10 @@ export class EvaluationComponent implements OnDestroy {
   /** The list of evaluations shows the same progress as this screen (sections of this report, fixed parts included). */
   private syncProgress() {
     if (!this.inspection || !this.docsReady()) return;
-    const total = this.reviewRows().length, done = this.secCount('ok');
-    if (!total || (this.current?.progress_total === total && this.current?.progress_done === done)) return;
-    this.current = {...this.current, progress_total: total, progress_done: done};
-    this.api.req('PUT', `/evaluations/${this.evaluationId}/progress`, {total, done}).then(() => this.changed.emit()).catch(() => {});
+    const total = this.reviewRows().length, done = this.secCount('ok'), review = Math.min(this.secCount('warn'), total - done);
+    if (!total || (this.current?.progress_total === total && this.current?.progress_done === done && this.current?.progress_review === review)) return;
+    this.current = {...this.current, progress_total: total, progress_done: done, progress_review: review};
+    this.api.req('PUT', `/evaluations/${this.evaluationId}/progress`, {total, done, review}).then(() => this.changed.emit()).catch(() => {});
   }
   async inspect() {
     try { this.inspection = await this.api.req('POST', `/evaluations/${this.evaluationId}/inspect`); if (this.inspection?.synced) await this.load(); } catch { this.inspection = null; }

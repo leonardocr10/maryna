@@ -308,3 +308,10 @@ input[type=date].input { font-family: var(--font); }
 .prog .pbar .progress { flex: 0 1 100px; width: 100px; height: 7px; display: block; }
 .prog .pbar .progress > span { display: block; }
 .prog .pbar b { font-size: 12px; font-weight: 600; color: var(--text); min-width: 34px; }
+/* evaluation list: approved (green) + to review (amber) over the pending track, like the bar inside the evaluation */
+.prog .pm b { font-weight: 600; }
+.prog .pm .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin: 0 3px 1px 0; vertical-align: middle; }
+.prog .pm .dot.warn { background: var(--warn-dot); } .prog .pm .dot.idle { background: var(--idle-dot); }
+.prog .pbar .stack { flex: 0 1 100px; width: 100px; height: 7px; display: flex; overflow: hidden; border-radius: 99px; background: var(--track); }
+.prog .pbar .stack > span { display: block; height: 100%; }
+.prog .pbar .stack .ok { background: var(--ok-dot); } .prog .pbar .stack .warn { background: var(--warn-dot); }

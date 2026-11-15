@@ -245,7 +245,8 @@ function renderSetup() {
   $('#cancel').onclick = close;
   $('#start').onclick = start;
   const ta = $('#concl');
-  if (ta) ta.oninput = () => { c.conclusion = ta.value; const w = $('#concl-warn'); if (w) w.hidden = !unfinished(ta.value); };
+  if (ta) ta.oninput = () => { c.conclusion = ta.value; c.conclOk = true; const ok = $('#concl-ok'); if (ok) ok.checked = true; const w = $('#concl-warn'); if (w) w.hidden = !unfinished(ta.value); };
+  if ($('#concl-ok')) $('#concl-ok').onchange = e => { c.conclOk = e.target.checked; };
   $('#concl-reset') && ($('#concl-reset').onclick = () => { c.conclusion = c.conclusionOrig; render(); });
   if (c.selected.includes(CONCL) && c.conclusion === undefined && !c.conclLoading) loadConclusion(c);
 }
@@ -270,6 +271,7 @@ function conclCard(c) {
     <div class="lh"><h2>${ic('flag', 17, 'hi')} Instrução da Conclusão <small>vai para o ChatGPT junto com os textos das seções</small></h2><span class="grow"></span>${c.conclusion !== c.conclusionOrig ? '<button class="lnk" id="concl-reset" type="button">Desfazer alterações</button>' : ''}</div>
     <textarea id="concl" class="ta" rows="4" maxlength="6000" ${c.conclEditable ? '' : 'disabled'} aria-label="Instrução da Conclusão" placeholder="Ex.: Integrar atenção e funções executivas com as queixas escolares; relatar no final que apresenta características de…">${esc(c.conclusion)}</textarea>
     <p class="hint warn" id="concl-warn" ${unfinished(c.conclusion) ? '' : 'hidden'}>Complete a instrução: ela termina em "características" e espera o que você quer relatar.</p>
+    <label class="chk"><input type="checkbox" id="concl-ok" ${c.conclOk ? 'checked' : ''}> Conferi a instrução da Conclusão desta avaliação</label>
   </section>`;
 }
 
@@ -283,6 +285,7 @@ function conclBatchCard(c) {
     <div class="cl">${rows.map((x, i) => { const v = batchConcl[x.id]; return `<div class="clrow"><label for="cl${i}"><b>${esc(x.name || 'Avaliação ' + (batchSel.indexOf(x) + 1))}</b></label>
       <textarea id="cl${i}" class="ta" rows="3" maxlength="6000" data-cid="${esc(x.id)}" ${v.editable ? '' : 'disabled'} aria-label="Instrução da Conclusão desta avaliação">${esc(v.text)}</textarea>
       <p class="hint warn" data-cw="${esc(x.id)}" ${conclusionUnfinished(v.text) ? '' : 'hidden'}>Instrução incompleta: a Conclusão (e as Recomendações) desta avaliação não será gerada. Complete o final de "características…".</p></div>`; }).join('')}</div>
+    <label class="chk"><input type="checkbox" id="cl-ok" ${c.conclOk ? 'checked' : ''}> Conferi a instrução da Conclusão de cada avaliação acima</label>
     <p class="hint">Vai para o ChatGPT só com o texto dessa avaliação; é salva nela antes do lote começar.</p></section>`;
 }
 function renderBatchSetup() {
@@ -339,6 +342,7 @@ function renderBatchSetup() {
   body.querySelectorAll('input[type=radio]').forEach(i => i.onchange = () => { c[i.name] = i.value; body.querySelectorAll(`input[name="${i.name}"]`).forEach(x => x.closest('label').classList.toggle('sel', x.checked)); });
   $('#imgs').onchange = e => { c.sendImages = e.target.checked; };
   if ($('#dem')) $('#dem').onchange = e => { c.includeDemand = e.target.checked; };
+  if ($('#cl-ok')) $('#cl-ok').onchange = e => { c.conclOk = e.target.checked; };
   body.querySelectorAll('textarea[data-cid]').forEach(t => t.oninput = () => { const v = batchConcl[t.dataset.cid]; if (!v) return; v.text = t.value; const w = body.querySelector(`[data-cw="${CSS.escape(t.dataset.cid)}"]`); if (w) w.hidden = !conclusionUnfinished(v.text); });
   const sboxes = [...body.querySelectorAll('input[data-n]')];
   const supd = () => { c.only = sboxes.filter(b => b.checked).map(b => batchSecs[+b.dataset.n]); render_concl(c); if ($('#sall')) $('#sall').textContent = sboxes.every(b => b.checked) ? 'Desmarcar todas' : 'Selecionar todas'; if ($('#bstart')) $('#bstart').disabled = busy || (batchSecs.length > 0 && !c.only.length); };
@@ -347,7 +351,8 @@ function renderBatchSetup() {
   supd();
   $('#par').oninput = e => { c.parallel = +e.target.value; $('#parv').textContent = c.parallel; $('#par-w').hidden = c.parallel <= 3; };
   $('#cancel').onclick = () => { batchAsked = false; close(); };
-  $('#bstart').onclick = () => confirmBox([`Gerar rascunhos de ${batchSel.length} ${batchSel.length === 1 ? 'avaliação' : 'avaliações'} com o ChatGPT, uma depois da outra?`, `${c.parallel > 1 ? `Até ${c.parallel} ao mesmo tempo` : 'Uma depois da outra'} · Modo ${MODES[c.mode].toLowerCase()} · Seções com texto: ${c.existing === 'skip' ? 'não mexer' : 'rascunho aguarda sua confirmação'} · Erro: ${c.onError === 'pause' ? 'pausar' : 'seguir'} · Imagens: ${c.sendImages ? 'enviar' : 'não enviar'}`, 'Pode levar horas. As autorizações do ChatGPT continuam com você.'], 'Iniciar lote', () => goBatch(c));
+  $('#bstart').onclick = () => { if ($('#cl-ok') && !$('.card.concl').hidden && !c.conclOk) { flash = {kind: 'warn', message: 'Confira a instrução da Conclusão de cada avaliação antes de iniciar.', hint: 'Cada Conclusão é individual: leia, complete se precisar e marque "Conferi".'}; return render(); } batchGo(c); };
+  const batchGo = c => confirmBox([`Gerar rascunhos de ${batchSel.length} ${batchSel.length === 1 ? 'avaliação' : 'avaliações'} com o ChatGPT, uma depois da outra?`, `${c.parallel > 1 ? `Até ${c.parallel} ao mesmo tempo` : 'Uma depois da outra'} · Modo ${MODES[c.mode].toLowerCase()} · Seções com texto: ${c.existing === 'skip' ? 'não mexer' : 'rascunho aguarda sua confirmação'} · Erro: ${c.onError === 'pause' ? 'pausar' : 'seguir'} · Imagens: ${c.sendImages ? 'enviar' : 'não enviar'}`, 'Pode levar horas. As autorizações do ChatGPT continuam com você.'], 'Iniciar lote', () => goBatch(c));
 }
 /** The Conclusão card appears only while Conclusão is among the chosen sections (keeps the typed texts). */
 function render_concl(c) {
@@ -426,6 +431,10 @@ async function start() {
   const names = scan.sections.filter(s => c.selected.includes(s.key)).map(s => s.name).join(', ');
   if (c.selected.includes(CONCL) && typeof c.conclusion === 'string' && unfinished(c.conclusion)) {
     flash = {kind: 'warn', message: 'Complete a instrução da Conclusão antes de iniciar.', hint: 'Ela termina em "características" e espera o que você quer relatar. Se não quiser gerar a Conclusão agora, desmarque a seção.'};
+    render(); $('#concl')?.focus(); return;
+  }
+  if (c.selected.includes(CONCL) && typeof c.conclusion === 'string' && !c.conclOk) {
+    flash = {kind: 'warn', message: 'Confira a instrução da Conclusão antes de iniciar.', hint: 'A Conclusão é individual de cada avaliação: leia, complete se precisar e marque "Conferi a instrução".'};
     render(); $('#concl')?.focus(); return;
   }
   const lines = [`Gerar rascunhos de ${n} ${n === 1 ? 'seção' : 'seções'} com o ChatGPT (modo ${MODES[c.mode].toLowerCase()})?`, names, `Seções com texto: ${c.existing === 'skip' ? 'não mexer' : 'rascunho aguarda sua confirmação'} · Erro: ${c.onError === 'pause' ? 'pausar' : 'seguir'} · Imagens: ${c.sendImages ? 'enviar' : 'não enviar'} · Conversa: ${c.sameChat ? 'uma só' : 'nova por seção'}`, 'As autorizações do ChatGPT continuam com você.'];

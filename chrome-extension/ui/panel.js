@@ -9,8 +9,11 @@ const tabId = Number(params.get('tab'));
 let batchAsked = params.get('batch') === '1';
 /** [{id, name}] chosen in the list: the names come from the page and stay in this frame's memory only. */
 let batchSel = null, batchChoice = null;
+/** Section names of the batch's first evaluation (null: not read yet; []: could not be read). */
+let batchSecs = null, peeking = false;
 window.addEventListener('message', e => {
   if (e.source !== parent || e.data?.nlx !== 'batch' || !Array.isArray(e.data.list)) return;
+  batchSecs = null; batchChoice = null;
   batchSel = e.data.list.slice(0, BATCH_MAX).map(x => ({id: String(x.id), name: String(x.name || '')}));
   render();
 });
@@ -272,8 +275,12 @@ function conclCard(c) {
 function renderBatchSetup() {
   $('#sub').textContent = 'Gere rascunhos de várias avaliações, uma depois da outra';
   if (!batchSel) { body.innerHTML = '<p class="muted">Lendo as avaliações escolhidas…</p>'; ft.innerHTML = '<button class="btn" id="cancel">Cancelar</button>'; $('#cancel').onclick = close; return; }
+  if (batchSecs === null) {
+    if (!peeking) { peeking = true; ask({type: 'batch.peek', id: batchSel[0].id}).then(r => { batchSecs = r?.ok ? r.sections.map(x => x.name) : []; peeking = false; render(); }); }
+    body.innerHTML = '<p class="muted">Lendo as seções da primeira avaliação…</p>'; ft.innerHTML = '<button class="btn" id="cancel">Cancelar</button>'; $('#cancel').onclick = () => { batchAsked = false; close(); }; return;
+  }
   const s = settings || {}, l = s.last || {};
-  const c = batchChoice ||= {mode: MODES[l.mode] ? l.mode : 'auto', existing: 'draft', onError: 'next', sendImages: l.sendImages ?? s.sendImages ?? true, includeDemand: false, parallel: Math.min(batchSel.length, l.parallel ?? s.batchParallel ?? 3)};
+  const c = batchChoice ||= {mode: MODES[l.mode] ? l.mode : 'auto', existing: 'draft', onError: 'next', sendImages: l.sendImages ?? s.sendImages ?? true, includeDemand: false, only: batchSecs.length ? batchSecs.filter(n => !/demanda/i.test(n)) : null, parallel: Math.min(batchSel.length, l.parallel ?? s.batchParallel ?? 3)};
   c.parallel = Math.max(1, Math.min(batchSel.length, c.parallel || 1));
   const radio = (name, v, cur, title, desc) => `<label class="opt ${cur === v ? 'sel' : ''}"><input type="radio" name="${name}" value="${v}" ${cur === v ? 'checked' : ''}><span><b>${title}</b>${desc ? `<small>${desc}</small>` : ''}</span></label>`;
   const sw = (id, on, icon, title, desc) => `<div class="setrow"><span class="ri">${ic(icon, 18)}</span><label for="${id}" class="rt"><b>${title}</b><small>${desc}</small></label><span class="sw"><input type="checkbox" role="switch" id="${id}" ${on ? 'checked' : ''}><i aria-hidden="true"></i></span></div>`;
@@ -299,9 +306,14 @@ function renderBatchSetup() {
     <div class="setrow"><span class="ri">${ic('users', 18)}</span><label for="par" class="rt"><b>Rodar até <output id="parv">${c.parallel}</output> ${c.parallel === 1 ? 'avaliação' : 'avaliações'} ao mesmo tempo</b><small>Cada uma ganha a sua aba do NeuroLaudos IA e a sua aba do ChatGPT, em segundo plano. 1 = uma depois da outra.</small></label><input type="range" id="par" min="1" max="${batchSel.length}" step="1" value="${c.parallel}" aria-describedby="par-w" style="width:140px"></div>
     <p class="hint warn" id="par-w" ${c.parallel > 3 ? '' : 'hidden'}>Mais de 3 ao mesmo tempo: o limite de mensagens do ChatGPT é da conta inteira (não por aba), então chega mais rápido; o Chrome desacelera abas em segundo plano e cada aba do ChatGPT usa bastante memória. Se o limite chegar, todas esperam ${s.rateLimitMinutes ?? 10} min e a tarefa é tentada de novo na mesma aba.</p>
   </section>
+  ${batchSecs.length ? `<section class="card">
+    <div class="lh"><h2>${ic('list', 17, 'hi')} Seções a gerar <small>vale para todas as avaliações do lote</small></h2><span class="grow"></span><button class="lnk" id="sall" type="button"></button></div>
+    <div class="slist">${batchSecs.map((n, i) => `<label class="srow"><input type="checkbox" data-n="${i}" ${c.only.includes(n) ? 'checked' : ''}><span class="sic">${ic(secIcon(n), 17)}</span><span class="sn"><b>${esc(n)}</b></span></label>`).join('')}</div>
+    <p class="hint">As seções são lidas da primeira avaliação; nas outras vale o mesmo nome. Seção já aprovada, de texto fixo ou de hipótese diagnóstica não é gerada. Conclusão só entra se a instrução estiver completa.</p>
+  </section>` : ''}
   <section class="card"><h2>${ic('gear', 17, 'hi')} Configurações</h2>
     ${sw('imgs', c.sendImages, 'image', 'Enviar as imagens das seções', 'Tabelas coladas como figura. Confira se não mostram dados do paciente.')}
-    ${sw('dem', c.includeDemand, 'fileText', 'Incluir a Descrição da demanda', 'Desligado: fica para você gerar em cada avaliação, como no modo de uma avaliação.')}
+    ${batchSecs.length ? '' : sw('dem', c.includeDemand, 'fileText', 'Incluir a Descrição da demanda', 'Desligado: fica para você gerar em cada avaliação, como no modo de uma avaliação.')}
   </section>
   <div class="alert"><p><b>Como o lote funciona</b></p>
     <small style="display:block;margin-top:4px">Cada avaliação roda na tela Conferir seções, na sua própria aba (a primeira nesta). Dentro de cada avaliação, uma seção por vez, cada uma em conversa nova do ChatGPT e só com os dados dela. Entre duas mensagens enviadas ao ChatGPT (de qualquer avaliação) há pelo menos ${gap} s.</small>
@@ -312,7 +324,12 @@ function renderBatchSetup() {
   ft.innerHTML = `<button class="btn" id="cancel" type="button">Cancelar</button><span class="grow"></span><button class="btn pri" id="bstart" type="button" ${busy ? 'disabled' : ''}>${ic('play', 15)} Iniciar lote (${batchSel.length})</button>`;
   body.querySelectorAll('input[type=radio]').forEach(i => i.onchange = () => { c[i.name] = i.value; body.querySelectorAll(`input[name="${i.name}"]`).forEach(x => x.closest('label').classList.toggle('sel', x.checked)); });
   $('#imgs').onchange = e => { c.sendImages = e.target.checked; };
-  $('#dem').onchange = e => { c.includeDemand = e.target.checked; };
+  if ($('#dem')) $('#dem').onchange = e => { c.includeDemand = e.target.checked; };
+  const sboxes = [...body.querySelectorAll('input[data-n]')];
+  const supd = () => { c.only = sboxes.filter(b => b.checked).map(b => batchSecs[+b.dataset.n]); if ($('#sall')) $('#sall').textContent = sboxes.every(b => b.checked) ? 'Desmarcar todas' : 'Selecionar todas'; if ($('#bstart')) $('#bstart').disabled = busy || (batchSecs.length > 0 && !c.only.length); };
+  sboxes.forEach(b => b.onchange = supd);
+  if ($('#sall')) $('#sall').onclick = () => { const all = sboxes.every(b => b.checked); sboxes.forEach(b => { b.checked = !all; }); supd(); };
+  supd();
   $('#par').oninput = e => { c.parallel = +e.target.value; $('#parv').textContent = c.parallel; $('#par-w').hidden = c.parallel <= 3; };
   $('#cancel').onclick = () => { batchAsked = false; close(); };
   $('#bstart').onclick = () => confirmBox([`Gerar rascunhos de ${batchSel.length} ${batchSel.length === 1 ? 'avaliação' : 'avaliações'} com o ChatGPT, uma depois da outra?`, `${c.parallel > 1 ? `Até ${c.parallel} ao mesmo tempo` : 'Uma depois da outra'} · Modo ${MODES[c.mode].toLowerCase()} · Seções com texto: ${c.existing === 'skip' ? 'não mexer' : 'rascunho aguarda sua confirmação'} · Erro: ${c.onError === 'pause' ? 'pausar' : 'seguir'} · Imagens: ${c.sendImages ? 'enviar' : 'não enviar'}`, 'Pode levar horas. As autorizações do ChatGPT continuam com você.'], 'Iniciar lote', () => goBatch(c));
@@ -320,7 +337,7 @@ function renderBatchSetup() {
 async function goBatch(c) {
   busy = true; flash = null; render();
   ask({type: 'settings.set', settings: {last: {...(settings?.last || {}), mode: c.mode, sendImages: c.sendImages, parallel: c.parallel}}});
-  const r = await ask({type: 'batch.start', ids: batchSel.map(x => x.id), mode: c.mode, existing: c.existing, onError: c.onError, sendImages: c.sendImages, includeDemand: c.includeDemand, parallel: c.parallel});
+  const r = await ask({type: 'batch.start', ids: batchSel.map(x => x.id), mode: c.mode, existing: c.existing, onError: c.onError, sendImages: c.sendImages, includeDemand: c.includeDemand, only: batchSecs.length ? c.only : null, parallel: c.parallel});
   busy = false;
   if (!r?.ok) { flash = {kind: 'err', ...(r?.error || {message: 'Não foi possível iniciar o lote.'})}; return render(); }
   batchAsked = false; run = r.run; render();

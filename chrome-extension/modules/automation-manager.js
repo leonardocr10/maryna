@@ -223,7 +223,7 @@ export class AutomationManager {
         const r = await send(s.nlTabId, {cmd: 'nl.getInstruction', key: CONCLUSION_KEY, evaluationId: id}, LIMITS.contentReady).catch(() => null);
         conclusionReady = !!r?.ok && !conclusionUnfinished(r.text);
       }
-      const items = batchQueue(scan, {existing: s.policy?.existing, includeDemand: !!s.policy?.includeDemand, conclusionReady, evaluationId: id});
+      const items = batchQueue(scan, {existing: s.policy?.existing, includeDemand: !!s.policy?.includeDemand, only: s.policy?.only || null, conclusionReady, evaluationId: id});
       const n = items.filter(i => i.status === 'pending').length;
       if (!n) {
         await state.update(cur => { cur.batch.list[j] = {...cur.batch.list[j], status: 'empty', summary: evalSummary(items), finishedAt: at()}; return {...cur, items}; });

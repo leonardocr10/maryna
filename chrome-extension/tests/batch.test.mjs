@@ -183,3 +183,18 @@ test('batch: browser restart after a send resumes paused on the same evaluation,
   assert.equal(s.status, 'done');
   assert.equal(cmds(t, 'cg.send').length, sentBefore + 3 + 4, 'the interrupted section is checked, not sent again');
 });
+
+test('batch: sections chosen for the whole batch (by name) are the only ones generated, in every evaluation', async () => {
+  const t = makeEnv({evals: three()});
+  await batch(t, {policy: {existing: 'draft', onError: 'pause', sendImages: false, sameChat: false, only: ['atencao', 'MEMÓRIA e  aprendizagem']}});
+  const s = await finish(t);
+  assert.equal(s.status, 'done');
+  assert.equal(t.prepared.length, EV.length * 2);
+  assert.ok(t.prepared.every(p => ['atencao', 'memoria'].includes(p.key)));
+  assert.ok(!t.prepared.some(p => ['demanda', 'conclusao', 'hipotese'].includes(p.key)));
+  // without a choice, the conclusion still waits for a finished instruction
+  const q = batchQueue({sections: secs()}, {conclusionReady: false, only: ['Conclusão', 'Atenção'], evaluationId: 'x'});
+  assert.equal(q.find(i => i.key === 'conclusao').status, 'skipped');
+  assert.equal(q.find(i => i.key === 'atencao').status, 'pending');
+  assert.equal(q.find(i => i.key === 'memoria').reason, 'Fora das seções escolhidas para o lote');
+});

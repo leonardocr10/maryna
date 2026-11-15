@@ -79,14 +79,19 @@ export const isDemand = s => s.key === DEMAND_KEY || /descri[cç][aã]o da deman
  * - Recomendações come from the Conclusão text: skipped when the Conclusão is skipped and has no text yet.
  * Every item carries the evaluation id it belongs to.
  */
-export function batchQueue(scan, {existing = 'draft', includeDemand = false, conclusionReady = false, evaluationId} = {}) {
+/** Section name as compared across evaluations (case, accents and spacing do not matter). */
+export const normName = n => String(n || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+export function batchQueue(scan, {existing = 'draft', includeDemand = false, conclusionReady = false, evaluationId, only = null} = {}) {
+  const pick = Array.isArray(only) ? new Set(only.map(normName)) : null;   // names chosen for the whole batch
   const {items} = buildQueue(scan, {existing});
   const concl = items.find(i => i.key === CONCLUSION_KEY);
   let conclSkipped = false;
   for (const it of items) {
     it.evaluationId = evaluationId;
     if (it.status !== 'pending') continue;
-    if (!includeDemand && isDemand(it)) Object.assign(it, {status: 'skipped', reason: 'Descrição da demanda: fora do lote (opção desligada)'});
+    if (pick && !pick.has(normName(it.name))) Object.assign(it, {status: 'skipped', reason: 'Fora das seções escolhidas para o lote'});
+    else if (!pick && !includeDemand && isDemand(it)) Object.assign(it, {status: 'skipped', reason: 'Descrição da demanda: fora do lote (opção desligada)'});
     else if (it.key === CONCLUSION_KEY && !conclusionReady) { Object.assign(it, {status: 'skipped', reason: 'Instrução da Conclusão incompleta: complete-a na seção e gere depois'}); conclSkipped = true; }
     else if (it.key === RECOMMENDATIONS_KEY && conclSkipped && concl?.state === 'pend') Object.assign(it, {status: 'skipped', reason: 'Depende do texto da Conclusão, que ainda não existe'});
   }

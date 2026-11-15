@@ -1,5 +1,5 @@
 // Service worker: owns the run (AutomationManager), the tabs and the messages between the pages.
-import {STORAGE_KEY, SETTINGS_KEY, DEFAULT_SETTINGS, DEFAULT_NL_ORIGINS, RUN, CHATGPT_URL, MODES} from '../modules/constants.js';
+import {STORAGE_KEY, SETTINGS_KEY, DEFAULT_SETTINGS, DEFAULT_NL_ORIGINS, RUN, CHATGPT_URL, MODES, EVAL_ID_RE} from '../modules/constants.js';
 import {StateManager, recoverAfterRestart, isActive} from '../modules/state-manager.js';
 import {Coordinator, recoverLanes} from '../modules/lanes.js';
 import {describe} from '../modules/error-handler.js';
@@ -215,9 +215,22 @@ async function handle(msg, sender) {
       const tabId = msg.tabId ?? sender.tab?.id;
       const origin = sender.tab?.url ? new URL(sender.tab.url).origin : null;
       const cfg = await settings();
-      const policy = {existing: msg.existing === 'skip' ? 'skip' : 'draft', onError: msg.onError === 'next' ? 'next' : 'pause', sendImages: !!(msg.sendImages ?? cfg.sendImages), sameChat: false, background: !!(msg.background ?? cfg.chatBackground), includeDemand: !!msg.includeDemand};
+      const policy = {existing: msg.existing === 'skip' ? 'skip' : 'draft', onError: msg.onError === 'next' ? 'next' : 'pause', sendImages: !!(msg.sendImages ?? cfg.sendImages), sameChat: false, background: !!(msg.background ?? cfg.chatBackground), includeDemand: !!msg.includeDemand, only: Array.isArray(msg.only) ? msg.only.slice(0, 80).map(x => String(x).slice(0, 120)) : null};
       const parallel = Math.max(1, Math.min(10, Math.floor(+(msg.parallel ?? cfg.batchParallel)) || 1));
       return {ok: true, run: await manager.startBatch({nlTabId: tabId, nlOrigin: origin, mode: MODES[msg.mode] ? msg.mode : 'auto', policy, ids: Array.isArray(msg.ids) ? msg.ids : [], parallel})};
+    }
+    case 'batch.peek': {
+      // Names of the sections of the first evaluation of the batch (the choice then applies to all of them).
+      const tabId = msg.tabId ?? sender.tab?.id;
+      if (!EVAL_ID_RE.test(String(msg.id || ''))) return {ok: false};
+      try {
+        const o = await send(tabId, {cmd: 'nl.openEvaluation', evaluationId: msg.id}, 35000);
+        if (!o?.ok) return {ok: false};
+        const r = await send(tabId, {cmd: 'nl.scan'}, 20000);
+        if (!r?.ok) return {ok: false};
+        const seen = new Set();
+        return {ok: true, sections: (r.sections || []).filter(x => x.kind === 'ai' && x.name && !seen.has(x.name) && seen.add(x.name)).map(x => ({name: x.name}))};
+      } catch { return {ok: false}; }
     }
     case 'run.pause': await manager.pause(); return {ok: true, run: await state.load()};
     case 'review.get': {

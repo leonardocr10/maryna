@@ -1187,7 +1187,17 @@ export class EvaluationComponent implements OnDestroy {
 
   approveOpen = false; apmSel: Record<string, boolean> = {}; apmReviewed = false; apmBusy = false;
   approveRows() { return this.available(); }
+  /** The Hipótese diagnóstica is written only by the psychologist and is required before approving all: when the report
+   *  has that part and it is empty, the screen opens straight on it instead of the approval list. */
+  hypothesisMissing() { return this.available().some(s => s.id === 'hipotese') && !this.done('hipotese') && !this.text('hipotese').trim(); }
   openApproveAll() {
+    if (this.hypothesisMissing()) {
+      this.api.notify('Escreva a Hipótese diagnóstica antes de aprovar todas: ela é obrigatória e só você pode escrevê-la.');
+      if (this.step !== 3) this.goStep(3);
+      if (this.mode !== 'secoes') this.setMode('secoes');
+      this.pickSection('hipotese');
+      return;
+    }
     this.apmSel = {}; this.apmReviewed = false;
     for (const s of this.approveRows()) this.apmSel[s.id] = this.state(s.id) !== 'pend';
     this.approveOpen = true;
@@ -1216,6 +1226,7 @@ export class EvaluationComponent implements OnDestroy {
   }
   async approveAll() {
     if (this.placeBlocks()) return;
+    if (this.hypothesisMissing()) return this.openApproveAll();
     const pending = this.available().filter(s => this.state(s.id) === 'pend');
     if (pending.length) { this.api.notify('Gere ou escreva todas as seções antes de aprovar: ' + pending.map(s => s.name).join(', ')); return; }
     const issues = this.finalCheck(this.available().map(s => s.id));

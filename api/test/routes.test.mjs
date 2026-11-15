@@ -1172,3 +1172,19 @@ test('Modo automático errors stay on the section until its text changes', async
   g = await api('GET', ev, {token: tokens.psy});
   assert.deepEqual(g.data.evaluation.auto_errors, {});
 });
+
+test('approval waits for the Hipótese diagnóstica when the base file has that part', async () => {
+  const file = path.join(tmp, 'base-hipotese.docx');
+  python('import sys;sys.path.insert(0,"tests");from test_worker import synthetic_base;from docx import Document;synthetic_base(sys.argv[1]);d=Document(sys.argv[1]);d.add_table(rows=1,cols=1).cell(0,0).text="HIPÓTESE DIAGNÓSTICA:";d.add_paragraph("");d.save(sys.argv[1])', file);
+  const id = await newEvaluation();
+  const ev = `/api/evaluations/${id}`;
+  assert.equal((await upload(tokens.psy, id, 'base', fs.readFileSync(file))).status, 201);
+  assert.equal((await upload(tokens.psy, id, 'anamnesis', fs.readFileSync(path.join(tmp, 'anamnese.docx')))).status, 201);
+  await api('PUT', ev + '/sections/anamnesis', {token: tokens.psy, body: {content: 'Anamnese sintética revisada.'}});
+  await api('PUT', ev + '/sections/inteligencia', {token: tokens.psy, body: {content: 'Interpretação sintética revisada.'}});
+  const blocked = await api('POST', ev + '/approve', {token: tokens.psy, body: {approveSections: true}});
+  assert.equal(blocked.status, 409);
+  assert.match(blocked.data.error || '', /Hipótese diagnóstica/);
+  await api('PUT', ev + '/sections/hipotese', {token: tokens.psy, body: {content: 'Hipótese sintética escrita pela profissional.'}});
+  assert.equal((await api('POST', ev + '/approve', {token: tokens.psy, body: {approveSections: true}})).status, 200);
+});

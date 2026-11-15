@@ -296,7 +296,7 @@ function renderBatchSetup() {
     body.innerHTML = '<p class="muted">Lendo as seções e as instruções da Conclusão de cada avaliação…</p>'; ft.innerHTML = '<button class="btn" id="cancel">Cancelar</button>'; $('#cancel').onclick = () => { batchAsked = false; close(); }; return;
   }
   const s = settings || {}, l = s.last || {};
-  const c = batchChoice ||= {mode: MODES[l.mode] ? l.mode : 'auto', existing: 'draft', onError: 'next', sendImages: l.sendImages ?? s.sendImages ?? true, includeDemand: false, only: batchSecs.length ? batchSecs.filter(n => !/demanda/i.test(n)) : null, parallel: Math.min(batchSel.length, s.batchParallel ?? 1)};
+  const c = batchChoice ||= {mode: MODES[l.mode] ? l.mode : 'auto', existing: 'draft', onError: 'next', sendImages: l.sendImages ?? s.sendImages ?? true, includeDemand: false, only: batchSecs.length ? batchSecs.filter(n => !/demanda/i.test(n)) : null, parallel: 1};  // always a queue at first: a value saved by older versions (3, 6) is not reused
   c.parallel = Math.max(1, Math.min(batchSel.length, c.parallel || 1));
   const radio = (name, v, cur, title, desc) => `<label class="opt ${cur === v ? 'sel' : ''}"><input type="radio" name="${name}" value="${v}" ${cur === v ? 'checked' : ''}><span><b>${title}</b>${desc ? `<small>${desc}</small>` : ''}</span></label>`;
   const sw = (id, on, icon, title, desc) => `<div class="setrow"><span class="ri">${ic(icon, 18)}</span><label for="${id}" class="rt"><b>${title}</b><small>${desc}</small></label><span class="sw"><input type="checkbox" role="switch" id="${id}" ${on ? 'checked' : ''}><i aria-hidden="true"></i></span></div>`;

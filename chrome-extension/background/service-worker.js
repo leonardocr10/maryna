@@ -216,7 +216,7 @@ async function handle(msg, sender) {
       const origin = sender.tab?.url ? new URL(sender.tab.url).origin : null;
       const cfg = await settings();
       const policy = {existing: msg.existing === 'skip' ? 'skip' : 'draft', onError: msg.onError === 'next' ? 'next' : 'pause', sendImages: !!(msg.sendImages ?? cfg.sendImages), sameChat: false, background: !!(msg.background ?? cfg.chatBackground), includeDemand: !!msg.includeDemand, only: Array.isArray(msg.only) ? msg.only.slice(0, 80).map(x => String(x).slice(0, 120)) : null};
-      const parallel = Math.max(1, Math.min(10, Math.floor(+(msg.parallel ?? cfg.batchParallel)) || 1));
+      const parallel = Math.max(1, Math.min(10, Math.floor(+(msg.parallel ?? 1)) || 1));
       // Each evaluation's own Conclusão instruction (edited on the batch screen) is saved in that evaluation only,
       // opened and confirmed one by one, before anything starts.
       for (const it of Array.isArray(msg.instructions) ? msg.instructions.slice(0, 10) : []) {

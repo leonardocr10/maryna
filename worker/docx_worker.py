@@ -197,7 +197,11 @@ def section_ranges(elements,markers):
   i=m['index']
   start=max([t for t in titles if t<i]+[f for f in fields if f<i]+[-1])+1
   next_title=min([t for t in titles if t>i],default=None);next_field=min([f for f in fields if f>i],default=None)
-  if next_field is not None and (next_title is None or next_field<next_title):end=i
+  if next_field is not None and (next_title is None or next_field<next_title):
+   end=i
+   # templates that put the field right under the title text (COMPORTAMENTO, field, then DIVA, SCARED, ETDAH...):
+   # no table before the field, so the data after it, up to the next field, is this section's too
+   if not any(e['type']=='table' for e in elements[start:i]):end=next_field
   else:end=next_title if next_title is not None else len(elements)
   m['section_start'],m['section_end']=start,end
 def title_ranges(elements,markers):
@@ -302,7 +306,11 @@ def inspect(path):
    old=existing_narrative(children[i],d)
    # old text is flagged so it is never sent to the AI as if it were evidence
    for ch in old:elements[position[ch]]['replaceable']=k
-   markers.append({'key':k,'index':i,'label':txt,'existing_paragraphs':sum(1 for ch in old if clean(ptext(ch))),'existing_text':'\n\n'.join(t for t in (ptext(ch).strip() for ch in old) if t)})
+   # the field box itself is a label, never evidence (a section may span another section's field)
+   elements[i]['field']=k
+   # a placeholder ("." or "-") left by the intern is not text: the section stays to be written
+   words=[t for t in (ptext(ch).strip() for ch in old) if re.search(r'[A-Za-zÀ-ÿ0-9]',t)]
+   markers.append({'key':k,'index':i,'label':txt,'existing_paragraphs':len(words),'existing_text':'\n\n'.join(words)})
  section_ranges(elements,markers)
  titled=sorted({domain_of(e['text'] if e['type']=='p' else ' '.join(x for row in e['rows'] for x in row)) for e in elements}-{None})
  return {'elements':elements,'markers':markers,'titled_domains':titled,'title_ranges':title_ranges(elements,markers),'identification':identification(d),'place_date':(lambda p:clean(ptext(p._p)) if p is not None else None)(place_date_paragraph(d)),'fixed_blocks':[(lambda html:{'key':k,'label':label,'index':position[ch],'existing_html':html,'existing_text':plain_from_html(html)})(block_html([Paragraph(o,d) for o in existing_narrative(ch,d)])) for k,label,ch in fixed_blocks(d)],'titles':section_titles(elements,markers),'warnings':['Conferir visualmente a ordem dos marcadores e os resultados.']}

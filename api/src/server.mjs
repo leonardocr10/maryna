@@ -320,7 +320,7 @@ const INTERPRETATION_KEYS=['inteligencia','percepcao','memoria','atencao','funco
 // What each section reads from the base document; the reference tables on screen come from these same functions.
 // Text the AI will replace is not evidence.
 // A section without its interpretation field still has its tables after its title (title_ranges), for manual drafts.
-function sectionElements(base,key){const m=base.markers.find(x=>x.key===key);const r=m?[m.section_start,m.section_end]:base.title_ranges?.[key];return r?base.elements.slice(r[0],r[1]).filter(x=>!x.replaceable):[]}
+function sectionElements(base,key){const m=base.markers.find(x=>x.key===key);const r=m?[m.section_start,m.section_end]:base.title_ranges?.[key];return r?base.elements.slice(r[0],r[1]).filter(x=>!x.replaceable&&!x.field):[]}
 function resultTables(base){const at=k=>base.markers.find(m=>m.key===k)?.index;return base.elements.slice((at('anamnesis')??0)+1,at('conclusao')??base.elements.length).filter(x=>x.type==='table')}
 const forAI=({grid,...element})=>element; // display-only layout stays out of the (paid) request
 // Only the part of the base document a section needs is sent (data minimisation).
@@ -342,7 +342,7 @@ function sourceFor(key,base,ana,sections,{created=[],excluded=[]}={}){
  // psychologist), and never a section excluded from the document.
  if(key==='conclusao'){const shown=k=>!OPTIONAL_KEYS.includes(k)||at(k)!==undefined||!!base.title_ranges?.[k]||created.includes(k);const textos=Object.fromEntries(INTERPRETATION_KEYS.filter(k=>sections[k]?.trim()&&shown(k)&&!excluded.includes(k)).map(k=>[SECTION_NAMES[k],sections[k]]));if(!Object.keys(textos).length)throw fail(409,'Escreva ou gere os textos das seções antes da conclusão.');return {textos_das_secoes:textos}}
  // Recommendations come from the conclusion text (referrals in topics); the patient's part of the header gives age and schooling.
- if(key==='recomendacoes'){if(!sections.conclusao?.trim())throw fail(409,'Escreva ou gere a Conclusão antes das recomendações.');return {identificacao:identification,conclusao:sections.conclusao}}
+ if(key==='recomendacoes'){if(!/[\p{L}\d]{3}/u.test(sections.conclusao||''))throw fail(409,'Escreva ou gere a Conclusão antes das recomendações.');return {identificacao:identification,conclusao:sections.conclusao}}
  const results=resultTables(base).map(forAI);
  return {identificacao:identification,anamnese:sections.anamnesis||anamnesis,interpretacoes:Object.fromEntries(INTERPRETATION_KEYS.filter(k=>sections[k]).map(k=>[k,sections[k]])),conclusao:sections.conclusao||null,tabelas_de_resultados:results};
 }
@@ -469,7 +469,7 @@ for(const key of ['recomendacoes'])out[key]=base.markers.some(m=>m.key===key)?al
  // pictures in the section (tables pasted as images) come from the file itself, only for the screen
  let pics={};{const [[doc]]=await pool.execute("SELECT storage_path FROM documents WHERE evaluation_id=? AND kind='base' ORDER BY created_at DESC LIMIT 1",[e.id]);if(doc){const f=path.join(STORAGE,randomUUID()+'.docx');try{await fs.writeFile(f,await readStorage(doc.storage_path));pics=await docx('images',[f])}catch{pics={}}finally{await fs.rm(f,{force:true})}}}
  const rangeOf=k=>{const m=base.markers.find(x=>x.key===k);return m&&m.section_start!=null?[m.section_start,m.section_end]:base.title_ranges?.[k]||null};
- out._blocks=Object.fromEntries(INTERPRETATION_KEYS.map(k=>{const r=rangeOf(k);if(!r)return [k,[]];const items=[];for(let i=r[0];i<r[1];i++){const x=base.elements[i];if(!x||x.replaceable)continue;if(x.type==='table'){if(isDataTable(x))items.push({type:'table',grid:x.grid})}else if(x.text)items.push({type:'p',text:x.text});for(const src of pics[i]||[])items.push({type:'img',src})}return [k,items]}).filter(([,v])=>v.length));
+ out._blocks=Object.fromEntries(INTERPRETATION_KEYS.map(k=>{const r=rangeOf(k);if(!r)return [k,[]];const items=[];for(let i=r[0];i<r[1];i++){const x=base.elements[i];if(!x||x.replaceable||x.field)continue;if(x.type==='table'){if(isDataTable(x))items.push({type:'table',grid:x.grid})}else if(x.text)items.push({type:'p',text:x.text});for(const src of pics[i]||[])items.push({type:'img',src})}return [k,items]}).filter(([,v])=>v.length));
  res.json(out)}));
 app.get('/api/evaluations/:id/privacy',auth,role('admin','psychologist'),wrap(async(req,res)=>{const e=await evaluation(req.params.id);const files=await loadFiles(e);const prefs=privacyPrefs(e);const ignored=new Set((prefs.ignored||[]).map(v=>v.toLowerCase()));const map=privacyMap(e,files);const placeholder=v=>map.find(x=>x.value.toLowerCase()===v.toLowerCase())?.placeholder||null;res.json({terms:privacyTerms(e,files).map(t=>({...t,ignored:ignored.has(t.value.toLowerCase()),placeholder:placeholder(t.value)})),extra:(prefs.extra||[]).map(v=>({value:v,placeholder:placeholder(v)}))})}));
 app.put('/api/evaluations/:id/privacy',auth,role('admin','psychologist'),wrap(async(req,res)=>{const e=await evaluation(req.params.id);const list=v=>Array.isArray(v)?[...new Set(v.map(x=>String(x).replace(/\s+/g,' ').trim()).filter(x=>x.length>=2&&x.length<=120))].slice(0,200):[];await pool.execute('UPDATE evaluations SET privacy_json=? WHERE id=?',[JSON.stringify({extra:list(req.body?.extra),ignored:list(req.body?.ignored)}),e.id]);await audit(req,'privacy_updated',e.id);res.json({ok:true})}));

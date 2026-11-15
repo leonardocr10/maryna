@@ -260,7 +260,20 @@ class TestWorker(unittest.TestCase):
   d.save(self.base)
   r=run('inspect',str(self.base));els=r['elements']
   firsts={m['key']:[e['rows'][0][0] for e in els[m['section_start']:m['section_end']] if e['type']=='table' and len(e['rows'])>1] for m in r['markers'] if 'section_start' in m}
-  self.assertEqual(firsts,{'inteligencia':['WISC','Subtestes WISC'],'percepcao':['Percepção'],'comportamento':[],'comportamento_diva':['DIVA']})
+  self.assertEqual(firsts,{'inteligencia':['WISC','Subtestes WISC'],'percepcao':['Percepção'],'comportamento':['DIVA'],'comportamento_diva':['DIVA']})
+
+ def test_placeholder_dot_under_a_field_is_not_existing_text(self):
+  d=Document()
+  d.add_table(rows=1,cols=1).cell(0,0).text='PERCEPÇÃO E NOÇÕES BÁSICAS:'
+  d.add_table(rows=1,cols=1).cell(0,0).text='Interpretação e Observações Clínicas:'
+  d.add_paragraph('.')
+  d.add_table(rows=1,cols=1).cell(0,0).text='CONCLUSÃO/RESULTADOS'
+  d.add_paragraph('.')
+  d.save(self.base)
+  r=run('inspect',str(self.base));mk={m['key']:m for m in r['markers']}
+  self.assertEqual((mk['percepcao']['existing_text'],mk['percepcao']['existing_paragraphs']),('',0))
+  self.assertEqual(mk['conclusao']['existing_text'],'')
+  self.assertEqual(r['elements'][mk['percepcao']['index']]['field'],'percepcao')
 
  def test_title_without_field_still_has_its_tables(self):
   d=Document()

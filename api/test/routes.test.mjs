@@ -1121,3 +1121,19 @@ test('Word tab: the copy is generated from the sections, edited blocks are saved
   assert.equal((await api('DELETE', `/api/evaluations/${id}/final`, {token: tokens.psy})).status, 200);
   assert.equal((await api('POST', `/api/evaluations/${id}/final/source`, {token: tokens.psy, body: {}})).headers.get('x-final'), 'new');
 });
+
+test('approval waits for Local e data when the base file has that line', async () => {
+  const file = path.join(tmp, 'base-local-data.docx');
+  python('import sys;sys.path.insert(0,"tests");from test_worker import synthetic_base;from docx import Document;synthetic_base(sys.argv[1]);d=Document(sys.argv[1]);d.add_paragraph("Cidade Fictícia, 1 de janeiro de 2026.");d.save(sys.argv[1])', file);
+  const id = await newEvaluation();
+  const ev = `/api/evaluations/${id}`;
+  assert.equal((await upload(tokens.psy, id, 'base', fs.readFileSync(file))).status, 201);
+  assert.equal((await upload(tokens.psy, id, 'anamnesis', fs.readFileSync(path.join(tmp, 'anamnese.docx')))).status, 201);
+  await api('PUT', ev + '/sections/anamnesis', {token: tokens.psy, body: {content: 'Anamnese sintética revisada.'}});
+  await api('PUT', ev + '/sections/inteligencia', {token: tokens.psy, body: {content: 'Interpretação sintética revisada.'}});
+  const blocked = await api('POST', ev + '/approve', {token: tokens.psy, body: {approveSections: true}});
+  assert.equal(blocked.status, 409);
+  assert.match(blocked.data.error || '', /local e a data/);
+  assert.equal((await api('PUT', ev + '/place-date', {token: tokens.psy, body: {value: 'Cidade Fictícia, 2 de janeiro de 2026.'}})).status, 200);
+  assert.equal((await api('POST', ev + '/approve', {token: tokens.psy, body: {approveSections: true}})).status, 200);
+});

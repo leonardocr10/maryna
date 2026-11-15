@@ -386,6 +386,14 @@ export class EvaluationComponent implements OnDestroy {
   placeInFile() { return this.inspection?.place_date || ''; }
   /** Required only when the base file has the closing line (rule 2: nothing is added where the file has no such line). */
   placeMissing() { return !!this.placeInFile() && !this.readOnly() && !(this.placeDate || '').trim(); }
+  /** Local e data is required when the base file has that line: approval and download stop until it is written. */
+  placeBlocks() {
+    if (!this.placeMissing()) return false;
+    this.api.notify('Escreva o local e a data do fechamento do laudo antes de aprovar.');
+    this.pendOpen = false; this.goStep(0);
+    setTimeout(() => { const el = document.getElementById('place-date'); el?.scrollIntoView({block: 'center'}); el?.focus(); });
+    return true;
+  }
   async savePlaceDate(v = this.placeDate) {
     const value = (v || '').replace(/\s+/g, ' ').trim();
     if (value === (this.current?.place_date || '') || this.readOnly()) return;
@@ -1162,6 +1170,7 @@ export class EvaluationComponent implements OnDestroy {
   apmLocks() { const picked = new Set(this.apmPicked().map(s => s.id)); return this.approveRows().every(s => this.done(s.id) || picked.has(s.id)); }
   async confirmApproveAll() {
     const picked = this.apmPicked(); if (!picked.length || !this.apmReviewed || this.apmBusy) return;
+    if (this.apmLocks() && this.placeBlocks()) { this.approveOpen = false; return; }
     this.apmBusy = true;
     try {
       if (this.apmLocks()) {
@@ -1176,6 +1185,7 @@ export class EvaluationComponent implements OnDestroy {
     } catch {} finally { this.apmBusy = false; }
   }
   async approveAll() {
+    if (this.placeBlocks()) return;
     const pending = this.available().filter(s => this.state(s.id) === 'pend');
     if (pending.length) { this.api.notify('Gere ou escreva todas as seções antes de aprovar: ' + pending.map(s => s.name).join(', ')); return; }
     const issues = this.finalCheck(this.available().map(s => s.id));
@@ -1196,6 +1206,7 @@ export class EvaluationComponent implements OnDestroy {
   }
   async download(format: 'docx' | 'pdf' = 'docx') {
     if (this.exporting) return;
+    if (!this.locked() && this.placeBlocks()) return;
     if (!this.allApproved()) { this.api.notify(format === 'pdf' ? 'Aprove todas as seções para baixar o PDF.' : 'Aprove todas as seções para baixar o Word.'); return; }
     if (this.inspection && this.missing().length && !await this.confirm.ask({tone: 'danger', title: 'Baixar sem estas seções?',
       body: 'O Word não terá as seções abaixo, porque elas faltam no arquivo base.', facts: this.missing(), ok: 'Baixar assim mesmo'})) return;

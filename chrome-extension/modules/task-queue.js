@@ -66,3 +66,35 @@ export function progress(items) {
   const done = work.filter(i => FINAL_ITEM.includes(i.status) || i.status === 'error' || i.status === 'expired').length;
   return {done, total: work.length, pct: work.length ? Math.round(done * 100 / work.length) : 0};
 }
+
+/** The default Conclusão instruction ends open ("...apresenta características "): she completes it before a run. */
+export const conclusionUnfinished = t => /caracter[ií]sticas\s*\.?\s*$/i.test(String(t || '').trim()) || !String(t || '').trim();
+export const DEMAND_KEY = 'demanda', CONCLUSION_KEY = 'conclusao', RECOMMENDATIONS_KEY = 'recomendacoes';
+export const isDemand = s => s.key === DEMAND_KEY || /descri[cç][aã]o da demanda/i.test(s.name || '');
+
+/**
+ * Queue of one evaluation of a batch (nobody chooses sections per evaluation there):
+ * - Descrição da demanda only when `includeDemand` (off by default, like the single run);
+ * - Conclusão only when its instruction was completed (`conclusionReady`): an open instruction is never sent;
+ * - Recomendações come from the Conclusão text: skipped when the Conclusão is skipped and has no text yet.
+ * Every item carries the evaluation id it belongs to.
+ */
+export function batchQueue(scan, {existing = 'draft', includeDemand = false, conclusionReady = false, evaluationId} = {}) {
+  const {items} = buildQueue(scan, {existing});
+  const concl = items.find(i => i.key === CONCLUSION_KEY);
+  let conclSkipped = false;
+  for (const it of items) {
+    it.evaluationId = evaluationId;
+    if (it.status !== 'pending') continue;
+    if (!includeDemand && isDemand(it)) Object.assign(it, {status: 'skipped', reason: 'Descrição da demanda: fora do lote (opção desligada)'});
+    else if (it.key === CONCLUSION_KEY && !conclusionReady) { Object.assign(it, {status: 'skipped', reason: 'Instrução da Conclusão incompleta: complete-a na seção e gere depois'}); conclSkipped = true; }
+    else if (it.key === RECOMMENDATIONS_KEY && conclSkipped && concl?.state === 'pend') Object.assign(it, {status: 'skipped', reason: 'Depende do texto da Conclusão, que ainda não existe'});
+  }
+  return items;
+}
+
+/** Counters of one evaluation of a batch, kept after it ends (the items of the next evaluation replace its own). */
+export function evalSummary(items) {
+  const n = k => items.filter(i => i.status === k).length;
+  return {received: n('received'), review: n('needs_review'), errors: n('error') + n('expired'), queued: items.filter(i => i.status !== 'skipped' || i.reason === 'Pulada por você').length};
+}

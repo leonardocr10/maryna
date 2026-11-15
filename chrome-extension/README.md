@@ -52,9 +52,24 @@ Requisitos: Chrome 116 ou mais novo (Windows). No NeuroLaudos IA, o método **Ch
 
 Controles: **Pausar** (não começa nada novo; a seção em andamento continua de onde parou), **Continuar** (confere de novo o status real e retoma da etapa segura), **Parar** (encerra; nada é apagado), **Ver detalhes** (códigos, etapas, erros e registro). Em erro, aparecem também **Tentar de novo**, **Pular seção** e, se o plugin não foi confirmado, **Já selecionei o plugin**.
 
+### Várias avaliações de uma vez (lote, desde a 1.0.8)
+
+1. Na lista **Avaliações**, marque até **10** avaliações (caixa por linha, ou a do cabeçalho para a página). Aprovadas não podem ser marcadas.
+2. Clique em **Modo automático (N)**. O painel abre com a lista escolhida e as opções do lote (modo, erro, seções com texto, imagens, Descrição da demanda).
+3. A extensão leva a própria aba a cada avaliação, na tela **Conferir seções**, e roda as seções dela; só depois passa para a próxima. O painel mostra a avaliação atual, o progresso do lote e o de cada avaliação. **Pausar**, **Parar**, **Continuar** e **Continuar de onde parou** valem para o lote todo; em erro aparece também **Pular avaliação**.
+
+Regras do lote (por segurança e para respeitar os limites do ChatGPT):
+
+- **Sempre em sequência**, nunca em paralelo: uma avaliação, uma seção, uma tarefa e uma mensagem por vez, com intervalo mínimo entre mensagens (`batchGapSeconds`, padrão 20 s).
+- **Conversa nova do ChatGPT para cada seção** (a opção "uma única conversa" fica desligada no lote): nenhuma conversa junta dados de duas seções ou de dois pacientes, e não há conversas longas.
+- **Conclusão** só entra quando a instrução dela já está completa na avaliação; **Recomendações** ficam de fora se a Conclusão ainda não tem texto. **Descrição da demanda** só entra se você ligar a opção. Hipótese diagnóstica nunca vai.
+- Avaliação que não abre (sem arquivo base/anamnese, somente leitura) fica registrada como "Não foi aberta" e o lote segue.
+- **Isolamento por avaliação**: cada pedido à página leva o id da avaliação; a página só responde se for ela que está aberta. Se a aba mudar de avaliação, a extensão volta para a do lote antes de seguir. O rascunho é salvo pelo servidor na avaliação e seção do código da tarefa (`NL-XXXX-XXXX`), qualquer que seja a aba. Os nomes dos pacientes ficam só na memória da página e do painel; o estado salvo da execução guarda só ids, códigos e status.
+- Não use a aba do lote enquanto ele roda; use outra aba ou janela.
+
 ## Garantias de execução
 
-- **Sequencial**: uma seção e uma tarefa por vez; uma execução por vez em todo o Chrome.
+- **Sequencial**: uma seção e uma tarefa por vez; uma execução (ou um lote) por vez em todo o Chrome.
 - **Sem duplicidade**: tarefa aberta e válida da seção é reaproveitada; código expirado nunca é reutilizado; o mesmo código não serve a duas seções; seção concluída não é refeita.
 - **Nunca envia duas vezes sozinha**: o horário do envio é gravado antes do clique. Depois disso, se algo falhar ou o Chrome fechar, a extensão só confere o status real; reenviar exige você clicar em **Tentar de novo**.
 - **Chrome fechado e reaberto**: a execução volta **pausada**, com a seção na etapa de conferência.

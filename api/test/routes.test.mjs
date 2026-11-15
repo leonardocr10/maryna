@@ -970,6 +970,24 @@ test('ChatGPT plugin: OAuth with PKCE, scoped MCP tools, isolation per account a
   assert.equal((await call('informar_problema', {codigo: t3.data.code, motivo: 'outro', detalhe: 'de novo'})).data.result.isError, true, 'a closed task cannot be reported again');
   assert.ok((await anamnesis()).startsWith('## Motivo'), 'the section text is untouched');
 
+  // Modo automático batch: two evaluations, the same section, tasks prepared one after the other and drafts saved in
+  // the opposite order. Each draft lands on the evaluation and section of its own code, never on the other patient.
+  const idA = await withFiles(), idB = await withFiles();
+  const ta = (await api('POST', `/api/evaluations/${idA}/chatgpt-tasks`, {token: tokens.psy, body: {mode: 'mcp', section: 'inteligencia'}})).data;
+  const tb = (await api('POST', `/api/evaluations/${idB}/chatgpt-tasks`, {token: tokens.psy, body: {mode: 'mcp', section: 'inteligencia'}})).data;
+  assert.notEqual(ta.code, tb.code);
+  assert.equal((await call('obter_tarefa_pendente', {codigo: ta.code})).data.result.structuredContent.codigo, ta.code);
+  assert.equal((await call('obter_tarefa_pendente', {codigo: tb.code})).data.result.structuredContent.codigo, tb.code);
+  const draft = mark => `Os resultados obtidos indicam que [PRIMEIRO_NOME] demonstrou recursos para compreender instruções verbais e organizar respostas com apoio, mantendo desempenho consistente ao longo das tarefas propostas na sessão sintética ${mark}.`;
+  assert.equal((await call('salvar_rascunho', {codigo: tb.code, texto: draft('marcador-bravo'), id_operacao: opId()})).data.result.structuredContent.status, 'draft_received');
+  assert.equal((await call('salvar_rascunho', {codigo: ta.code, texto: draft('marcador-alfa'), id_operacao: opId()})).data.result.structuredContent.status, 'draft_received');
+  const intel = async ev => (await api('GET', `/api/evaluations/${ev}`, {token: tokens.psy})).data.sections.find(x => x.section_key === 'inteligencia')?.content || '';
+  assert.match(await intel(idA), /marcador-alfa/); assert.doesNotMatch(await intel(idA), /marcador-bravo/);
+  assert.match(await intel(idB), /marcador-bravo/); assert.doesNotMatch(await intel(idB), /marcador-alfa/);
+  // a code already used cannot write again (on its own evaluation or any other)
+  assert.equal((await call('salvar_rascunho', {codigo: ta.code, texto: draft('marcador-charlie'), id_operacao: opId()})).data.result.isError, true);
+  assert.doesNotMatch((await intel(idA)) + (await intel(idB)), /marcador-charlie/);
+
   assert.equal(aiRequests.length, calls, 'no API call in the plugin flow');
   assert.equal((await api('DELETE', '/api/chatgpt/connection', {token: tokens.psy})).status, 200);
   assert.equal((await mcp(access, 'tools/list', {})).status, 401, 'disconnecting revokes the tokens');

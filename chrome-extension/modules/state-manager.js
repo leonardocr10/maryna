@@ -25,12 +25,13 @@ export class StateManager {
     return run;
   }
 
-  create({evaluationId, nlTabId, nlOrigin, mode, policy, items, chatTabId = null}) {
+  create({evaluationId, nlTabId, nlOrigin, mode, policy, items, chatTabId = null, batch = null}) {
     const now = new Date(this.clock()).toISOString();
     return this.update(() => ({
       runId: 'run-' + this.clock().toString(36) + Math.random().toString(36).slice(2, 7),
-      evaluationId, nlTabId, nlOrigin, chatTabId, chatPluginOk: false, mode, policy, items,
-      status: RUN.running, pause: null, current: -1, startedAt: now, finishedAt: null, log: [{t: now, msg: `Execução iniciada (${items.filter(i => i.status !== 'skipped').length} seções).`}],
+      evaluationId, nlTabId, nlOrigin, chatTabId, chatPluginOk: false, mode, policy, items, batch, usedCodes: [],
+      status: RUN.running, pause: null, current: -1, startedAt: now, finishedAt: null,
+      log: [{t: now, msg: batch ? `Lote iniciado (${batch.list.length} ${batch.list.length === 1 ? 'avaliação' : 'avaliações'}, uma por vez).` : `Execução iniciada (${items.filter(i => i.status !== 'skipped').length} seções).`}],
     }));
   }
 
@@ -40,6 +41,15 @@ export class StateManager {
     return this.update(s => {
       if (!s || !s.items[index]) return undefined;
       s.items[index] = {...s.items[index], ...patch, updatedAt: new Date(this.clock()).toISOString()};
+      return s;
+    });
+  }
+
+  /** Patch of one evaluation of the batch. */
+  setBatchEntry(index, patch) {
+    return this.update(s => {
+      if (!s?.batch?.list[index]) return undefined;
+      s.batch.list[index] = {...s.batch.list[index], ...patch};
       return s;
     });
   }

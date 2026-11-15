@@ -126,7 +126,7 @@ async function badge(s) {
     if (!s || !isActive(s)) { await chrome.action.setBadgeText({text: s?.status === RUN.done ? '✓' : ''}); return; }
     const p = progress(s.items);
     await chrome.action.setBadgeBackgroundColor({color: s.status === RUN.paused ? '#b7791f' : '#1f7a55'});
-    await chrome.action.setBadgeText({text: s.status === RUN.paused ? '||' : `${p.done}/${p.total}`});
+    await chrome.action.setBadgeText({text: s.status === RUN.paused ? '||' : s.batch ? `${Math.max(1, s.batch.index + 1)}/${s.batch.list.length}` : `${p.done}/${p.total}`});
   } catch {}
 }
 chrome.storage.onChanged.addListener((ch, area) => { if (area === 'local' && ch[STORAGE_KEY]) badge(ch[STORAGE_KEY].newValue); });
@@ -195,6 +195,14 @@ async function handle(msg, sender) {
       const cfg = await settings();
       const policy = {existing: msg.existing || cfg.existing, onError: msg.onError || cfg.onError, sendImages: msg.sendImages ?? cfg.sendImages, sameChat: !!(msg.sameChat ?? cfg.sameChat), background: !!(msg.background ?? cfg.chatBackground)};
       return {ok: true, run: await manager.start({nlTabId: tabId, nlOrigin: origin, mode: MODES[msg.mode] ? msg.mode : MODES[cfg.defaultMode] ? cfg.defaultMode : 'auto', policy, selected: msg.selected})};
+    }
+    case 'batch.start': {
+      // Several evaluations from the list, one after another in this tab (ids only; never names).
+      const tabId = msg.tabId ?? sender.tab?.id;
+      const origin = sender.tab?.url ? new URL(sender.tab.url).origin : null;
+      const cfg = await settings();
+      const policy = {existing: msg.existing === 'skip' ? 'skip' : 'draft', onError: msg.onError === 'next' ? 'next' : 'pause', sendImages: !!(msg.sendImages ?? cfg.sendImages), sameChat: false, background: !!(msg.background ?? cfg.chatBackground), includeDemand: !!msg.includeDemand};
+      return {ok: true, run: await manager.startBatch({nlTabId: tabId, nlOrigin: origin, mode: MODES[msg.mode] ? msg.mode : 'auto', policy, ids: Array.isArray(msg.ids) ? msg.ids : []})};
     }
     case 'run.pause': await manager.pause(); return {ok: true, run: await state.load()};
     case 'review.get': {

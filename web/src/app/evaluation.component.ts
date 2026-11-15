@@ -82,6 +82,8 @@ export class EvaluationComponent implements OnDestroy {
   @Output() back = new EventEmitter<void>();
   @Output() generatingChange = new EventEmitter<boolean>();
   @Input() autoGenerate = false;
+  /** Opened by the Modo automático batch: straight to "Conferir seções". */
+  @Input() openReview = false;
   @Input() set id(v: string) { if (v && v !== this.evaluationId) { this.evaluationId = v; this.load(true); } }
 
   MANUAL_KEY = MANUAL_KEY; DEMAND_KEY = DEMAND_KEY; SECTIONS = SECTIONS; SECTION_STATE = SECTION_STATE; STATUS = STATUS; brDate = brDate; brl = brl; sectionIcon = sectionIcon; int = int; words = words;
@@ -124,7 +126,7 @@ export class EvaluationComponent implements OnDestroy {
         this.loadModels();
         const s = await this.api.req('GET', '/ai/settings').catch(() => null);
         this.aiReady = !!(s && s.enabled && s.configured && s.privacy_gate);
-        this.step = !this.docsReady() ? 0 : this.aiOn() && !this.autoDrafted() ? 2 : 3;
+        this.step = !this.docsReady() ? 0 : this.aiOn() && !this.autoDrafted() && !this.openReview ? 2 : 3;
       }
       if (this.docsReady() && !this.inspection) await this.inspect();
       if (this.docsReady() && !this.instructions.length || first) await this.loadInstructions();
@@ -910,6 +912,13 @@ export class EvaluationComponent implements OnDestroy {
   }
   // Modo automático (extension): before a run the psychologist reviews the Conclusão instruction in the extension's
   // window. The extension asks for it and sends it back through these window events (strings only; nothing is stored there).
+  /** Batch of the Modo automático asks for this same evaluation: back to "Conferir seções" (sections view). */
+  @HostListener('window:nlx-open-evaluation', ['$event'])
+  onExtOpen(e: Event) {
+    if (String((e as CustomEvent).detail || '') !== this.evaluationId || !this.loaded || !this.docsReady()) return;
+    if (this.step !== 3) this.goStep(3);
+    if (this.mode !== 'secoes') this.setMode('secoes');
+  }
   @HostListener('window:nlx-instruction-get', ['$event'])
   async onExtInstructionGet(e: Event) {
     const key = String((e as CustomEvent).detail || '');

@@ -1,11 +1,16 @@
 // Orchestrates one run: strictly sequential, one section and one task at a time.
+// A batch (several evaluations chosen in the list) is the same run done for one evaluation after another, in the same
+// NeuroLaudos IA tab: the tab is taken to the next evaluation only when the previous one ended, the section list, the
+// commands and the ChatGPT conversation are replaced, and every message to the page carries the evaluation id, so a
+// task of one patient is never prepared, sent or confirmed while another evaluation is open. The draft itself is saved
+// by the NeuroLaudos IA server on the evaluation of its task code, whatever the tab shows.
 // Everything outside (tabs, content scripts, notifications) comes in through `env`, so the flow is tested in Node.
 //
 // Success criterion of a section: the NeuroLaudos IA page shows the task as "Rascunho recebido" (or waiting for her
 // confirmation). A ChatGPT answer alone is never success. The message is never sent twice on its own: `sentAt` is
 // written before the click, and after it only the real status is checked.
-import {RUN, LIMITS, PLUGIN_NAME, CHATGPT_URL, FINAL_ITEM} from './constants.js';
-import {buildQueue, nextIndex} from './task-queue.js';
+import {RUN, LIMITS, PLUGIN_NAME, CHATGPT_URL, FINAL_ITEM, BATCH_MAX, EVAL_ID_RE} from './constants.js';
+import {buildQueue, nextIndex, batchQueue, evalSummary, conclusionUnfinished, CONCLUSION_KEY} from './task-queue.js';
 import {checkCommand, isTaskCode, reusable, outcome} from './task-validator.js';
 import {AutoError, describe, NEEDS_PERSON} from './error-handler.js';
 import {isActive} from './state-manager.js';
@@ -42,6 +47,25 @@ export class AutomationManager {
     return state.load();
   }
 
+  /**
+   * Batch: several evaluations, one after another (never in parallel). Each one is opened in this tab on "Conferir
+   * seções", read and run like a single run; then the next. Always a new ChatGPT conversation per section.
+   */
+  async startBatch({nlTabId, nlOrigin, mode, policy, ids}) {
+    const {state} = this.env;
+    const list = [...new Set((ids || []).map(String))];
+    if (!list.length || list.length > BATCH_MAX || list.length !== (ids || []).length || !list.every(id => EVAL_ID_RE.test(id))) {
+      throw Object.assign(new AutoError('nl_selector'), {message: `Escolha de 1 a ${BATCH_MAX} avaliações diferentes.`, hint: 'Marque as avaliações na lista e tente de novo.'});
+    }
+    const cur = await state.load();
+    if (isActive(cur)) throw new AutoError('busy');
+    this.commands.clear(); this.images.clear(); this.lastDiag = null;
+    const oldChat = cur?.chatTabId && (await this.env.tabExists(cur.chatTabId)) ? cur.chatTabId : null;
+    await state.create({evaluationId: null, nlTabId, nlOrigin, mode, policy: {...policy, sameChat: false}, items: [], chatTabId: oldChat, batch: {index: -1, list: list.map(id => ({id, status: 'pending'}))}});
+    this.kick();
+    return state.load();
+  }
+
   async pause() { await this.env.state.pause({code: 'user', message: 'Pausado por você.', hint: 'A seção em andamento continua de onde parou ao clicar em Continuar.'}); }
 
   /** action: continue | retry | skip | plugin_done */
@@ -51,17 +75,28 @@ export class AutomationManager {
     if (!s || !(s.status === RUN.paused || s.status === RUN.running)) return s;
     const idx = s.current;
     const it = s.items[idx];
-    if (it && !FINAL_ITEM.includes(it.status)) {
+    if (action === 'skip_eval' && s.batch) {
+      // The rest of this evaluation is left as it is; the batch goes on with the next one.
+      const at = new Date(this.env.now()).toISOString();
+      await state.update(cur => {
+        const bi = cur.batch.index;
+        if (bi < 0) return undefined;
+        for (const x of cur.items) if (!FINAL_ITEM.includes(x.status) && x.status !== 'error' && x.status !== 'expired') Object.assign(x, {status: 'skipped', reason: 'Avaliação pulada por você', error: null});
+        cur.batch.list[bi] = {...cur.batch.list[bi], status: 'skipped', summary: evalSummary(cur.items), finishedAt: at};
+        return cur;
+      });
+      if (it) this.forget(s, it);
+    } else if (it && !FINAL_ITEM.includes(it.status)) {
       if (action === 'skip') await state.setItem(idx, {status: 'skipped', reason: 'Pulada por você', error: null});
       else if (action === 'retry') {
         // Explicit retry by the person: a new conversation and, if the task is no longer open, a new task.
         await state.setItem(idx, {status: 'pending', step: 'navigate', error: null, sentAt: null, attempts: 0, pluginManual: false, authNotified: false, chatDone: false, noSaveRetries: 0});
         await state.setRun({chatPluginOk: false});   // a retry starts a new conversation
-        this.commands.delete(it.key); this.images.delete(it.key);
+        this.forget(s, it);
       } else await state.setItem(idx, {status: it.status === 'error' || it.status === 'expired' ? 'pending' : it.status, error: null, ...(action === 'plugin_done' ? {pluginManual: true} : {})});
     }
     await state.setRun({status: RUN.running, pause: null, ...(nlTabId ? {nlTabId} : {})});
-    await state.log(action === 'skip' ? 'Seção pulada.' : action === 'retry' ? 'Tentando a seção de novo.' : 'Execução retomada.');
+    await state.log(action === 'skip_eval' ? 'Avaliação pulada; o lote segue para a próxima.' : action === 'skip' ? 'Seção pulada.' : action === 'retry' ? 'Tentando a seção de novo.' : 'Execução retomada.');
     this.kick();
     return state.load();
   }
@@ -74,12 +109,22 @@ export class AutomationManager {
     const {state} = this.env;
     const s = await state.load();
     if (!s || !(s.status === RUN.stopped || s.status === RUN.done)) return s;
-    const again = s.items.map((it, i) => (!FINAL_ITEM.includes(it.status) || (it.status === 'skipped' && it.reason === 'Pulada por você')) ? i : -1).filter(i => i >= 0);
-    if (!again.length) return s;
+    const curSkipped = s.batch && s.batch.list[s.batch.index]?.status === 'skipped';
+    const again = curSkipped ? [] : s.items.map((it, i) => (!FINAL_ITEM.includes(it.status) || (it.status === 'skipped' && it.reason === 'Pulada por você')) ? i : -1).filter(i => i >= 0);
+    // Batch: evaluations that did not open run again; the ones not reached yet are still in the queue.
+    const evals = s.batch ? s.batch.list.map((e, i) => e.status === 'error' ? i : -1).filter(i => i >= 0) : [];
+    const queued = s.batch ? s.batch.list.filter(e => e.status === 'pending').length : 0;
+    if (!again.length && !evals.length && !queued) return s;
     for (const i of again) await state.setItem(i, {status: 'pending', step: 'navigate', error: null, reason: null, sentAt: null, attempts: 0, chatDone: false, noSaveRetries: 0, pluginManual: false, authNotified: false});
     this.commands.clear(); this.images.clear(); this.lastDiag = null;
+    if (s.batch) await state.update(cur => {
+      for (const i of evals) cur.batch.list[i] = {...cur.batch.list[i], status: 'pending', error: null};
+      const bi = cur.batch.index;
+      if (again.length && bi >= 0 && cur.batch.list[bi].status === 'done') cur.batch.list[bi] = {...cur.batch.list[bi], status: 'running', finishedAt: null};
+      return cur;
+    });
     await state.setRun({status: RUN.running, pause: null, finishedAt: null, chatPluginOk: false, current: -1, ...(nlTabId ? {nlTabId} : {})});
-    await state.log(`Continuando de onde parou: ${again.length} ${again.length === 1 ? 'seção' : 'seções'} sem rascunho; as recebidas ficam como estão.`);
+    await state.log(`Continuando de onde parou: ${again.length} ${again.length === 1 ? 'seção' : 'seções'} sem rascunho${s.batch ? ` e ${evals.length + queued} ${evals.length + queued === 1 ? 'avaliação' : 'avaliações'} do lote` : ''}; as recebidas ficam como estão.`);
     this.kick();
     return state.load();
   }
@@ -108,6 +153,17 @@ export class AutomationManager {
         let s = await state.load();
         if (!s || s.status !== RUN.running) return;
         const idx = nextIndex(s.items, 0);
+        if (idx < 0 && s.batch) {
+          const r = await this.advanceBatch();
+          if (r === 'next') continue;
+          if (r === 'interrupted') return;
+          s = await state.load();
+          await state.finish();
+          const t = batchTotals(s);
+          await state.log(`Lote concluído: ${t.evals} ${t.evals === 1 ? 'avaliação' : 'avaliações'}; ${t.received} recebidos, ${t.review} para revisão, ${t.errors} com erro${t.failed ? `, ${t.failed} não abertas` : ''}.`);
+          this.env.notify('Modo automático: lote concluído', `${t.evals} avaliações, ${t.received} rascunhos recebidos${t.review ? `, ${t.review} para revisão` : ''}${t.errors ? `, ${t.errors} com erro` : ''}${t.failed ? `, ${t.failed} não abertas` : ''}. Revise e aprove no NeuroLaudos IA.`);
+          return;
+        }
         if (idx < 0) {
           await state.finish();
           const d = s.items.filter(i => i.status === 'received').length, r = s.items.filter(i => i.status === 'needs_review').length, e = s.items.filter(i => i.status === 'error' || i.status === 'expired').length;
@@ -126,6 +182,76 @@ export class AutomationManager {
         }
       }
     } finally { this.looping = false; }
+  }
+
+  /**
+   * Batch: closes the evaluation that ended (its counters stay) and opens the next one of the queue in the same tab.
+   * Returns 'next' (the loop goes on), 'end' (nothing left) or 'interrupted' (paused: the tab needs the person).
+   */
+  async advanceBatch() {
+    const {state, send, now} = this.env;
+    let s = await state.load();
+    const b = s.batch, at = () => new Date(now()).toISOString();
+    if (b.index >= 0 && b.list[b.index].status === 'running') {
+      const sum = evalSummary(s.items);
+      await state.setBatchEntry(b.index, {status: 'done', summary: sum, finishedAt: at()});
+      await state.log(`Avaliação ${b.index + 1} de ${b.list.length} concluída: ${sum.received} recebidos, ${sum.review} para revisão, ${sum.errors} com erro.`);
+    }
+    const j = b.list.findIndex(e => e.status === 'pending');
+    if (j < 0) return 'end';
+    const id = b.list[j].id, label = `Avaliação ${j + 1} de ${b.list.length}`;
+    // Nothing of the previous evaluation goes on: no command, image, section list or ChatGPT conversation.
+    this.commands.clear(); this.images.clear(); this.lastDiag = null;
+    await state.update(cur => {
+      cur.batch.index = j;
+      cur.batch.list[j] = {...cur.batch.list[j], status: 'running', startedAt: cur.batch.list[j].startedAt || at(), error: null};
+      return {...cur, evaluationId: id, items: [], current: -1, chatPluginOk: false};
+    });
+    await state.log(`${label}: abrindo na tela Conferir seções.`);
+    try {
+      s = await state.load();
+      if (!(await this.env.tabExists(s.nlTabId))) throw new AutoError('nl_tab_closed');
+      await this.env.activate(s.nlTabId);
+      await this.openEval(s, id);
+      const scan = await send(s.nlTabId, {cmd: 'nl.scan'}, LIMITS.contentReady);
+      if (!scan?.ok) throw new AutoError(scan?.code || 'nl_not_review', 'open_evaluation', scan?.detail);
+      if (scan.evaluationId !== id) throw new AutoError('nl_changed', 'open_evaluation');
+      if (scan.readOnly) throw new AutoError('nl_readonly', 'open_evaluation');
+      let conclusionReady = false;
+      if ((scan.sections || []).some(x => x.key === CONCLUSION_KEY)) {
+        const r = await send(s.nlTabId, {cmd: 'nl.getInstruction', key: CONCLUSION_KEY, evaluationId: id}, LIMITS.contentReady).catch(() => null);
+        conclusionReady = !!r?.ok && !conclusionUnfinished(r.text);
+      }
+      const items = batchQueue(scan, {existing: s.policy?.existing, includeDemand: !!s.policy?.includeDemand, conclusionReady, evaluationId: id});
+      const n = items.filter(i => i.status === 'pending').length;
+      if (!n) {
+        await state.update(cur => { cur.batch.list[j] = {...cur.batch.list[j], status: 'empty', summary: evalSummary(items), finishedAt: at()}; return {...cur, items}; });
+        await state.log(`${label}: nenhuma seção elegível para gerar; seguindo para a próxima.`);
+        return 'next';
+      }
+      await state.update(cur => cur.evaluationId === id ? {...cur, items} : undefined);
+      await state.log(`${label}: ${n} ${n === 1 ? 'seção' : 'seções'} na fila.`);
+      return 'next';
+    } catch (err) {
+      const info = describe(err, 'open_evaluation');
+      if (['nl_tab_closed', 'connection', 'nl_not_logged'].includes(info.code)) {
+        // The tab itself needs the person: the batch waits on this evaluation (it opens again on Continuar).
+        await state.setBatchEntry(j, {status: 'pending'});
+        await state.pause({...info, section: label, actions: ['continue', 'skip_eval']});
+        this.env.notify('Modo automático pausado', `${label}: ${info.message}`);
+        return 'interrupted';
+      }
+      await state.setBatchEntry(j, {status: 'error', error: info.message, finishedAt: at()});
+      await state.log(`${label}: ${info.message} A avaliação fica fora do lote; seguindo para a próxima.`);
+      return 'next';
+    }
+  }
+
+  /** Takes the NeuroLaudos IA tab to an evaluation, on "Conferir seções" (the app does it; the extension only asks). */
+  async openEval(s, id) {
+    const r = await this.env.send(s.nlTabId, {cmd: 'nl.openEvaluation', evaluationId: id}, LIMITS.openEvaluation + 5000);
+    if (!r) throw new AutoError('connection');
+    if (r.ok === false) throw new AutoError(r.code || 'nl_eval_open', 'open_evaluation', r.detail);
   }
 
   /** Runs the steps of one section from where it stopped. Returns true when the section reached a final status. */
@@ -173,14 +299,14 @@ export class AutomationManager {
     if (info.code === 'cg_no_save' && (it.noSaveRetries || 0) < NO_SAVE_RETRIES) {
       await state.setItem(idx, {status: 'pending', step: 'navigate', error: info, sentAt: null, chatDone: false, pluginManual: false, authNotified: false, noSaveRetries: (it.noSaveRetries || 0) + 1});
       await state.setRun({chatPluginOk: false});   // the new try starts a new conversation
-      this.commands.delete(it.key); this.images.delete(it.key);
+      this.forget(s, it);
       await state.log(`${it.name}: o ChatGPT respondeu sem salvar o rascunho; nova tentativa automática em uma conversa nova.`);
       return false;
     }
     const status = info.code === 'nl_expired' ? 'expired' : 'error';
     await state.setItem(idx, {status, error: info, attempts});
     if (s.policy?.onError === 'next' && !GLOBAL.includes(info.code)) { await this.safeClose(s, it); return true; }
-    const actions = ['continue', 'retry', 'skip', ...(info.code.startsWith('cg_plugin') ? ['plugin_done'] : [])];
+    const actions = ['continue', 'retry', 'skip', ...(info.code.startsWith('cg_plugin') ? ['plugin_done'] : []), ...(s.batch ? ['skip_eval'] : [])];
     await state.pause({...info, section: it.name, actions});
     if (s.policy?.background && info.code.startsWith('cg_') && s.chatTabId && info.code !== 'cg_tab_closed') {
       await this.env.activate(s.chatTabId);
@@ -194,7 +320,14 @@ export class AutomationManager {
   async nl(s, msg, wait = LIMITS.contentReady) {
     const {send, tabExists} = this.env;
     if (!(await tabExists(s.nlTabId))) throw new AutoError('nl_tab_closed');
-    const r = await send(s.nlTabId, {...msg, evaluationId: s.evaluationId}, wait);
+    let r = await send(s.nlTabId, {...msg, evaluationId: s.evaluationId}, wait);
+    // Batch: the extension drives this tab. If it shows another evaluation, it goes back to the run's one (once) and
+    // asks again; the page answers only for the evaluation id sent, so nothing is read from another patient.
+    if (r?.ok === false && r.code === 'nl_changed' && s.batch && s.evaluationId) {
+      await this.env.state.log('A aba do NeuroLaudos IA estava em outra avaliação; voltando para a avaliação do lote. O rascunho é salvo pelo código da tarefa, sempre na avaliação de origem.');
+      await this.openEval(s, s.evaluationId);
+      r = await send(s.nlTabId, {...msg, evaluationId: s.evaluationId}, wait);
+    }
     if (!r) throw new AutoError('connection');
     if (r.ok === false) throw new AutoError(r.code || 'nl_selector', null, r.detail);
     return r;
@@ -210,6 +343,8 @@ export class AutomationManager {
 
   async stepNavigate(s, idx, it) {
     await this.env.activate(s.nlTabId);
+    if (it.evaluationId && it.evaluationId !== s.evaluationId) throw new AutoError('nl_changed', 'navigate', 'seção de outra avaliação');
+    if (s.batch) await this.openEval(s, s.evaluationId);
     await this.nl(s, {cmd: 'nl.openSection', key: it.key}, LIMITS.navigate + 5000);
   }
 
@@ -240,22 +375,30 @@ export class AutomationManager {
     if (code === modal.code && !reusable(modal, this.env.now()) && modal.status !== 'none') throw new AutoError('nl_no_code', 'prepare', 'o código não mudou');
     if (this.codeTaken(s, idx, code)) throw new AutoError('nl_bad_command', 'prepare', 'código repetido');
     await state.setItem(idx, {code, reused: false});
+    await state.update(cur => cur && ({...cur, usedCodes: [...(cur.usedCodes || []), code].slice(-500)}));
     await state.log(`${it.name}: tarefa ${code} preparada.`);
   }
 
-  codeTaken(s, idx, code) { return s.items.some((o, i) => i !== idx && o.code === code); }
+  /** A code already used in this run (any section, any evaluation of the batch) is never taken again. */
+  codeTaken(s, idx, code) { return s.items.some((o, i) => i !== idx && o.code === code) || (s.usedCodes || []).includes(code); }
+  forget(s, it) { this.commands.delete(mk(s, it)); this.images.delete(mk(s, it)); }
 
   async stepCommand(s, idx, it) {
     const r = await this.nl(s, {cmd: 'nl.command', key: it.key}, LIMITS.command + 5000);
     const chk = checkCommand(r.command, it.code);
     if (!chk.ok) throw new AutoError(r.command ? 'nl_bad_command' : 'nl_no_command', 'command', chk.reason);
-    this.commands.set(it.key, r.command);   // kept in memory only
-    this.images.set(it.key, s.policy?.sendImages ? r.images || [] : []);
+    this.commands.set(mk(s, it), r.command);   // kept in memory only, per evaluation and section
+    this.images.set(mk(s, it), s.policy?.sendImages ? r.images || [] : []);
     await this.env.state.setItem(idx, {status: 'waiting_chatgpt'});
   }
 
   async stepChatNew(s, idx, it) {
     const {state, openChat, activate, send, sleep, now} = this.env;
+    // Batch: a gentle pace between two messages (many sections in a row reach ChatGPT's usage limits sooner).
+    if (s.batch && s.lastSentAt) {
+      const wait = ((await this.env.settings()).batchGapSeconds ?? 20) * 1000 - (now() - Date.parse(s.lastSentAt));
+      if (wait > 0) await sleep(wait);
+    }
     let tabId = s.chatTabId && (await this.env.tabExists(s.chatTabId)) ? s.chatTabId : null;
     // Option "mesma conversa": after the first section, the next ones go on in the conversation already open.
     const reuse = !!s.policy?.sameChat && !!s.chatPluginOk && !!tabId;
@@ -293,15 +436,15 @@ export class AutomationManager {
   }
 
   async stepInsert(s, idx, it) {
-    let command = this.commands.get(it.key);
+    let command = this.commands.get(mk(s, it));
     if (!command) {   // worker restarted: read the official command again
       const r = await this.nl(s, {cmd: 'nl.command', key: it.key}, LIMITS.command + 5000);
       if (!checkCommand(r.command, it.code).ok) throw new AutoError('nl_bad_command', 'insert');
-      command = r.command; this.commands.set(it.key, command);
-      this.images.set(it.key, s.policy?.sendImages ? r.images || [] : []);
+      command = r.command; this.commands.set(mk(s, it), command);
+      this.images.set(mk(s, it), s.policy?.sendImages ? r.images || [] : []);
       if (!s.policy?.background) await this.env.activate(s.chatTabId);
     }
-    const images = this.images.get(it.key) || [];
+    const images = this.images.get(mk(s, it)) || [];
     await this.inFront(s, it, () => this.cg(s, {cmd: 'cg.insert', text: command, code: it.code, name: PLUGIN_NAME, images}, images.length ? 60000 : 15000));
     if (images.length) await this.env.state.log(`${it.name}: ${images.length} ${images.length === 1 ? 'imagem anexada' : 'imagens anexadas'} à mensagem do ChatGPT.`);
   }
@@ -323,6 +466,7 @@ export class AutomationManager {
   async stepSend(s, idx, it) {
     if (it.sentAt) return;   // never twice: after a restart the run goes on to waiting and checking
     await this.env.state.setItem(idx, {sentAt: new Date(this.env.now()).toISOString(), status: 'waiting_chatgpt'});
+    await this.env.state.setRun({lastSentAt: new Date(this.env.now()).toISOString()});
     try {
       await this.cg(s, {cmd: 'cg.send', code: it.code}, LIMITS.sendReady + LIMITS.sendAck + 5000);
     } catch (err) {
@@ -330,7 +474,7 @@ export class AutomationManager {
       if (!(err instanceof AutoError) || err.code !== 'cg_send' || !(await this.taskMoved(s, it, 30000))) throw err;
       await this.env.state.log(`${it.name}: envio confirmado pelo NeuroLaudos IA (tarefa em uso pelo plugin).`);
     }
-    this.commands.delete(it.key); this.images.delete(it.key);
+    this.forget(s, it);
     await this.env.state.log(`${it.name}: comando com ${it.code} enviado ao ChatGPT.`);
   }
 
@@ -390,6 +534,7 @@ export class AutomationManager {
     while (now() < end) {
       const cur = await state.load();
       if (!cur || cur.status !== RUN.running) return 'interrupted';
+      if (it.evaluationId && it.evaluationId !== cur.evaluationId) throw new AutoError('nl_changed', 'confirm', 'seção de outra avaliação');
       const r = await this.nl(cur, {cmd: 'nl.waitStatus', key: it.key, code: it.code, chunkMs: Math.min(LIMITS.chunk, Math.max(1000, end - now()))}, LIMITS.chunk + 10000);
       const o = outcome(r.modal, it.code);
       if (o.kind === 'received') { await state.setItem(idx, {status: 'received'}); await state.log(`${it.name}: rascunho recebido no NeuroLaudos IA.`); return; }
@@ -407,6 +552,19 @@ export class AutomationManager {
   }
   async safeClose(s, it) { try { await this.nl(s, {cmd: 'nl.closeModal', key: it.key}, 8000); } catch {} }
 
+}
+
+/** Key of the in-memory command and images: evaluation and section (section keys repeat across evaluations). */
+const mk = (s, it) => `${it.evaluationId || s.evaluationId || ''}|${it.key}`;
+/** Counters of a whole batch, from the evaluations that ended and the one that is open. */
+export function batchTotals(s) {
+  const t = {evals: s.batch?.list.length || 0, received: 0, review: 0, errors: 0, failed: 0};
+  for (const e of s.batch?.list || []) {
+    if (e.status === 'error') t.failed++;
+    const sum = e.summary || (e === s.batch.list[s.batch.index] ? evalSummary(s.items) : null);
+    if (sum) { t.received += sum.received; t.review += sum.review; t.errors += sum.errors; }
+  }
+  return t;
 }
 
 /** After ChatGPT finished: how long to wait for the draft, and automatic tries in a new conversation. */

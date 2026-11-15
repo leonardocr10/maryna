@@ -13,7 +13,10 @@ export function section(key, name, kind = 'ai', state = 'pend') { return {key, n
 
 /**
  * opts.nl: {sections, tasks: {key: {code,status,mode,expires,needsConfirmation}}, mcp, readOnly, evaluationId, draftOutcome(key): 'received'|'needs_review'|'never'|'error', notEligible: [keys]}
- * opts.cg: {plugin: 'ok'|'missing'|'unverified', authFor: Set(keys) rounds, rateLimit, sendFails, loggedIn}
+ * opts.cg: {plugin: 'ok'|'missing'|'unverified', authFor: Set(keys) rounds, rateLimit, sendFails, loggedIn, onWait(nl)}
+ * opts.evals (batch): {id: {sections, tasks, instruction, readOnly, openFails}}: several synthetic evaluations on one
+ *   server. The tab starts on the list (no evaluation open); `nl.openEvaluation` shows one. Tasks live per evaluation,
+ *   and the plugin saves a draft by its code on the evaluation the task belongs to, whatever the tab shows.
  */
 export function makeEnv(opts = {}) {
   const map = new Map();
@@ -22,19 +25,30 @@ export function makeEnv(opts = {}) {
   const calls = [];
   const notes = [];
   const nl = {evaluationId: 'ev-sint-1', mcp: true, readOnly: false, tasks: {}, notEligible: [], draftOutcome: () => 'received', ...(opts.nl || {})};
+  const evals = opts.evals || null;
+  if (evals) { nl.evaluationId = null; nl.sections = []; for (const e of Object.values(evals)) e.tasks ||= {}; }
+  const saves = [], prepared = [];   // {code, evaluationId, key}: where the server put each draft
+  const show = id => { const e = evals[id]; Object.assign(nl, {evaluationId: id, sections: e.sections, tasks: e.tasks, readOnly: !!e.readOnly}); openModal = null; };
   const cg = {plugin: 'ok', auth: 0, rateLimit: false, sendFails: false, loggedIn: true, ...(opts.cg || {})};
   let openModal = null, lastSent = null, chipManual = false, authLeft = 0;
 
   const view = key => { const t = nl.tasks[key]; return t ? {ready: true, mcp: nl.mcp, method: 'mcp', busy: false, code: t.code, mode: t.mode || 'mcp', status: t.status, problem: t.problem || null, expires: t.expires || new Date(clock + 864e5).toISOString(), needsConfirmation: !!t.needsConfirmation, applied: t.status === 'draft_received' && !t.needsConfirmation} : {ready: true, mcp: nl.mcp, method: 'mcp', busy: false, code: null, mode: null, status: 'none', expires: null, needsConfirmation: false, applied: false}; };
 
   function nlHandle(msg) {
+    if (msg.cmd === 'nl.openEvaluation') {
+      const e = evals?.[msg.evaluationId];
+      if (!e || e.openFails) return {ok: false, code: 'nl_eval_open'};
+      if (nl.evaluationId !== msg.evaluationId) show(msg.evaluationId);
+      return {ok: true};
+    }
     if (msg.cmd !== 'nl.scan' && msg.evaluationId && msg.evaluationId !== nl.evaluationId) return {ok: false, code: 'nl_changed'};
     switch (msg.cmd) {
-      case 'nl.scan': return {ok: true, evaluationId: nl.evaluationId, readOnly: nl.readOnly, sections: nl.sections};
+      case 'nl.scan': return nl.evaluationId ? {ok: true, evaluationId: nl.evaluationId, readOnly: nl.readOnly, sections: nl.sections} : {ok: false, code: 'nl_not_review'};
+      case 'nl.getInstruction': { const e = evals?.[nl.evaluationId]; return {ok: true, text: e?.instruction ?? 'Integrar os resultados; relatar no final que apresenta características ', editable: true}; }
       case 'nl.openSection': return {ok: true};
       case 'nl.openModal': if (nl.notEligible.includes(msg.key)) return {ok: true, notEligible: true, reason: 'Texto fixo do arquivo'}; openModal = msg.key; return {ok: true, modal: view(msg.key)};
       case 'nl.modalInfo': return {ok: true, modal: view(msg.key)};
-      case 'nl.prepare': { const code = newCode(); nl.tasks[msg.key] = {code, status: 'pending'}; return {ok: true, modal: view(msg.key)}; }
+      case 'nl.prepare': { const code = newCode(); nl.tasks[msg.key] = {code, status: 'pending'}; prepared.push({code, evaluationId: nl.evaluationId, key: msg.key}); return {ok: true, modal: view(msg.key)}; }
       case 'nl.command': { const t = nl.tasks[msg.key]; return {ok: true, command: `@NeuroLaudos IA Utilize o plugin NeuroLaudos IA para buscar a tarefa pendente da seção "${msg.key}" identificada pelo código ${t.code}. Ao concluir, salve como rascunho.`, images: (nl.images || {})[msg.key] || []}; }
       case 'nl.waitStatus': { clock += msg.chunkMs || 1000; return {ok: true, modal: view(msg.key)}; }
       case 'nl.closeModal': openModal = null; return {ok: true};
@@ -44,13 +58,18 @@ export function makeEnv(opts = {}) {
 
   /** The plugin saves the draft on the server once the answer is done (the real success criterion). */
   function saveDraft() {
-    const key = Object.keys(nl.tasks).find(k => nl.tasks[k].code === lastSent);
-    if (!key || nl.tasks[key].status !== 'pending') return;
-    const out = nl.draftOutcome(key);
-    if (out === 'received') nl.tasks[key].status = 'draft_received';
-    if (out === 'needs_review') Object.assign(nl.tasks[key], {status: 'draft_received', needsConfirmation: true});
-    if (out === 'error') nl.tasks[key].status = 'error';
-    if (out === 'problem') Object.assign(nl.tasks[key], {status: 'error', problem: 'dados_divergentes'});
+    // Server side: the task is found by its code alone (never by what the tab shows).
+    const pools = evals ? Object.entries(evals).map(([id, e]) => [id, e.tasks]) : [[nl.evaluationId, nl.tasks]];
+    for (const [evId, tasks] of pools) {
+      const key = Object.keys(tasks).find(k => tasks[k].code === lastSent);
+      if (!key || tasks[key].status !== 'pending') continue;
+      const out = nl.draftOutcome(key, evId);
+      if (out === 'received') tasks[key].status = 'draft_received';
+      if (out === 'needs_review') Object.assign(tasks[key], {status: 'draft_received', needsConfirmation: true});
+      if (out === 'error') tasks[key].status = 'error';
+      if (out === 'problem') Object.assign(tasks[key], {status: 'error', problem: 'dados_divergentes'});
+      if (out === 'received' || out === 'needs_review') saves.push({code: lastSent, evaluationId: evId, key});
+    }
   }
   function cgHandle(msg) {
     switch (msg.cmd) {
@@ -67,6 +86,7 @@ export function makeEnv(opts = {}) {
         return {ok: true};
       }
       case 'cg.wait': clock += msg.chunkMs || 1000;
+        cg.onWait?.(nl, show);
         if (cg.rateLimit) return {ok: true, state: 'rate_limit'};
         if (authLeft > 0) { authLeft--; return {ok: true, state: 'auth'}; }
         saveDraft();
@@ -80,7 +100,7 @@ export function makeEnv(opts = {}) {
   const env = {
     state: new StateManager(storage, () => clock),
     settings: async () => settings,
-    send: async (tabId, msg) => { calls.push({tabId, ...msg}); return tabId === NL_TAB ? nlHandle(msg) : cgHandle(msg); },
+    send: async (tabId, msg) => { const c = {tabId, ...msg, shown: nl.evaluationId, at: clock}; calls.push(c); const r = tabId === NL_TAB ? nlHandle(msg) : cgHandle(msg); c.refused = r?.code === 'nl_changed'; return r; },
     tabExists: async id => id === NL_TAB || id === CHAT_TAB,
     activate: async id => { activated.push(id); },
     openChat: async (id, url, o = {}) => { opened.push(o); return CHAT_TAB; },
@@ -89,7 +109,7 @@ export function makeEnv(opts = {}) {
     now: () => clock,
   };
   const mgr = new AutomationManager(env);
-  return {env, mgr, activated, opened, calls, notes, nl, cg, storage, map, get chipManual() { return chipManual; }, get openModal() { return openModal; }, get lastSent() { return lastSent; }};
+  return {env, mgr, activated, opened, calls, notes, nl, cg, storage, map, evals, saves, prepared, get chipManual() { return chipManual; }, get openModal() { return openModal; }, get lastSent() { return lastSent; }};
 }
 
 export const STANDARD = () => [

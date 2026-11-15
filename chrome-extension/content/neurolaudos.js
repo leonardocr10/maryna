@@ -52,6 +52,20 @@
     return {ok: true, evaluationId: evaluationId(), readOnly: review()?.getAttribute('data-nl-readonly') === '1' || !approveAllBtn(), compat: !review(), sections};
   }
 
+  // ---------- batch: the worker takes this tab to the next evaluation (the app opens it; only the id goes) ----------
+  const EVAL_ID = /^[A-Za-z0-9_-]{8,80}$/;
+  async function openEvaluation(id) {
+    if (!EVAL_ID.test(String(id || ''))) return fail('nl_eval_open', 'id inválido');
+    const shown = () => review()?.getAttribute('data-nl-evaluation') === id;
+    if (!shown()) {
+      if (document.querySelector(NL.login)) return fail('nl_not_logged');
+      window.dispatchEvent(new CustomEvent('nlx-open-evaluation', {detail: id}));
+      if (!await waitFor(shown, {timeout: 25000, interval: 400})) return document.querySelector(NL.login) ? fail('nl_not_logged') : fail('nl_eval_open');
+    }
+    await waitFor(() => document.querySelector(NL.sectionBar), {timeout: 8000});
+    return shown() ? {ok: true} : fail('nl_eval_open');
+  }
+
   function checkEval(msg) { if (msg.evaluationId && evaluationId() !== msg.evaluationId) return fail(review() || compat() ? 'nl_changed' : (document.querySelector(NL.login) ? 'nl_not_logged' : 'nl_not_review')); return null; }
 
   const barFor = key => key.startsWith('pos-') ? [...document.querySelectorAll('.sn-seg[title]')].find(b => b.getAttribute('title').startsWith(key.slice(4) + '.')) : document.querySelector(NL.sectionBarFor(key));
@@ -218,8 +232,9 @@
   chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     if (!msg?.cmd?.startsWith('nl.')) return false;
     (async () => {
-      if (msg.cmd !== 'nl.scan') { const bad = checkEval(msg); if (bad) return bad; }
+      if (msg.cmd !== 'nl.scan' && msg.cmd !== 'nl.openEvaluation') { const bad = checkEval(msg); if (bad) return bad; }
       switch (msg.cmd) {
+        case 'nl.openEvaluation': return openEvaluation(msg.evaluationId);
         case 'nl.scan': return scan();
         case 'nl.openSection': return openSection(msg.key);
         case 'nl.openModal': return openModal(msg.key);
@@ -277,18 +292,18 @@
     if (btn.getAttribute('aria-expanded') !== exp) btn.setAttribute('aria-expanded', exp);
   }
 
-  function togglePanel(force) {
+  const panelUrl = batch => chrome.runtime.getURL(`ui/panel.html?tab=${tabId}&theme=${document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'}${batch ? '&batch=1' : ''}`);
+  function togglePanel(force, batch = false) {
     panelOpen = force ?? !panelOpen;
     if (panelOpen) shownFor = null;   // the automation window is back: the section window steps aside again
     if (panelOpen && !panel && tabId != null) {
       panel = document.createElement('iframe');
       panel.id = 'nlx-panel';
       panel.title = 'NeuroLaudos IA — Modo automático';
-      const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
-      panel.src = chrome.runtime.getURL(`ui/panel.html?tab=${tabId}&theme=${theme}`);
+      panel.src = panelUrl(batch);
       panel.setAttribute('allow', 'clipboard-write');   // "Copiar registro" in the details
       document.body.appendChild(panel);
-    }
+    } else if (panelOpen && panel && batch) panel.src = panelUrl(true);
     if (panel) panel.hidden = !panelOpen;
     syncBackdrop();
     syncHide();
@@ -334,6 +349,7 @@
     if (d.nlx === 'layout') { panel.classList.toggle('nlx-modal', d.mode === 'modal'); panel.classList.toggle('nlx-wide', !!d.wide); syncBackdrop(); syncHide(); }
     if (d.nlx === 'showModal') { const it = run?.items?.[run.current]; shownFor = d.on && it ? `${it.key}|${it.code || ''}` : null; syncHide(); }
     if (d.nlx === 'close') togglePanel(false);
+    if (d.nlx === 'batch') panel.contentWindow.postMessage({nlx: 'batch', list: batchList}, new URL(chrome.runtime.getURL('')).origin);
     if (d.nlx === 'collapse') panel.classList.toggle('nlx-collapsed', !!d.on);
   });
 
@@ -345,6 +361,18 @@
   // The app's own "Modo automático" button asks for the panel; the mark tells the app the extension is installed.
   document.documentElement.setAttribute('data-nlx-extension', chrome.runtime.getManifest?.().version || '1');
   window.addEventListener('nlx-open-panel', () => togglePanel(true));
+  // Batch from the list of evaluations: ids (and names, for the panel only) chosen by the person. The names stay in this
+  // page's memory and go only to the extension's own panel frame; the run keeps ids alone.
+  let batchList = [];
+  document.documentElement.setAttribute('data-nlx-batch', '10');
+  window.addEventListener('nlx-batch-start', e => {
+    let list = [];
+    try { list = JSON.parse(String(e.detail || '[]')); } catch {}
+    list = (Array.isArray(list) ? list : []).filter(x => x && EVAL_ID.test(String(x.id))).slice(0, 10).map(x => ({id: String(x.id), name: String(x.name || '').slice(0, 80)}));
+    if (!list.length || tabId == null) return;
+    batchList = list;
+    togglePanel(true, true);
+  });
 
   async function init() {
     try { tabId = (await chrome.runtime.sendMessage({type: 'hello'}))?.tabId ?? null; } catch {}

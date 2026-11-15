@@ -156,7 +156,7 @@ const SCREENS: Screen[] = ['home', 'evaluation', 'new', 'settings', 'patients', 
         <nl-patients *ngIf="screen()==='patients'" [evaluations]="evaluations()" (open)="open($event)" (create)="go('new')" (created)="onCreated({id: $event, generate: false})"></nl-patients>
         <nl-new-evaluation *ngIf="screen()==='new'" (closed)="goHome()" (created)="onCreated($event)"></nl-new-evaluation>
         <nl-settings *ngIf="screen()==='settings'" (open)="open($event)"></nl-settings>
-        <nl-evaluation *ngIf="screen()==='evaluation' && selectedId()" [id]="selectedId()" [autoGenerate]="autoGenerate"
+        <nl-evaluation *ngIf="screen()==='evaluation' && selectedId()" [id]="selectedId()" [autoGenerate]="autoGenerate" [openReview]="openReview"
           (changed)="load()" (deleted)="onDeleted()" (generatingChange)="generating=$event" (back)="goHome()"></nl-evaluation>
         <nl-models *ngIf="screen()==='models'"></nl-models>
         <nl-devolutivas *ngIf="screen()==='devolutivas'" (openEvaluation)="open($event)"></nl-devolutivas>
@@ -406,7 +406,16 @@ export class AppComponent {
   topbar = inject(TopbarService);
   paletteScreens() { return [{id: 'new', label: 'Nova avaliação', icon: 'plus'}, ...this.navItems]; }
   goFromPalette(id: string) { this.go(id as Screen); }
-  open(id: string) { if (this.blocked()) return; this.autoGenerate = false; rememberRecent(id); this.selectedId.set(id); this.screen.set('evaluation'); }
+  /** Modo automático for several evaluations (extension): it asks for the next one by id; it opens on "Conferir seções". */
+  openReview = false;
+  @HostListener('window:nlx-open-evaluation', ['$event'])
+  onExtOpen(e: Event) {
+    const id = String((e as CustomEvent).detail || '');
+    if (this.generating || !this.evaluations().some(x => x.id === id)) return;
+    if (this.screen() === 'evaluation' && this.selectedId() === id) return;   // already open: the evaluation screen goes to Conferir seções
+    this.open(id); this.openReview = true;
+  }
+  open(id: string) { if (this.blocked()) return; this.openReview = false; this.autoGenerate = false; rememberRecent(id); this.selectedId.set(id); this.screen.set('evaluation'); }
   async onCreated(e: {id: string; generate: boolean}) { await this.load(); this.autoGenerate = e.generate; this.selectedId.set(e.id); this.screen.set('evaluation'); }
   async onDeleted() { this.timer.stop(); this.selectedId.set(''); this.screen.set('home'); await this.load(); }
 }

@@ -66,11 +66,18 @@ const ORDERS = ['Mais recentes', 'Mais antigas', 'Nome (A–Z)', 'Nome (Z–A)',
     <div class="search-box"><nl-icon name="search"/><input class="input" [value]="query" (input)="setQuery($any($event.target).value)" placeholder="Buscar avaliação ou paciente…" aria-label="Buscar avaliação ou paciente"></div>
     <button *ngFor="let f of chips()" type="button" class="fchip" [class.on]="filter===f.id" [attr.aria-pressed]="filter===f.id" (click)="filter=f.id;page=1">{{f.label}} <b>{{count(f.id)}}</b></button>
   </div>
+  <div *ngIf="picked().length" class="selbar" role="region" aria-label="Avaliações selecionadas">
+    <b>{{picked().length}} {{picked().length === 1 ? 'selecionada' : 'selecionadas'}}</b><span class="caption">máximo {{MAX}} por vez</span>
+    <button type="button" class="lnk" (click)="sel.clear()">Limpar seleção</button>
+    <span class="grow"></span>
+    <button type="button" class="btn btn-primary btn-sm" (click)="startAuto()" title="Gerar rascunhos com o ChatGPT nas avaliações selecionadas, uma depois da outra"><nl-icon name="robot"/> Modo automático ({{picked().length}})</button>
+  </div>
   <div class="tablewrap">
     <table class="tbl">
-      <thead><tr><th><span class="thi">Paciente <nl-icon name="chevud"/></span></th><th>Idade</th><th class="c">Sexo</th><th><span class="thi"><nl-icon name="calendar"/> Início</span></th><th><span class="thi"><nl-icon name="tag"/> Status</span></th><th><span class="thi"><nl-icon name="layers"/> Progresso</span></th><th class="dl"><span class="sr-only">Baixar</span></th></tr></thead>
+      <thead><tr><th *ngIf="canWrite()" class="ck"><input type="checkbox" [checked]="pageAll()" [indeterminate]="pageSome()" [disabled]="!pageEligible().length" (change)="togglePage()" title="Selecionar as avaliações desta página (até 10)" aria-label="Selecionar as avaliações desta página"></th><th><span class="thi">Paciente <nl-icon name="chevud"/></span></th><th>Idade</th><th class="c">Sexo</th><th><span class="thi"><nl-icon name="calendar"/> Início</span></th><th><span class="thi"><nl-icon name="tag"/> Status</span></th><th><span class="thi"><nl-icon name="layers"/> Progresso</span></th><th class="dl"><span class="sr-only">Baixar</span></th></tr></thead>
       <tbody>
         <tr *ngFor="let e of pageRows()" tabindex="0" (click)="open.emit(e.id)" (keydown.enter)="open.emit(e.id)">
+          <td *ngIf="canWrite()" class="ck" (click)="$event.stopPropagation()" (keydown.enter)="$event.stopPropagation()"><input type="checkbox" [checked]="sel.has(e.id)" [disabled]="!eligible(e) || (!sel.has(e.id) && sel.size >= MAX)" (change)="toggleSel(e)" [title]="!eligible(e) ? 'Aprovada: nada a gerar' : sel.has(e.id) || sel.size < MAX ? 'Selecionar para o Modo automático' : 'Máximo de ' + MAX + ' por vez'" [attr.aria-label]="'Selecionar ' + e.patient_name"></td>
           <td><div class="who"><span class="av"><nl-icon name="userfill"/></span><span><b>{{e.patient_name}}</b><small>{{e.schooling || 'Avaliação neuropsicológica'}}</small></span></div></td>
           <td>{{e.age || '—'}}</td>
           <td class="c"><span *ngIf="sexIcon(e.sex) as sx" class="sx" [class]="'sx ' + sx" [title]="e.sex" [attr.aria-label]="e.sex"><nl-icon [name]="sx"/></span><span *ngIf="!sexIcon(e.sex)" class="muted" [title]="e.sex || 'Não informado'">—</span></td>
@@ -148,7 +155,15 @@ const ORDERS = ['Mais recentes', 'Mais antigas', 'Nome (A–Z)', 'Nome (Z–A)',
 .sx.female{color:#8b3fd9}
 .sx.male{color:#2f7fe0}
 :host-context([data-theme="dark"]) .sx.female{color:#c79bff}
-:host-context([data-theme="dark"]) .sx.male{color:#7ab4ff}`],
+:host-context([data-theme="dark"]) .sx.male{color:#7ab4ff}
+/* selection for the Modo automático batch */
+.dlist .tbl th.ck,.dlist .tbl td.ck{width:1%;padding-right:0}
+.ck input{width:16px;height:16px;margin:0;cursor:pointer;accent-color:var(--primary);vertical-align:middle}
+.ck input:disabled{cursor:not-allowed;opacity:.45}
+.selbar{display:flex;align-items:center;gap:10px;margin:0 14px 10px;padding:8px 12px;border:1px solid var(--primary);border-radius:10px;background:var(--primary-soft);font-size:13.5px}
+.selbar .caption{font-size:12.5px;color:var(--text-3)}
+.selbar .lnk{border:0;background:none;padding:0;color:var(--primary);font:500 13px var(--font);cursor:pointer;text-decoration:underline}
+.selbar .btn{--ico-size:16px}`],
 })
 export class DashboardComponent implements OnInit {
   private api = inject(Api);
@@ -216,6 +231,35 @@ export class DashboardComponent implements OnInit {
     } catch {} finally { this.busy = ''; }
   }
   canWrite() { const r = this.api.me()?.role; return r === 'admin' || r === 'psychologist'; }
+
+  // ---------- Modo automático for several evaluations (extension): at most 10, run one after another ----------
+  readonly MAX = 10;
+  sel = new Set<string>();
+  /** An approved evaluation is read-only: nothing to generate. */
+  eligible(e: any) { return e.status !== 'approved'; }
+  /** Selected evaluations still in the list, in the list's order. */
+  picked() { return this.sel.size ? this.filtered().filter(e => this.sel.has(e.id) && this.eligible(e)) : []; }
+  toggleSel(e: any) { if (this.sel.has(e.id)) this.sel.delete(e.id); else if (this.sel.size < this.MAX && this.eligible(e)) this.sel.add(e.id); }
+  pageEligible() { return this.pageRows().filter(e => this.eligible(e)); }
+  pageAll() { const r = this.pageEligible(); return !!r.length && r.every(e => this.sel.has(e.id)); }
+  pageSome() { const r = this.pageEligible(); return r.some(e => this.sel.has(e.id)) && !this.pageAll(); }
+  togglePage() {
+    const rows = this.pageEligible();
+    if (this.pageAll()) { rows.forEach(e => this.sel.delete(e.id)); return; }
+    let left = 0;
+    for (const e of rows) { if (this.sel.has(e.id)) continue; if (this.sel.size < this.MAX) this.sel.add(e.id); else left++; }
+    if (left) this.api.notify(`Máximo de ${this.MAX} avaliações por vez: ${left} ${left === 1 ? 'ficou' : 'ficaram'} de fora.`);
+  }
+  /** Hands the chosen ids (and names, for its window only) to the extension, which runs them in this tab. */
+  startAuto() {
+    const list = this.picked().slice(0, this.MAX).map(e => ({id: e.id, name: e.patient_name || ''}));
+    if (!list.length) return;
+    if (!document.documentElement.hasAttribute('data-nlx-batch')) {
+      this.api.notify(document.documentElement.hasAttribute('data-nlx-extension') ? 'Atualize a extensão Modo automático (versão 1.0.8 ou mais nova) para rodar várias avaliações.' : 'Instale a extensão Modo automático: abra uma avaliação, Conferir seções, botão Modo automático, e siga os passos.');
+      return;
+    }
+    window.dispatchEvent(new CustomEvent('nlx-batch-start', {detail: JSON.stringify(list)}));
+  }
   private matches(e: any, f: Filter) { return f === 'all' || (f === 'late' ? this.late(e) : f === 'soon' ? this.soon(e) : f === 'queue' ? this.queued(e) : f === 'fix' ? this.fix(e) : f === 'deliver' ? listStatus(e) === 'ap' && !e.delivered_at : listStatus(e) === f); }
   count(f: Filter) { return this.evaluations.filter(e => this.matches(e, f)).length; }
   pct(e: any) { const t = +e.section_total || 0; return t ? Math.round((+e.approved_count || 0) / t * 100) : 0; }

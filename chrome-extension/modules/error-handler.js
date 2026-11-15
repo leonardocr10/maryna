@@ -15,6 +15,7 @@ export const ERRORS = {
   nl_bad_command: {msg: 'O comando não confere com o código da tarefa.', hint: 'Feche a janela da seção e tente de novo.'},
   nl_expired: {msg: 'A tarefa expirou.', hint: 'Um código expirado nunca é reutilizado. Tente de novo para preparar outro.'},
   nl_changed: {msg: 'A avaliação aberta mudou durante a execução.', hint: 'Volte à avaliação da execução ou pare e comece de novo.'},
+  nl_eval_open: {msg: 'A avaliação não abriu na tela Conferir seções.', hint: 'Ela precisa ter o arquivo base e a anamnese. Abra-a à mão para conferir; o lote segue para a próxima.'},
   nl_tab_closed: {msg: 'A aba do NeuroLaudos IA foi fechada.', hint: 'Abra a avaliação de novo e clique em Continuar.'},
   nl_not_received: {msg: 'O rascunho não chegou ao NeuroLaudos IA.', hint: 'Veja a conversa no ChatGPT. Se ele pediu algo, responda lá; depois clique em Continuar ou Tentar de novo.'},
   nl_task_failed: {msg: 'A tarefa terminou com erro ou foi descartada no NeuroLaudos IA.', hint: 'Tente de novo para preparar uma nova tarefa.'},

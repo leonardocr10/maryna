@@ -68,7 +68,7 @@ export const DEFAULT_SETTINGS = {
   retries: 1,                  // automatic retries of a failed section before applying onError (never after a message was sent)
   batchGapSeconds: 20,         // batch of evaluations: least time between two messages sent to ChatGPT, for the whole account (every lane)
   batchParallel: 1,            // batch: evaluations at the same time. 1 = a queue, one evaluation after the other (default); more is an advanced option
-  chatProjectUrl: '',          // ChatGPT Project where the conversations are opened (so they do not fill "Recentes"); empty: ordinary conversations
+  chatProjectUrl: 'https://chatgpt.com/g/g-p-6afa07a69a9081918bc27ff792a0c678/project',  // ChatGPT Project "NeuroLaudos" of the clinic: conversations open there (not in "Recentes"); cleared in the options: ordinary conversations
   rateLimitMinutes: 10,        // batch: pause of every lane after ChatGPT's usage limit before trying the same task again
 };
 

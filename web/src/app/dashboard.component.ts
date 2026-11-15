@@ -84,7 +84,7 @@ const ORDERS = ['Mais recentes', 'Mais antigas', 'Nome (A–Z)', 'Nome (Z–A)',
           <td><span class="thi"><nl-icon name="calendar"/> {{brDate(e.start_date || e.created_at)}}</span></td>
           <td><span *ngIf="e.delivered_at" class="badge ok due" [title]="'Entregue a ' + (e.delivered_to || '—')"><nl-icon name="checkc"/> Entregue</span><span *ngIf="fix(e)" class="badge danger due" title="A psicóloga pediu correções"><nl-icon name="chat"/> Correção pedida</span><span *ngIf="queued(e)" class="badge warn due" [title]="'Enviada por ' + (e.submitted_by_name || '—')"><nl-icon name="upload"/> Enviada</span><span *ngIf="late(e)" class="badge danger due" [title]="'Prazo: ' + brDate(e.end_date)"><nl-icon name="alert"/> Atrasada</span><span *ngIf="soon(e)" class="badge warn due" [title]="'Prazo: ' + brDate(e.end_date)"><nl-icon name="calendar"/> Vence {{brDate(e.end_date).slice(0,5)}}</span><span [class]="'badge '+STATUS[st(e)].css"><nl-icon [name]="st(e)==='ap' ? 'checkfill' : st(e)==='rv' ? 'clock' : 'edit'"/> {{STATUS[st(e)].label}}</span></td>
           <td class="prog" [attr.title]="progTitle(e)"><span class="pm"><b>{{e.approved_count||0}}</b>/{{e.section_total||0}} aprovadas<ng-container *ngIf="+e.review_count"> · <i class="dot warn"></i>{{e.review_count}} a revisar</ng-container><ng-container *ngIf="pend(e)"> · <i class="dot idle"></i>{{pend(e)}} pend.</ng-container></span><span class="pbar"><span class="stack" role="img" [attr.aria-label]="progTitle(e)"><span class="ok" [style.width.%]="share(e, e.approved_count)"></span><span class="warn" [style.width.%]="share(e, e.review_count)"></span></span><b>{{pct(e)}}%</b></span></td>
-          <td class="dl"><button *ngIf="canDownload(e)" type="button" class="dlbtn" [disabled]="busy===e.id" [title]="'Baixar o Word do laudo de ' + e.patient_name" [attr.aria-label]="'Baixar o Word do laudo de ' + e.patient_name" (click)="download(e, $event)" (keydown.enter)="$event.stopPropagation()"><nl-icon [name]="busy===e.id ? 'clock' : 'download'"/> Word</button></td>
+          <td class="dl"><span *ngIf="e.status==='approved'" class="dlcount" [class.zero]="!+e.download_count" [attr.title]="dlTitle(e)" role="img" [attr.aria-label]="dlTitle(e)"><nl-icon [name]="+e.download_count ? 'check' : 'download'"/>{{+e.download_count || 0}}</span><button *ngIf="canDownload(e)" type="button" class="dlbtn" [disabled]="busy===e.id" [title]="'Baixar o Word do laudo de ' + e.patient_name" [attr.aria-label]="'Baixar o Word do laudo de ' + e.patient_name" (click)="download(e, $event)" (keydown.enter)="$event.stopPropagation()"><nl-icon [name]="busy===e.id ? 'clock' : 'download'"/> Word</button></td>
         </tr>
       </tbody>
     </table>
@@ -150,6 +150,8 @@ const ORDERS = ['Mais recentes', 'Mais antigas', 'Nome (A–Z)', 'Nome (Z–A)',
 .dlbtn:hover{border-color:var(--primary);background:var(--primary-soft)}
 .dlbtn:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
 .dlbtn:disabled{opacity:.6;cursor:wait}
+.dlcount{display:inline-flex;align-items:center;gap:4px;height:24px;padding:0 9px;margin-right:8px;border-radius:var(--radius-pill);background:var(--ok-bg);color:var(--ok-fg);font:600 12px var(--font);--ico-size:13px;vertical-align:middle}
+.dlcount.zero{background:var(--warn-bg);color:var(--warn-fg)}
 .c{text-align:center}
 .sx{display:inline-grid;place-items:center;--ico-size:20px}
 .sx.female{color:#8b3fd9}
@@ -219,6 +221,13 @@ export class DashboardComponent implements OnInit {
   /** Word ready to download: approved evaluation, and only who can export it (psychologist/admin). */
   canDownload(e: any) { return e.status === 'approved' && this.canWrite(); }
   busy = '';
+  /** Downloads of the approved report (Word or PDF) since it was approved: shows whether the file was ever taken. */
+  dlTitle(e: any) {
+    const n = +e.download_count || 0;
+    if (!n) return 'Aprovado, mas o arquivo ainda não foi baixado';
+    const d = e.last_download_at ? new Date(e.last_download_at) : null;
+    return `Baixado ${n} ${n === 1 ? 'vez' : 'vezes'}` + (d && !isNaN(+d) ? ` · último em ${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}` : '');
+  }
   async download(e: any, ev: Event) {
     ev.stopPropagation();
     if (this.busy) return;
@@ -227,6 +236,7 @@ export class DashboardComponent implements OnInit {
       const data = await this.api.blob(`/evaluations/${e.id}/export`);
       const url = URL.createObjectURL(data), a = document.createElement('a');
       a.href = url; a.download = 'laudo-' + (e.patient_name || 'revisado').replace(/[^\p{L}\p{N}]+/gu, '-') + '.docx'; a.click(); URL.revokeObjectURL(url);
+      e.download_count = (+e.download_count || 0) + 1; e.last_download_at = new Date().toISOString();
       this.api.notify('Word baixado.');
     } catch {} finally { this.busy = ''; }
   }

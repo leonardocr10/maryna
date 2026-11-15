@@ -1188,3 +1188,19 @@ test('approval waits for the Hipótese diagnóstica when the base file has that 
   await api('PUT', ev + '/sections/hipotese', {token: tokens.psy, body: {content: 'Hipótese sintética escrita pela profissional.'}});
   assert.equal((await api('POST', ev + '/approve', {token: tokens.psy, body: {approveSections: true}})).status, 200);
 });
+
+test('the evaluation list counts downloads of the approved report', async () => {
+  const id = await withFiles();
+  const ev = `/api/evaluations/${id}`;
+  await api('PUT', ev + '/sections/anamnesis', {token: tokens.psy, body: {content: 'Anamnese sintética revisada.'}});
+  await api('PUT', ev + '/sections/inteligencia', {token: tokens.psy, body: {content: 'Interpretação sintética revisada.'}});
+  const row = async () => (await api('GET', '/api/evaluations', {token: tokens.psy})).data.find(r => r.id === id);
+  assert.equal((await row()).download_count, 0);
+  assert.equal((await api('POST', ev + '/approve', {token: tokens.psy, body: {approveSections: true}})).status, 200);
+  assert.equal((await row()).download_count, 0, 'approved but never downloaded');
+  assert.equal((await api('POST', ev + '/export', {token: tokens.psy})).status, 200);
+  assert.equal((await api('POST', ev + '/export', {token: tokens.psy})).status, 200);
+  const r = await row();
+  assert.equal(r.download_count, 2);
+  assert.ok(r.last_download_at);
+});

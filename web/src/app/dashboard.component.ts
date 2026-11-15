@@ -255,7 +255,7 @@ export class DashboardComponent implements OnInit {
     const list = this.picked().slice(0, this.MAX).map(e => ({id: e.id, name: e.patient_name || ''}));
     if (!list.length) return;
     if (!document.documentElement.hasAttribute('data-nlx-batch')) {
-      this.api.notify(document.documentElement.hasAttribute('data-nlx-extension') ? 'Atualize a extensão Modo automático (versão 1.0.8 ou mais nova) para rodar várias avaliações.' : 'Instale a extensão Modo automático: abra uma avaliação, Conferir seções, botão Modo automático, e siga os passos.');
+      this.api.notify(document.documentElement.hasAttribute('data-nlx-extension') ? 'Atualize a extensão Modo automático (versão 1.0.9 ou mais nova) para rodar várias avaliações.' : 'Instale a extensão Modo automático: abra uma avaliação, Conferir seções, botão Modo automático, e siga os passos.');
       return;
     }
     window.dispatchEvent(new CustomEvent('nlx-batch-start', {detail: JSON.stringify(list)}));

@@ -1,7 +1,7 @@
 // Service worker: owns the run (AutomationManager), the tabs and the messages between the pages.
 import {STORAGE_KEY, SETTINGS_KEY, DEFAULT_SETTINGS, DEFAULT_NL_ORIGINS, RUN, CHATGPT_URL, MODES} from '../modules/constants.js';
 import {StateManager, recoverAfterRestart, isActive} from '../modules/state-manager.js';
-import {AutomationManager} from '../modules/automation-manager.js';
+import {Coordinator, recoverLanes} from '../modules/lanes.js';
 import {describe} from '../modules/error-handler.js';
 import {progress} from '../modules/task-queue.js';
 
@@ -81,7 +81,24 @@ function notify(title, message) {
   try { chrome.notifications.create('nlauto-' + Date.now(), {type: 'basic', iconUrl: chrome.runtime.getURL('assets/icons/icon128.png'), title, message, priority: 2}); } catch {}
 }
 
-const manager = new AutomationManager({state, settings, send, tabExists, activate, openChat, notify, sleep, now: () => Date.now()});
+/**
+ * Parallel batch: a NeuroLaudos IA tab for one more lane. A duplicate of the batch's tab keeps its sign-in (the app keeps
+ * the session per tab); it opens in the background, next to it, and the person's tab stays in front.
+ */
+async function openNlTab(fromTabId) {
+  if (!fromTabId || !(await tabExists(fromTabId))) return null;
+  let front = null;
+  try { [front] = await chrome.tabs.query({active: true, lastFocusedWindow: true}); } catch {}
+  const t = await chrome.tabs.duplicate(fromTabId);
+  if (!t?.id) return null;
+  chrome.tabs.update(t.id, {autoDiscardable: false}).catch(() => {});   // memory saver must not freeze it mid-run
+  if (front?.id) chrome.tabs.update(front.id, {active: true}).catch(() => {});
+  await waitLoaded(t.id);
+  try { await send(t.id, {cmd: 'nl.scan'}, 20000); } catch {}   // content script ready (answer ignored)
+  return t.id;
+}
+
+const manager = new Coordinator({state, settings, send, tabExists, activate, openChat, openNlTab, notify, sleep, now: () => Date.now()});
 
 // ---------- NeuroLaudos IA addresses added by the person (https://...) ----------
 async function registerOrigins() {
@@ -125,6 +142,8 @@ async function badge(s) {
   try {
     if (!s || !isActive(s)) { await chrome.action.setBadgeText({text: s?.status === RUN.done ? '✓' : ''}); return; }
     const p = progress(s.items);
+    const ended = s.batch ? s.batch.list.filter(e => !['pending', 'running'].includes(e.status)).length : 0;
+    if (s.lanes) { await chrome.action.setBadgeBackgroundColor({color: s.status === RUN.paused ? '#b7791f' : '#1f7a55'}); await chrome.action.setBadgeText({text: `${ended}/${s.batch.list.length}`}); return; }
     await chrome.action.setBadgeBackgroundColor({color: s.status === RUN.paused ? '#b7791f' : '#1f7a55'});
     await chrome.action.setBadgeText({text: s.status === RUN.paused ? '||' : s.batch ? `${Math.max(1, s.batch.index + 1)}/${s.batch.list.length}` : `${p.done}/${p.total}`});
   } catch {}
@@ -137,7 +156,7 @@ chrome.runtime.onStartup.addListener(async () => {
   await registerOrigins();
   // Browser restarted: a running run is paused and nothing already sent is sent again without checking.
   const s = await state.load();
-  if (s && s.status === RUN.running) await state.update(cur => recoverAfterRestart(cur));
+  if (s && s.status === RUN.running) await state.update(cur => cur.lanes ? recoverLanes(cur) : recoverAfterRestart(cur));
   badge(await state.load());
 });
 // Worker restarted by Chrome while running (not a browser restart): continue from the saved step.
@@ -150,12 +169,7 @@ chrome.alarms.onAlarm.addListener(async a => {
 // Content scripts keep a port open while a run is active (keeps the worker awake during long waits).
 chrome.runtime.onConnect.addListener(port => { if (port.name === 'nlauto-keepalive') port.onMessage.addListener(() => {}); });
 
-chrome.tabs.onRemoved.addListener(async id => {
-  const s = await state.load();
-  if (!isActive(s)) return;
-  if (id === s.nlTabId) await state.pause({code: 'nl_tab_closed', message: 'A aba do NeuroLaudos IA foi fechada.', hint: 'Abra a avaliação de novo e clique em Continuar no painel.', actions: ['continue', 'skip']});
-  if (id === s.chatTabId) await state.setRun({chatTabId: null, chatPluginOk: false});
-});
+chrome.tabs.onRemoved.addListener(id => { manager.tabClosed(id); });
 
 // ---------- messages ----------
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
@@ -202,7 +216,8 @@ async function handle(msg, sender) {
       const origin = sender.tab?.url ? new URL(sender.tab.url).origin : null;
       const cfg = await settings();
       const policy = {existing: msg.existing === 'skip' ? 'skip' : 'draft', onError: msg.onError === 'next' ? 'next' : 'pause', sendImages: !!(msg.sendImages ?? cfg.sendImages), sameChat: false, background: !!(msg.background ?? cfg.chatBackground), includeDemand: !!msg.includeDemand};
-      return {ok: true, run: await manager.startBatch({nlTabId: tabId, nlOrigin: origin, mode: MODES[msg.mode] ? msg.mode : 'auto', policy, ids: Array.isArray(msg.ids) ? msg.ids : []})};
+      const parallel = Math.max(1, Math.min(10, Math.floor(+(msg.parallel ?? cfg.batchParallel)) || 1));
+      return {ok: true, run: await manager.startBatch({nlTabId: tabId, nlOrigin: origin, mode: MODES[msg.mode] ? msg.mode : 'auto', policy, ids: Array.isArray(msg.ids) ? msg.ids : [], parallel})};
     }
     case 'run.pause': await manager.pause(); return {ok: true, run: await state.load()};
     case 'review.get': {
@@ -212,11 +227,11 @@ async function handle(msg, sender) {
     case 'review.act': {
       const tabId = msg.tabId ?? sender.tab?.id;
       const r = await send(tabId, {cmd: 'nl.reviewAct', key: msg.key, taskId: msg.taskId, action: msg.action}, 25000);
-      if (r?.ok) await manager.reviewed(msg.key, msg.action);
+      if (r?.ok) await manager.reviewed(msg.key, msg.action, tabId);
       return r;
     }
     case 'run.continue': return {ok: true, run: await manager.continueRun(msg.tabId ?? null)};
-    case 'run.resume': return {ok: true, run: await manager.resume(msg.action || 'continue', msg.tabId ?? null)};
+    case 'run.resume': return {ok: true, run: await manager.resume(msg.action || 'continue', msg.tabId ?? null, Number.isInteger(msg.lane) ? msg.lane : null)};
     case 'run.stop': await manager.stop(); return {ok: true, run: await state.load()};
     case 'run.clear': {
       const s = await state.load();
@@ -225,7 +240,8 @@ async function handle(msg, sender) {
     }
     case 'run.focus': {
       const s = await state.load();
-      const id = msg.which === 'chat' ? s?.chatTabId : s?.nlTabId;
+      const L = s?.lanes && Number.isInteger(msg.lane) ? s.lanes[msg.lane] : s;
+      const id = msg.which === 'chat' ? L?.chatTabId : L?.nlTabId;
       if (id) await activate(id);
       return {ok: true};
     }

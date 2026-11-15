@@ -85,8 +85,8 @@ test('state: serialized updates, log cap, restart recovery', async () => {
   const s = await st.load();
   assert.equal(s.items[0].code, 'NL-AAAA-BBBB');
   assert.equal(s.items[1].code, 'NL-CCCC-DDDD');
-  for (let i = 0; i < 200; i++) await st.log('x' + i);
-  assert.equal((await st.load()).log.length, 150);
+  for (let i = 0; i < 450; i++) await st.log('x' + i);
+  assert.equal((await st.load()).log.length, 400);
   await st.setItem(0, {sentAt: '2026-11-08T12:00:00Z', step: 'wait_chatgpt', status: 'processing'});
   const r = recoverAfterRestart(await st.load());
   assert.equal(r.status, 'paused');

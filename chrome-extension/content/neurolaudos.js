@@ -255,7 +255,10 @@
 
   // ---------- button and panel ----------
   const ROBOT = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 4v4"/><circle cx="12" cy="3.5" r="1"/><circle cx="9" cy="13" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="13" r="1.2" fill="currentColor" stroke="none"/><path d="M9.5 16.5h5M2 12v3M22 12v3"/></svg>';
+  // Parallel batch: the batch's own tab (where it started, with the panel) is run.nlTabId; each other lane tab sees
+  // only its lane (its evaluation, sections and status).
   const mine = () => run && run.nlTabId === tabId;
+  const myLane = () => run?.lanes ? run.lanes.find(l => l.nlTabId === tabId) || null : mine() ? run : null;
   function buttonState() {
     if (!mine()) return {cls: '', label: 'Modo automático'};
     if (run.status === 'running') return {cls: 'running', label: 'Executando…'};
@@ -315,7 +318,8 @@
   // pauses or when the person asks to see it ("Mostrar janela da seção" in the panel).
   let shownFor = null, hiddenEl = null;   // shownFor: "key|code" the person chose to see
   function syncHide() {
-    const it = mine() && run.status === 'running' ? run.items?.[run.current] : null;
+    const L = myLane();
+    const it = L && L.status === 'running' ? L.items?.[L.current] : null;
     const host = it ? modalEl(it.key) : null;
     const root = host ? (host.closest('.modal-bg') || host.closest('[role="dialog"]') || host) : null;
     const hide = root && shownFor !== `${it.key}|${it.code || ''}` ? root : null;
@@ -347,7 +351,7 @@
     const d = e.data || {};
     if (d.nlx === 'height' && Number.isFinite(d.h)) panel.style.height = Math.min(Math.max(120, d.h), maxH()) + 'px';
     if (d.nlx === 'layout') { panel.classList.toggle('nlx-modal', d.mode === 'modal'); panel.classList.toggle('nlx-wide', !!d.wide); syncBackdrop(); syncHide(); }
-    if (d.nlx === 'showModal') { const it = run?.items?.[run.current]; shownFor = d.on && it ? `${it.key}|${it.code || ''}` : null; syncHide(); }
+    if (d.nlx === 'showModal') { const L = myLane(); const it = L?.items?.[L.current]; shownFor = d.on && it ? `${it.key}|${it.code || ''}` : null; syncHide(); }
     if (d.nlx === 'close') togglePanel(false);
     if (d.nlx === 'batch') panel.contentWindow.postMessage({nlx: 'batch', list: batchList}, new URL(chrome.runtime.getURL('')).origin);
     if (d.nlx === 'collapse') panel.classList.toggle('nlx-collapsed', !!d.on);
@@ -380,11 +384,12 @@
     obs.observe(document.body, {childList: true, subtree: true});
     ensureButton();
     if (mine() && (run.status === 'running' || run.status === 'paused')) { togglePanel(true); NLX.DOM.keepAlive(true); }
+    else if (myLane()?.status === 'running') NLX.DOM.keepAlive(true);
   }
   chrome.storage.onChanged.addListener((ch, area) => {
     if (area !== 'local' || !ch[RUN_KEY]) return;
     run = ch[RUN_KEY].newValue || null;
-    NLX.DOM.keepAlive(mine() && run.status === 'running');
+    NLX.DOM.keepAlive(myLane()?.status === 'running' || (mine() && run.status === 'running'));
     if (mine() && run.status === 'paused' && !panelOpen) togglePanel(true);
     ensureButton();
     syncHide();

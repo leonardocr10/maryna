@@ -52,20 +52,29 @@ Requisitos: Chrome 116 ou mais novo (Windows). No NeuroLaudos IA, o método **Ch
 
 Controles: **Pausar** (não começa nada novo; a seção em andamento continua de onde parou), **Continuar** (confere de novo o status real e retoma da etapa segura), **Parar** (encerra; nada é apagado), **Ver detalhes** (códigos, etapas, erros e registro). Em erro, aparecem também **Tentar de novo**, **Pular seção** e, se o plugin não foi confirmado, **Já selecionei o plugin**.
 
-### Várias avaliações de uma vez (lote, desde a 1.0.8)
+### Várias avaliações de uma vez (lote; em paralelo desde a 1.0.9)
 
 1. Na lista **Avaliações**, marque até **10** avaliações (caixa por linha, ou a do cabeçalho para a página). Aprovadas não podem ser marcadas.
-2. Clique em **Modo automático (N)**. O painel abre com a lista escolhida e as opções do lote (modo, erro, seções com texto, imagens, Descrição da demanda).
-3. A extensão leva a própria aba a cada avaliação, na tela **Conferir seções**, e roda as seções dela; só depois passa para a próxima. O painel mostra a avaliação atual, o progresso do lote e o de cada avaliação. **Pausar**, **Parar**, **Continuar** e **Continuar de onde parou** valem para o lote todo; em erro aparece também **Pular avaliação**.
+2. Clique em **Modo automático (N)**. O painel abre com a lista escolhida e as opções do lote, entre elas **Avaliações ao mesmo tempo** (1 a N, padrão 3; 1 = uma depois da outra).
+3. Cada avaliação em andamento ganha a sua **raia**: uma aba do NeuroLaudos IA (a primeira é a aba onde você clicou; as outras são cópias dela, abertas em segundo plano, para levar o login) e uma aba do ChatGPT com as suas conversas. Quando uma avaliação termina, a raia pega a próxima da fila.
+4. O painel mostra um cartão por avaliação ativa (seção atual, código da tarefa, etapa e tempo), o progresso do lote e a lista de avaliações. **Pausar todas**, **Continuar todas**, **Parar** e **Continuar de onde parou** valem para o lote; um erro pausa só a raia daquela avaliação, com **Continuar**, **Tentar de novo**, **Pular seção** e **Pular avaliação** no cartão dela.
 
-Regras do lote (por segurança e para respeitar os limites do ChatGPT):
+Regras do lote:
 
-- **Sempre em sequência**, nunca em paralelo: uma avaliação, uma seção, uma tarefa e uma mensagem por vez, com intervalo mínimo entre mensagens (`batchGapSeconds`, padrão 20 s).
-- **Conversa nova do ChatGPT para cada seção** (a opção "uma única conversa" fica desligada no lote): nenhuma conversa junta dados de duas seções ou de dois pacientes, e não há conversas longas.
-- **Conclusão** só entra quando a instrução dela já está completa na avaliação; **Recomendações** ficam de fora se a Conclusão ainda não tem texto. **Descrição da demanda** só entra se você ligar a opção. Hipótese diagnóstica nunca vai.
-- Avaliação que não abre (sem arquivo base/anamnese, somente leitura) fica registrada como "Não foi aberta" e o lote segue.
-- **Isolamento por avaliação**: cada pedido à página leva o id da avaliação; a página só responde se for ela que está aberta. Se a aba mudar de avaliação, a extensão volta para a do lote antes de seguir. O rascunho é salvo pelo servidor na avaliação e seção do código da tarefa (`NL-XXXX-XXXX`), qualquer que seja a aba. Os nomes dos pacientes ficam só na memória da página e do painel; o estado salvo da execução guarda só ids, códigos e status.
-- Não use a aba do lote enquanto ele roda; use outra aba ou janela.
+- **Dentro de cada avaliação, uma seção por vez**, sempre em **conversa nova do ChatGPT** e só com os dados dela (a opção "uma única conversa" fica desligada no lote).
+- **Envios espaçados para a conta inteira**: entre duas mensagens ao ChatGPT, de qualquer raia, há pelo menos `batchGapSeconds` (padrão 20 s). A geração das respostas é que roda ao mesmo tempo.
+- **Limite de uso do ChatGPT**: o limite é da conta, não da aba. Quando aparece, todas as raias param de enviar por `rateLimitMinutes` (padrão 10 min) e a seção que bateu no limite é enviada de novo **na mesma aba do ChatGPT e com a mesma tarefa**, só se o NeuroLaudos IA mostra a tarefa ainda não lida pelo plugin (no máximo 3 vezes; depois a raia pausa).
+- **Conclusão** só entra quando a instrução dela já está completa; **Recomendações** ficam de fora se a Conclusão ainda não tem texto; **Descrição da demanda** só com a opção ligada. Hipótese diagnóstica nunca vai.
+- Avaliação que não abre (sem arquivo base/anamnese, somente leitura) fica como "Não foi aberta" e a raia segue com a próxima.
+- **Isolamento por avaliação**: cada raia vê só a sua parte do estado; a fila é distribuída dentro da atualização serializada do estado (duas raias nunca pegam a mesma avaliação); cada pedido à página leva o id da avaliação e a página só responde se for ela que está aberta (se a aba mudou, a raia volta para a sua); o rascunho é salvo pelo servidor na avaliação e seção do código da tarefa (`NL-XXXX-XXXX`). Os nomes dos pacientes ficam só na memória da página e do painel.
+- Não use as abas do lote enquanto ele roda; use outra janela.
+
+Limitações concretas do paralelo (por isso o padrão é 3, máximo 10):
+
+- O **limite de mensagens** do ChatGPT é por conta e por plano; com várias raias ele chega antes. A extensão não sabe o limite do seu plano: só reage quando o ChatGPT o mostra.
+- O Chrome **desacelera abas em segundo plano** (temporizadores mais lentos depois de alguns minutos escondidas). As esperas da extensão reagem a mudanças da página, mas podem levar mais tempo em abas escondidas. As abas do lote não são descartadas pela economia de memória.
+- Cada aba do ChatGPT usa bastante **memória** (centenas de MB); 10 raias = 20 abas.
+- Cada conversa pode pedir **sua autorização** para o plugin salvar; com várias raias, os pedidos podem aparecer juntos. A extensão traz a aba certa para frente, uma de cada vez que você clicar em **ChatGPT** no cartão.
 
 ## Garantias de execução
 

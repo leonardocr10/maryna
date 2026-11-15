@@ -15,9 +15,9 @@ async function load() {
   acts.innerHTML = '';
   if (!run) st.innerHTML = '<p class="muted">Nenhuma execução registrada.</p>';
   else {
-    const p = progress(run.items);
+    const p = run.lanes ? (() => { const n = run.batch.list.length, d = run.batch.list.filter(e => !['pending', 'running'].includes(e.status)).length; return {done: d, total: n, pct: Math.round(d * 100 / n)}; })() : progress(run.items);
     const label = {running: 'Em execução', paused: 'Pausada', done: 'Concluída', stopped: 'Parada'}[run.status] || run.status;
-    st.innerHTML = `<div class="prog"><span>${esc(label)} · ${esc(MODES[run.mode] || run.mode)}${run.batch ? ` · lote: avaliação ${Math.max(1, run.batch.index + 1)} de ${run.batch.list.length}` : ''}</span><span>${p.done}/${p.total}</span></div><div class="bar"><i style="width:${p.pct}%"></i></div>${run.pause ? `<p class="note" style="margin-top:6px">${esc(run.pause.message)}</p>` : ''}`;
+    st.innerHTML = `<div class="prog"><span>${esc(label)} · ${esc(MODES[run.mode] || run.mode)}${run.lanes ? ` · lote: ${run.lanes.filter(l => l.status === 'running' || l.status === 'paused').length} ao mesmo tempo` : run.batch ? ` · lote: avaliação ${Math.max(1, run.batch.index + 1)} de ${run.batch.list.length}` : ''}</span><span>${p.done}/${p.total}</span></div><div class="bar"><i style="width:${p.pct}%"></i></div>${run.pause ? `<p class="note" style="margin-top:6px">${esc(run.pause.message)}</p>` : ''}`;
     const add = (txt, fn, cls = '') => { const b = document.createElement('button'); b.className = 'btn ' + cls; b.textContent = txt; b.onclick = async () => { await fn(); load(); }; acts.appendChild(b); };
     add('Ir para a avaliação', () => chrome.runtime.sendMessage({type: 'run.focus', which: 'nl'}));
     if (run.status === 'running') add('Pausar', () => chrome.runtime.sendMessage({type: 'run.pause'}));

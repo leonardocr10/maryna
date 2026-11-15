@@ -280,7 +280,9 @@
   const RUN_KEY = 'nlauto.run';
   let tabId = null, bar = null;
   const LABEL = {pending: 'Pendente', preparing: 'Preparando tarefa', waiting_chatgpt: 'Aguardando ChatGPT', processing: 'Em processamento', waiting_auth: 'Aguardando sua autorização', confirming: 'Conferindo o rascunho', received: 'Rascunho recebido', needs_review: 'Revisão necessária', error: 'Erro'};
-  function paint(run) {
+  function paint(all) {
+    // Parallel batch: this tab belongs to one lane (its own evaluation); the bar shows only that lane.
+    const run = all?.lanes ? all.lanes.find(l => l.chatTabId === tabId) || null : all;
     const mine = run && run.chatTabId === tabId && (run.status === 'running' || run.status === 'paused');
     NLX.DOM.keepAlive(!!mine && run.status === 'running');
     if (!mine) { bar?.remove(); bar = null; return; }

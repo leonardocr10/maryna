@@ -53,10 +53,7 @@ export class AutomationManager {
    */
   async startBatch({nlTabId, nlOrigin, mode, policy, ids}) {
     const {state} = this.env;
-    const list = [...new Set((ids || []).map(String))];
-    if (!list.length || list.length > BATCH_MAX || list.length !== (ids || []).length || !list.every(id => EVAL_ID_RE.test(id))) {
-      throw Object.assign(new AutoError('nl_selector'), {message: `Escolha de 1 a ${BATCH_MAX} avaliações diferentes.`, hint: 'Marque as avaliações na lista e tente de novo.'});
-    }
+    const list = checkBatchIds(ids);
     const cur = await state.load();
     if (isActive(cur)) throw new AutoError('busy');
     this.commands.clear(); this.images.clear(); this.lastDiag = null;
@@ -157,8 +154,10 @@ export class AutomationManager {
           const r = await this.advanceBatch();
           if (r === 'next') continue;
           if (r === 'interrupted') return;
-          s = await state.load();
           await state.finish();
+          s = await state.load();
+          // Parallel batch: this lane has nothing left; the batch ends with the last lane (one report, one notice).
+          if (s.lanes && s.lanes.some(l => l.status === RUN.running || l.status === RUN.paused)) { await state.log('Nada mais na fila para esta aba; as outras seguem.'); return; }
           const t = batchTotals(s);
           await state.log(`Lote concluído: ${t.evals} ${t.evals === 1 ? 'avaliação' : 'avaliações'}; ${t.received} recebidos, ${t.review} para revisão, ${t.errors} com erro${t.failed ? `, ${t.failed} não abertas` : ''}.`);
           this.env.notify('Modo automático: lote concluído', `${t.evals} avaliações, ${t.received} rascunhos recebidos${t.review ? `, ${t.review} para revisão` : ''}${t.errors ? `, ${t.errors} com erro` : ''}${t.failed ? `, ${t.failed} não abertas` : ''}. Revise e aprove no NeuroLaudos IA.`);
@@ -197,20 +196,22 @@ export class AutomationManager {
       await state.setBatchEntry(b.index, {status: 'done', summary: sum, finishedAt: at()});
       await state.log(`Avaliação ${b.index + 1} de ${b.list.length} concluída: ${sum.received} recebidos, ${sum.review} para revisão, ${sum.errors} com erro.`);
     }
-    const j = b.list.findIndex(e => e.status === 'pending');
-    if (j < 0) return 'end';
-    const id = b.list[j].id, label = `Avaliação ${j + 1} de ${b.list.length}`;
     // Nothing of the previous evaluation goes on: no command, image, section list or ChatGPT conversation.
     this.commands.clear(); this.images.clear(); this.lastDiag = null;
+    // The next evaluation is taken inside the serialised update: two lanes never take the same one.
+    let j = -1;
     await state.update(cur => {
+      j = cur.batch.list.findIndex(e => e.status === 'pending');
+      if (j < 0) return undefined;
       cur.batch.index = j;
       cur.batch.list[j] = {...cur.batch.list[j], status: 'running', startedAt: cur.batch.list[j].startedAt || at(), error: null};
-      return {...cur, evaluationId: id, items: [], current: -1, chatPluginOk: false};
+      return {...cur, evaluationId: cur.batch.list[j].id, items: [], current: -1, chatPluginOk: false};
     });
+    if (j < 0) return 'end';
+    const id = b.list[j].id, label = `Avaliação ${j + 1} de ${b.list.length}`;
     await state.log(`${label}: abrindo na tela Conferir seções.`);
     try {
-      s = await state.load();
-      if (!(await this.env.tabExists(s.nlTabId))) throw new AutoError('nl_tab_closed');
+      s = await this.ensureNlTab(await state.load());
       await this.env.activate(s.nlTabId);
       await this.openEval(s, id);
       const scan = await send(s.nlTabId, {cmd: 'nl.scan'}, LIMITS.contentReady);
@@ -245,6 +246,21 @@ export class AutomationManager {
       await state.log(`${label}: ${info.message} A avaliação fica fora do lote; seguindo para a próxima.`);
       return 'next';
     }
+  }
+
+  /**
+   * The lane's NeuroLaudos IA tab. A parallel lane without one (first evaluation, or the tab was closed) gets a duplicate
+   * of the batch's tab (the sign-in of the tab goes along); a single run never opens tabs on its own.
+   */
+  async ensureNlTab(s) {
+    if (s.nlTabId && await this.env.tabExists(s.nlTabId)) return s;
+    if (!s.lanes || !this.env.openNlTab) throw new AutoError('nl_tab_closed');
+    const from = s.lanes.map(l => l.nlTabId).find(x => x != null) ?? null;
+    const id = await this.env.openNlTab(from);
+    if (!id) throw new AutoError('nl_tab_closed');
+    await this.env.state.setRun({nlTabId: id});
+    await this.env.state.log('Aba do NeuroLaudos IA aberta para esta avaliação (em segundo plano).');
+    return {...s, nlTabId: id};
   }
 
   /** Takes the NeuroLaudos IA tab to an evaluation, on "Conferir seções" (the app does it; the extension only asks). */
@@ -290,6 +306,17 @@ export class AutomationManager {
     const attempts = (it.attempts || 0) + 1;
     await state.log(`${it.name}: ${info.message}${info.stepLabel ? ` (etapa: ${info.stepLabel})` : ''}`);
     const settings = await this.env.settings();
+    // Batch: ChatGPT's usage limit. When the task is still untouched in NeuroLaudos IA (the plugin never fetched it), the
+    // message did not count: after a shared pause, the same task goes again in a new conversation of this lane's own
+    // ChatGPT tab. A few times at most; then the lane pauses for the person.
+    if (info.code === 'cg_rate_limit' && s.batch && (it.rateRetries || 0) < RATE_RETRIES && it.code && await this.taskUntouched(s, it)) {
+      const mins = settings.rateLimitMinutes ?? 10;
+      await state.update(cur => ({...cur, cooldownUntil: Math.max(cur.cooldownUntil || 0, this.env.now() + mins * 60000)}));
+      await state.setItem(idx, {status: 'pending', step: 'chatgpt_new', sentAt: null, chatDone: false, authNotified: false, error: info, rateRetries: (it.rateRetries || 0) + 1});
+      await state.setRun({chatPluginOk: false});
+      await state.log(`${it.name}: limite de uso do ChatGPT. Nova tentativa em ${mins} min, nesta mesma aba e com a mesma tarefa ${it.code} (não chegou a ser lida). As outras avaliações também esperam para enviar.`);
+      return false;
+    }
     // Automatic retry only before anything was sent and for errors that do not need the person.
     if (!it.sentAt && !NEEDS_PERSON.includes(info.code) && !GLOBAL.includes(info.code) && attempts <= (settings.retries ?? 1)) {
       await state.setItem(idx, {attempts, step: 'navigate', error: info});
@@ -318,8 +345,8 @@ export class AutomationManager {
 
   // ---------- steps ----------
   async nl(s, msg, wait = LIMITS.contentReady) {
-    const {send, tabExists} = this.env;
-    if (!(await tabExists(s.nlTabId))) throw new AutoError('nl_tab_closed');
+    const {send} = this.env;
+    s = await this.ensureNlTab(s);
     let r = await send(s.nlTabId, {...msg, evaluationId: s.evaluationId}, wait);
     // Batch: the extension drives this tab. If it shows another evaluation, it goes back to the run's one (once) and
     // asks again; the page answers only for the evaluation id sent, so nothing is read from another patient.
@@ -394,11 +421,6 @@ export class AutomationManager {
 
   async stepChatNew(s, idx, it) {
     const {state, openChat, activate, send, sleep, now} = this.env;
-    // Batch: a gentle pace between two messages (many sections in a row reach ChatGPT's usage limits sooner).
-    if (s.batch && s.lastSentAt) {
-      const wait = ((await this.env.settings()).batchGapSeconds ?? 20) * 1000 - (now() - Date.parse(s.lastSentAt));
-      if (wait > 0) await sleep(wait);
-    }
     let tabId = s.chatTabId && (await this.env.tabExists(s.chatTabId)) ? s.chatTabId : null;
     // Option "mesma conversa": after the first section, the next ones go on in the conversation already open.
     const reuse = !!s.policy?.sameChat && !!s.chatPluginOk && !!tabId;
@@ -465,8 +487,8 @@ export class AutomationManager {
 
   async stepSend(s, idx, it) {
     if (it.sentAt) return;   // never twice: after a restart the run goes on to waiting and checking
+    if (s.batch && (await this.waitSlot(idx)) === 'interrupted') return 'interrupted';
     await this.env.state.setItem(idx, {sentAt: new Date(this.env.now()).toISOString(), status: 'waiting_chatgpt'});
-    await this.env.state.setRun({lastSentAt: new Date(this.env.now()).toISOString()});
     try {
       await this.cg(s, {cmd: 'cg.send', code: it.code}, LIMITS.sendReady + LIMITS.sendAck + 5000);
     } catch (err) {
@@ -476,6 +498,33 @@ export class AutomationManager {
     }
     this.forget(s, it);
     await this.env.state.log(`${it.name}: comando com ${it.code} enviado ao ChatGPT.`);
+  }
+
+  /**
+   * Batch: one shared slot per message to ChatGPT, spaced by batchGapSeconds for the whole account (every lane), taken
+   * inside the serialised update (two lanes never share a slot). After a usage limit, nobody sends before the pause
+   * ends: a slot that falls inside it is taken again after it.
+   */
+  async waitSlot(idx) {
+    const {state, now, sleep} = this.env;
+    const gap = ((await this.env.settings()).batchGapSeconds ?? 20) * 1000;
+    for (;;) {
+      let slot = 0;
+      const cur = await state.update(c => { slot = Math.max(now(), c.nextSendAt || 0, c.cooldownUntil || 0); return {...c, nextSendAt: slot + gap}; });
+      if (!cur || cur.status !== RUN.running) return 'interrupted';
+      if (slot > now()) await sleep(slot - now());
+      const after = await state.load();
+      if (!after || after.status !== RUN.running) return 'interrupted';
+      if (!(after.cooldownUntil > now())) { await state.setItem(idx, {slotAt: new Date(slot).toISOString()}); return; }
+    }
+  }
+
+  /** True only when NeuroLaudos IA shows the task still pending (never fetched by the plugin). Any doubt: false. */
+  async taskUntouched(s, it) {
+    try {
+      const r = await this.nl(s, {cmd: 'nl.waitStatus', key: it.key, code: it.code, chunkMs: 1000}, 15000);
+      return r?.modal?.code === it.code && r.modal.status === 'pending';
+    } catch { return false; }
   }
 
   /** True when NeuroLaudos IA shows the task taken by the plugin (or, with `received`, only when the draft arrived). */
@@ -553,6 +602,16 @@ export class AutomationManager {
   async safeClose(s, it) { try { await this.nl(s, {cmd: 'nl.closeModal', key: it.key}, 8000); } catch {} }
 
 }
+
+/** Batch ids: 1 to BATCH_MAX different evaluation ids (the app's ids, never names). Returns the list. */
+export function checkBatchIds(ids) {
+  const list = [...new Set((ids || []).map(String))];
+  if (!list.length || list.length > BATCH_MAX || list.length !== (ids || []).length || !list.every(id => EVAL_ID_RE.test(id))) {
+    throw Object.assign(new AutoError('nl_selector'), {message: `Escolha de 1 a ${BATCH_MAX} avaliações diferentes.`, hint: 'Marque as avaliações na lista e tente de novo.'});
+  }
+  return list;
+}
+const RATE_RETRIES = 3;
 
 /** Key of the in-memory command and images: evaluation and section (section keys repeat across evaluations). */
 const mk = (s, it) => `${it.evaluationId || s.evaluationId || ''}|${it.key}`;

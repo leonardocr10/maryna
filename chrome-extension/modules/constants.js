@@ -66,7 +66,9 @@ export const DEFAULT_SETTINGS = {
   chatgptMinutes: 15,          // longest wait for one ChatGPT answer (authorization included)
   confirmSeconds: 120,         // longest wait for the draft to show up in NeuroLaudos IA after ChatGPT finished
   retries: 1,                  // automatic retries of a failed section before applying onError (never after a message was sent)
-  batchGapSeconds: 20,         // batch of evaluations: least time between two messages sent to ChatGPT (gentle pace, fewer usage limits)
+  batchGapSeconds: 20,         // batch of evaluations: least time between two messages sent to ChatGPT, for the whole account (every lane)
+  batchParallel: 3,            // batch: evaluations at the same time (1 to BATCH_MAX); each has its own NeuroLaudos IA and ChatGPT tabs
+  rateLimitMinutes: 10,        // batch: pause of every lane after ChatGPT's usage limit before trying the same task again
 };
 
 /** Batch of evaluations started from the list ("Modo automático" for several at once): at most this many, run one after another. */

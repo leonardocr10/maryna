@@ -195,3 +195,18 @@ input{accent-color:var(--primary)}
 .blist li.on .bn{background:var(--primary);color:#fff}
 .card.batch .bar{margin-top:8px}
 .pill.mute{background:var(--chip);color:var(--text-3)}
+
+/* parallel batch: one card per lane */
+.lanes{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.card.lane{gap:6px;padding:12px 14px}
+.card.lane.warn{border-color:color-mix(in srgb,var(--warn) 55%,var(--line))}
+.card.lane.idle{opacity:.7}
+.card.lane .lh{display:flex;align-items:center;gap:8px}
+.card.lane .bn{flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--primary);color:#fff;font-size:11.5px;font-weight:700}
+.card.lane .ln{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card.lane .timer{font-size:12px;padding:3px 8px}
+.card.lane .lsec{margin:0;display:flex;align-items:center;gap:6px;font-size:13px}
+.card.lane .lsec .code{font:600 11px "IBM Plex Mono",ui-monospace,monospace;color:var(--text-3)}
+.card.lane .lmsg{margin:0;font-size:12.5px;color:var(--text-2)}
+.card.lane .alert{margin:4px 0 0}
+.bar.sm{height:6px}

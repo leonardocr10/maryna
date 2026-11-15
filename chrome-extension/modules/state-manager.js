@@ -2,7 +2,7 @@
 // Holds only ids, codes, steps and statuses: never patient data or clinical text.
 import {STORAGE_KEY, RUN} from './constants.js';
 
-const MAX_LOG = 150;
+const MAX_LOG = 400;
 
 /** storage: {get(key) -> value, set(key, value), remove(key)} (chrome.storage.local adapter or a Map in tests). */
 export class StateManager {

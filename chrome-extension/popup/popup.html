@@ -39,6 +39,7 @@
       <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
         <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px"><input type="checkbox" id="bg"> <span>ChatGPT em segundo plano<small style="display:block;color:var(--text-3,#6b7d79)">A aba do ChatGPT abre ao lado sem tirar você do NeuroLaudos IA. Ela só vem para frente quando precisar da sua autorização ou houver um problema.</small></span></label>
         <label class="field">Espera máxima por resposta do ChatGPT (minutos, inclui sua autorização)<input type="number" id="cgmin" min="3" max="60"></label>
+        <label class="field">Projeto do ChatGPT para as conversas (endereço; opcional)<input type="url" id="cgproj" placeholder="https://chatgpt.com/g/g-p-…/project"><small style="color:var(--text-3,#6b7d79)">Crie um projeto (ex.: NeuroLaudos) no ChatGPT, abra-o e cole aqui o endereço. As conversas ficam dentro dele, fora de Recentes. Sem nome de paciente.</small></label>
         <label class="field">Espera máxima pelo rascunho no NeuroLaudos IA (segundos)<input type="number" id="cfs" min="30" max="900"></label>
         <label class="field">Tentativas automáticas por seção (antes de enviar a mensagem)<input type="number" id="retries" min="0" max="3"></label>
         <div class="row"><span class="grow"></span><button class="btn pri" id="save">Salvar</button></div>

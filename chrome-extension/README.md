@@ -55,7 +55,9 @@ Controles: **Pausar** (não começa nada novo; a seção em andamento continua d
 ### Várias avaliações de uma vez (lote; em paralelo desde a 1.0.9)
 
 1. Na lista **Avaliações**, marque até **10** avaliações (caixa por linha, ou a do cabeçalho para a página). Aprovadas não podem ser marcadas.
-2. Clique em **Modo automático (N)**. O painel abre com a lista escolhida e as opções do lote, entre elas **Avaliações ao mesmo tempo** (1 a N, padrão 3; 1 = uma depois da outra).
+2. Clique em **Modo automático (N)**. O painel abre com a lista escolhida e as opções do lote, entre elas a escolha das seções e a instrução da Conclusão de cada avaliação. Por padrão o lote é uma **fila**: uma avaliação por vez, na ordem escolhida (a lista mostra Aguardando, Em andamento, Concluída ou Com falhas). Rodar várias ao mesmo tempo (1 a N) fica em **Avançado** e não é recomendado: abas do ChatGPT em paralelo causaram seções incompletas.
+   - **Refazer o que faltou**: por avaliação ou para a fila toda, recoloca na fila só as seções sem rascunho (erro, expiradas, não alcançadas); as já recebidas não são enviadas de novo.
+   - **Projeto do ChatGPT** (menu da extensão > Configurações): cole o endereço de um projeto (`https://chatgpt.com/g/g-p-…/project`) e as conversas abrem dentro dele, fora de Recentes. Se não for encontrado, usa conversas comuns e o painel avisa. Não ponha nome de paciente no projeto.
 3. Cada avaliação em andamento ganha a sua **raia**: uma aba do NeuroLaudos IA (a primeira é a aba onde você clicou; as outras são cópias dela, abertas em segundo plano, para levar o login) e uma aba do ChatGPT com as suas conversas. Quando uma avaliação termina, a raia pega a próxima da fila.
 4. O painel mostra um cartão por avaliação ativa (seção atual, código da tarefa, etapa e tempo), o progresso do lote e a lista de avaliações. **Pausar todas**, **Continuar todas**, **Parar** e **Continuar de onde parou** valem para o lote; um erro pausa só a raia daquela avaliação, com **Continuar**, **Tentar de novo**, **Pular seção** e **Pular avaliação** no cartão dela.
 

@@ -67,16 +67,25 @@ export const DEFAULT_SETTINGS = {
   confirmSeconds: 120,         // longest wait for the draft to show up in NeuroLaudos IA after ChatGPT finished
   retries: 1,                  // automatic retries of a failed section before applying onError (never after a message was sent)
   batchGapSeconds: 20,         // batch of evaluations: least time between two messages sent to ChatGPT, for the whole account (every lane)
-  batchParallel: 3,            // batch: evaluations at the same time (1 to BATCH_MAX); each has its own NeuroLaudos IA and ChatGPT tabs
+  batchParallel: 1,            // batch: evaluations at the same time. 1 = a queue, one evaluation after the other (default); more is an advanced option
+  chatProjectUrl: '',          // ChatGPT Project where the conversations are opened (so they do not fill "Recentes"); empty: ordinary conversations
   rateLimitMinutes: 10,        // batch: pause of every lane after ChatGPT's usage limit before trying the same task again
 };
 
 /** Batch of evaluations started from the list ("Modo automático" for several at once): at most this many, run one after another. */
 export const BATCH_MAX = 10;
+
+/** Address of the ChatGPT Project set in the options: only chatgpt.com, /g/g-p-…(/project). Anything else is ignored (null). */
+export function projectUrl(raw) {
+  let u; try { u = new URL(String(raw || '').trim()); } catch { return null; }
+  if (u.protocol !== 'https:' || u.hostname !== 'chatgpt.com') return null;
+  const m = /^\/g\/(g-p-[A-Za-z0-9_-]+)(\/project)?\/?$/.exec(u.pathname);
+  return m ? `https://chatgpt.com/g/${m[1]}/project` : null;
+}
 /** Evaluation ids accepted in a batch (the app's ids; never names). */
 export const EVAL_ID_RE = /^[A-Za-z0-9_-]{8,80}$/;
 /** Status of one evaluation of the batch (labels shown in the panel). */
-export const BATCH_ITEM = {pending: 'Na fila', running: 'Em andamento', done: 'Concluída', empty: 'Nada a gerar', error: 'Não foi aberta', skipped: 'Pulada por você'};
+export const BATCH_ITEM = {pending: 'Aguardando', running: 'Em andamento', done: 'Concluída', empty: 'Nada a gerar', error: 'Não foi aberta', skipped: 'Pulada por você'};
 
 /** Hard limits per step (ms). Waits are state based; these only stop waits that never end. */
 export const LIMITS = {

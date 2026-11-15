@@ -262,6 +262,7 @@ async function handle(msg, sender) {
       if (r?.ok) await manager.reviewed(msg.key, msg.action, tabId);
       return r;
     }
+    case 'run.redo': return {ok: true, run: await manager.redoMissing(Number.isInteger(msg.index) ? msg.index : null)};
     case 'run.continue': return {ok: true, run: await manager.continueRun(msg.tabId ?? null)};
     case 'run.resume': return {ok: true, run: await manager.resume(msg.action || 'continue', msg.tabId ?? null, Number.isInteger(msg.lane) ? msg.lane : null)};
     case 'run.stop': await manager.stop(); return {ok: true, run: await state.load()};

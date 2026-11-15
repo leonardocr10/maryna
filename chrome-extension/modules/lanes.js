@@ -166,6 +166,29 @@ export class Coordinator {
     for (const i of targets) await this.lane(i).resume(lane != null ? action : 'continue');
     return this.load();
   }
+  /**
+   * "Refazer o que faltou": puts back in the queue the evaluations of the batch that ended with sections still missing
+   * (error, expired, not reached) or that did not open. `index` picks one evaluation, null all of them. Sections that
+   * already have a draft are kept and never sent again (advanceBatch carries them over).
+   */
+  async redoMissing(index = null) {
+    const {state, now} = this.env;
+    const s = await state.load();
+    if (!s?.batch || isActive(s)) return s;
+    const redo = (e, i) => (index == null || index === i) && (e.status === 'error' || ((e.status === 'done' || e.status === 'empty') && e.summary?.missing > 0));
+    const targets = s.batch.list.map((e, i) => redo(e, i) ? i : -1).filter(i => i >= 0);
+    if (!targets.length) return s;
+    await state.update(cur => {
+      for (const i of targets) cur.batch.list[i] = {...cur.batch.list[i], status: 'pending', error: null, finishedAt: null};
+      Object.assign(cur, {status: RUN.running, pause: null, finishedAt: null, current: -1, chatPluginOk: false, items: [], evaluationId: null});
+      if (cur.lanes) cur.lanes = cur.lanes.map(l => ({...l, status: RUN.running, pause: null, finishedAt: null, current: -1, items: [], evaluationId: null, chatPluginOk: false, batchIndex: -1}));
+      return cur;
+    });
+    await state.log(`Refazer o que faltou: ${targets.length} ${targets.length === 1 ? 'avaliação volta' : 'avaliações voltam'} para a fila; as seções que já têm rascunho ficam como estão.`);
+    if (!s.lanes) this.single.commands.clear();
+    this.kick();
+    return state.load();
+  }
   async continueRun(nlTabId = null) {
     const s = await this.load();
     if (!s?.lanes) return this.single.continueRun(nlTabId);

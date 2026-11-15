@@ -211,3 +211,6 @@ input{accent-color:var(--primary)}
 .card.lane .alert{margin:4px 0 0}
 .bar.sm{height:6px}
 .chk{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;font-weight:600;cursor:pointer}
+
+.card.adv>summary{cursor:pointer;font-size:13px}
+.blist .btn.sm{flex:none}

@@ -9,7 +9,7 @@
 // Success criterion of a section: the NeuroLaudos IA page shows the task as "Rascunho recebido" (or waiting for her
 // confirmation). A ChatGPT answer alone is never success. The message is never sent twice on its own: `sentAt` is
 // written before the click, and after it only the real status is checked.
-import {RUN, LIMITS, PLUGIN_NAME, CHATGPT_URL, FINAL_ITEM, BATCH_MAX, EVAL_ID_RE} from './constants.js';
+import {RUN, LIMITS, PLUGIN_NAME, CHATGPT_URL, FINAL_ITEM, BATCH_MAX, EVAL_ID_RE, projectUrl} from './constants.js';
 import {buildQueue, nextIndex, batchQueue, evalSummary, conclusionUnfinished, CONCLUSION_KEY} from './task-queue.js';
 import {checkCommand, isTaskCode, reusable, outcome} from './task-validator.js';
 import {AutoError, describe, NEEDS_PERSON} from './error-handler.js';
@@ -223,7 +223,10 @@ export class AutomationManager {
         const r = await send(s.nlTabId, {cmd: 'nl.getInstruction', key: CONCLUSION_KEY, evaluationId: id}, LIMITS.contentReady).catch(() => null);
         conclusionReady = !!r?.ok && !conclusionUnfinished(r.text);
       }
+      const kept = new Map(((await state.load()).batch.list[j].summary?.doneKeys || []).map(k => [k.key, k.status]));
       const items = batchQueue(scan, {existing: s.policy?.existing, includeDemand: !!s.policy?.includeDemand, only: s.policy?.only || null, conclusionReady, evaluationId: id});
+      // Redo of what was missing: sections that already have a draft stay as they are and are never sent again.
+      for (const it of items) if (kept.has(it.key)) Object.assign(it, {status: kept.get(it.key), reason: null, step: null});
       const n = items.filter(i => i.status === 'pending').length;
       if (!n) {
         await state.update(cur => { cur.batch.list[j] = {...cur.batch.list[j], status: 'empty', summary: evalSummary(items), finishedAt: at()}; return {...cur, items}; });
@@ -433,7 +436,12 @@ export class AutomationManager {
     }
     if (s.chatPluginOk) await state.setRun({chatPluginOk: false});
     const isNew = !tabId;
-    tabId = await openChat(tabId, CHATGPT_URL, {background: bg, nearTabId: s.nlTabId});
+    // ChatGPT Project set in the options: the conversations open inside it (not in "Recentes"); if it cannot be
+    // reached, the usual conversation is used and the panel says so.
+    const cfgProject = (await this.env.settings())?.chatProjectUrl, project = projectUrl(cfgProject);
+    let useProject = !!project && !s.projectFailed;
+    if (cfgProject && !project && s.projectNote !== 'invalid') { await state.setRun({projectNote: 'invalid'}); await state.log('O endereço do projeto do ChatGPT (nas configurações) não é válido; usando conversas comuns.'); }
+    tabId = await openChat(tabId, useProject ? project : CHATGPT_URL, {background: bg, nearTabId: s.nlTabId});
     if (tabId !== s.chatTabId) await state.setRun({chatTabId: tabId});
     if (!bg) await activate(tabId);
     else if (isNew) await state.log('ChatGPT aberto em segundo plano, na aba ao lado. Você pode continuar aqui; a aba só vem para frente se precisar de você.');
@@ -446,6 +454,16 @@ export class AutomationManager {
       await sleep(700);
     }
     if (!last?.ready) throw new AutoError(last ? 'cg_composer' : 'cg_load', 'chatgpt_new');
+    if (useProject && !/^\/g\/g-p-/.test(String(last.path || ''))) {
+      // Not inside the project (not found, other account, redirected): fall back to an ordinary conversation, said in the panel.
+      await state.setRun({projectFailed: true, projectNote: 'not_found'});
+      await state.log('Projeto do ChatGPT não encontrado (confira o endereço nas configurações); usando conversas comuns, que aparecem em Recentes.');
+      tabId = await openChat(tabId, CHATGPT_URL, {background: bg, nearTabId: s.nlTabId});
+      const end2 = now() + LIMITS.chatgptLoad;
+      last = null;
+      while (now() < end2) { try { last = await send(tabId, {cmd: 'cg.ping', fresh: true}, 5000); } catch { last = null; } if (last?.ready) break; await sleep(700); }
+      if (!last?.ready) throw new AutoError(last ? 'cg_composer' : 'cg_load', 'chatgpt_new');
+    } else if (useProject && s.projectNote !== 'ok') await state.setRun({projectNote: 'ok'});
     if (last.hasMessages) throw new AutoError('cg_load', 'chatgpt_new', 'a conversa não está vazia');
   }
 

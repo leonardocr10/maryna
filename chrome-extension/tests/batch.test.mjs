@@ -198,3 +198,66 @@ test('batch: sections chosen for the whole batch (by name) are the only ones gen
   assert.equal(q.find(i => i.key === 'atencao').status, 'pending');
   assert.equal(q.find(i => i.key === 'memoria').reason, 'Fora das seções escolhidas para o lote');
 });
+
+test('queue: one evaluation at a time, in the order chosen; every section of one before the next opens', async () => {
+  const t = makeEnv({evals: three()});
+  const order = [EV[2], EV[0], EV[1]];
+  await t.coord.startBatch({nlTabId: NL_TAB, nlOrigin: 'http://localhost:9091', mode: 'auto', policy: {existing: 'draft', onError: 'pause', sendImages: false}, ids: order});
+  await t.coord.idle();
+  const s = await t.env.state.load();
+  assert.equal(s.lanes, undefined, 'a queue, no parallel lanes');
+  assert.equal(s.status, 'done');
+  const seq = t.prepared.map(p => p.evaluationId);
+  assert.deepEqual([...new Set(seq)], order, 'evaluations in the order chosen');
+  for (const id of order) { const at = seq.map((x, i) => x === id ? i : -1).filter(i => i >= 0); assert.equal(at[at.length - 1] - at[0], at.length - 1, 'sections of one evaluation are never mixed with another'); }
+  assert.equal(new Set(t.opened.map(o => o.tabId)).size <= 2, true, 'one ChatGPT tab reused');
+});
+
+test('redo: "Refazer o que faltou" sends again only the sections without a draft, never the ones received', async () => {
+  const bad = EV[1];
+  let fail = true;
+  const t = makeEnv({evals: three(), nl: {draftOutcome: (key, ev) => ev === bad && key === 'memoria' && fail ? 'error' : 'received'}});
+  await t.coord.startBatch({nlTabId: NL_TAB, nlOrigin: 'http://localhost:9091', mode: 'auto', policy: {existing: 'draft', onError: 'next', sendImages: false}, ids: EV});
+  await t.coord.idle();
+  let s = await t.env.state.load();
+  assert.equal(s.status, 'done');
+  const e1 = s.batch.list[1];
+  assert.equal(e1.summary.missing, 1);
+  assert.deepEqual(s.batch.list.map(e => e.summary.missing), [0, 1, 0]);
+  const before = t.prepared.length, savesBefore = t.saves.length;
+  fail = false;
+  await t.coord.redoMissing(0);   // nothing missing there: nothing happens
+  assert.equal(t.prepared.length, before);
+  await t.coord.redoMissing();    // all: only the evaluation with a missing section goes back
+  await t.coord.idle();
+  s = await t.env.state.load();
+  assert.equal(s.status, 'done');
+  const again = t.prepared.slice(before);
+  assert.deepEqual(again.map(p => [p.evaluationId, p.key]), [[bad, 'memoria']], 'only what was missing');
+  assert.equal(t.saves.length, savesBefore + 1);
+  assert.deepEqual(s.batch.list.map(e => e.summary.missing), [0, 0, 0]);
+  assert.equal(s.batch.list[1].summary.received, s.batch.list[0].summary.received, 'the ones kept still count');
+  assertDraftsAtOrigin(t);
+});
+
+test('ChatGPT project: conversations open inside the configured project; not found falls back and says so', async () => {
+  const URL_OK = 'https://chatgpt.com/g/g-p-abc123-neurolaudos/project';
+  let t = makeEnv({evals: three(), settings: {chatProjectUrl: URL_OK}});
+  await t.coord.startBatch({nlTabId: NL_TAB, nlOrigin: 'http://localhost:9091', mode: 'auto', policy: {existing: 'draft', onError: 'pause', sendImages: false}, ids: [EV[0]]});
+  await t.coord.idle();
+  assert.ok(t.opened.length && t.opened.every(o => o.url === URL_OK));
+  assert.equal((await t.env.state.load()).projectNote, 'ok');
+  t = makeEnv({evals: three(), settings: {chatProjectUrl: URL_OK}, cg: {projectMissing: true}});
+  await t.coord.startBatch({nlTabId: NL_TAB, nlOrigin: 'http://localhost:9091', mode: 'auto', policy: {existing: 'draft', onError: 'pause', sendImages: false}, ids: [EV[0]]});
+  await t.coord.idle();
+  const s = await t.env.state.load();
+  assert.equal(s.status, 'done');
+  assert.equal(s.projectNote, 'not_found');
+  assert.ok(t.opened.some(o => o.url === 'https://chatgpt.com/'));
+  assert.equal(t.opened.filter(o => o.url === URL_OK).length, 1, 'tried once, then ordinary conversations');
+  t = makeEnv({evals: three(), settings: {chatProjectUrl: 'https://example.com/g/g-p-x/project'}});
+  await t.coord.startBatch({nlTabId: NL_TAB, nlOrigin: 'http://localhost:9091', mode: 'auto', policy: {existing: 'draft', onError: 'pause', sendImages: false}, ids: [EV[0]]});
+  await t.coord.idle();
+  assert.equal((await t.env.state.load()).projectNote, 'invalid');
+  assert.ok(t.opened.every(o => o.url === 'https://chatgpt.com/'));
+});

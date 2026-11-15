@@ -101,5 +101,8 @@ export function batchQueue(scan, {existing = 'draft', includeDemand = false, con
 /** Counters of one evaluation of a batch, kept after it ends (the items of the next evaluation replace its own). */
 export function evalSummary(items) {
   const n = k => items.filter(i => i.status === k).length;
-  return {received: n('received'), review: n('needs_review'), errors: n('error') + n('expired'), queued: items.filter(i => i.status !== 'skipped' || i.reason === 'Pulada por você').length};
+  const queued = items.filter(i => i.status !== 'skipped' || i.reason === 'Pulada por você').length;
+  const kept = items.filter(i => i.status === 'received' || i.status === 'needs_review');
+  // `missing`: asked for but without a draft (error, expired, not reached, skipped by the person); `doneKeys`: what is kept
+  return {received: n('received'), review: n('needs_review'), errors: n('error') + n('expired'), queued, missing: queued - kept.length, doneKeys: kept.map(i => ({key: i.key, status: i.status}))};
 }

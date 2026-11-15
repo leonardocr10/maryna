@@ -87,7 +87,7 @@ export function makeEnv(opts = {}) {
   async function cgHandle(msg, tabId) {
     const c = chats.get(tabId);
     switch (msg.cmd) {
-      case 'cg.ping': return {ok: true, ready: cg.loggedIn, loggedIn: cg.loggedIn, composer: true, hasMessages: false};
+      case 'cg.ping': return {ok: true, ready: cg.loggedIn, loggedIn: cg.loggedIn, composer: true, hasMessages: false, path: cg.projectMissing ? '/' : new URL(c?.url || 'https://chatgpt.com/').pathname};
       case 'cg.selectPlugin':
         if (msg.trustManual) { chipManual = true; return {ok: true, manual: true}; }
         if (cg.plugin === 'missing') return {ok: false, code: 'cg_plugin_missing'};
@@ -126,10 +126,10 @@ export function makeEnv(opts = {}) {
     tabExists: async id => tabs.has(id) || chats.has(id),
     activate: async id => { activated.push(id); },
     openChat: async (id, url, o = {}) => {
-      opened.push({...o, tabId: id});
-      if (id && chats.has(id)) { chats.get(id).sent = null; return id; }
-      if (!evals) return CHAT_TAB;
-      const nid = nextTab++; chats.set(nid, {sent: null, authLeft: 0}); return nid;
+      opened.push({...o, tabId: id, url});
+      if (id && chats.has(id)) { Object.assign(chats.get(id), {sent: null, url}); return id; }
+      if (!evals) { chats.get(CHAT_TAB).url = url; return CHAT_TAB; }
+      const nid = nextTab++; chats.set(nid, {sent: null, authLeft: 0, url}); return nid;
     },
     /** Duplicate of a NeuroLaudos IA tab (shows the same evaluation as the source, like a duplicated tab). */
     openNlTab: async from => { const src = tabs.get(from) || nl; const nid = nextTab++; tabs.set(nid, {evaluationId: src.evaluationId, sections: src.sections, tasks: src.tasks, readOnly: src.readOnly}); return nid; },

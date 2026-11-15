@@ -296,7 +296,7 @@ function renderBatchSetup() {
     body.innerHTML = '<p class="muted">Lendo as seções e as instruções da Conclusão de cada avaliação…</p>'; ft.innerHTML = '<button class="btn" id="cancel">Cancelar</button>'; $('#cancel').onclick = () => { batchAsked = false; close(); }; return;
   }
   const s = settings || {}, l = s.last || {};
-  const c = batchChoice ||= {mode: MODES[l.mode] ? l.mode : 'auto', existing: 'draft', onError: 'next', sendImages: l.sendImages ?? s.sendImages ?? true, includeDemand: false, only: batchSecs.length ? batchSecs.filter(n => !/demanda/i.test(n)) : null, parallel: Math.min(batchSel.length, l.parallel ?? s.batchParallel ?? 3)};
+  const c = batchChoice ||= {mode: MODES[l.mode] ? l.mode : 'auto', existing: 'draft', onError: 'next', sendImages: l.sendImages ?? s.sendImages ?? true, includeDemand: false, only: batchSecs.length ? batchSecs.filter(n => !/demanda/i.test(n)) : null, parallel: Math.min(batchSel.length, s.batchParallel ?? 1)};
   c.parallel = Math.max(1, Math.min(batchSel.length, c.parallel || 1));
   const radio = (name, v, cur, title, desc) => `<label class="opt ${cur === v ? 'sel' : ''}"><input type="radio" name="${name}" value="${v}" ${cur === v ? 'checked' : ''}><span><b>${title}</b>${desc ? `<small>${desc}</small>` : ''}</span></label>`;
   const sw = (id, on, icon, title, desc) => `<div class="setrow"><span class="ri">${ic(icon, 18)}</span><label for="${id}" class="rt"><b>${title}</b><small>${desc}</small></label><span class="sw"><input type="checkbox" role="switch" id="${id}" ${on ? 'checked' : ''}><i aria-hidden="true"></i></span></div>`;
@@ -318,10 +318,10 @@ function renderBatchSetup() {
   <section class="card"><h2>${ic('layers', 17, 'hi')} Seções que já têm texto</h2>
     <div class="opts" role="radiogroup" aria-label="Seções que já têm texto">${radio('existing', 'draft', c.existing, 'Gerar rascunho mesmo assim (padrão)', 'O texto atual é preservado; o rascunho aguarda sua confirmação para substituir.')}${radio('existing', 'skip', c.existing, 'Não mexer')}</div>
   </section>
-  <section class="card"><h2>${ic('layers', 17, 'hi')} Avaliações ao mesmo tempo</h2>
+  ${batchSel.length > 1 ? `<details class="card adv" ${c.parallel > 1 ? 'open' : ''}><summary><b>Avançado: várias avaliações ao mesmo tempo</b> <small>(não recomendado)</small></summary>
     <div class="setrow"><span class="ri">${ic('users', 18)}</span><label for="par" class="rt"><b>Rodar até <output id="parv">${c.parallel}</output> ${c.parallel === 1 ? 'avaliação' : 'avaliações'} ao mesmo tempo</b><small>Cada uma ganha a sua aba do NeuroLaudos IA e a sua aba do ChatGPT, em segundo plano. 1 = uma depois da outra.</small></label><input type="range" id="par" min="1" max="${batchSel.length}" step="1" value="${c.parallel}" aria-describedby="par-w" style="width:140px"></div>
-    <p class="hint warn" id="par-w" ${c.parallel > 3 ? '' : 'hidden'}>Mais de 3 ao mesmo tempo: o limite de mensagens do ChatGPT é da conta inteira (não por aba), então chega mais rápido; o Chrome desacelera abas em segundo plano e cada aba do ChatGPT usa bastante memória. Se o limite chegar, todas esperam ${s.rateLimitMinutes ?? 10} min e a tarefa é tentada de novo na mesma aba.</p>
-  </section>
+    <p class="hint warn" id="par-w" ${c.parallel > 3 ? '' : 'hidden'}>Mais de 3 ao mesmo tempo: o limite de mensagens do ChatGPT é da conta inteira (não por aba), então chega mais rápido; o Chrome desacelera abas em segundo plano e cada aba do ChatGPT usa bastante memória. Se o limite chegar, todas esperam ${s.rateLimitMinutes ?? 10} min e a tarefa é tentada de novo na mesma aba. Por padrão o lote é uma fila: uma avaliação por vez, em ordem.</p>
+  </details>` : ''}
   ${conclBatchCard(c)}
   ${batchSecs.length ? `<section class="card">
     <div class="lh"><h2>${ic('list', 17, 'hi')} Seções a gerar <small>vale para todas as avaliações do lote</small></h2><span class="grow"></span><button class="lnk" id="sall" type="button"></button></div>
@@ -362,13 +362,17 @@ function render_concl(c) {
 }
 async function goBatch(c) {
   busy = true; flash = null; render();
-  ask({type: 'settings.set', settings: {last: {...(settings?.last || {}), mode: c.mode, sendImages: c.sendImages, parallel: c.parallel}}});
+  ask({type: 'settings.set', settings: {last: {...(settings?.last || {}), mode: c.mode, sendImages: c.sendImages}}});
   const r = await ask({type: 'batch.start', ids: batchSel.map(x => x.id), mode: c.mode, existing: c.existing, onError: c.onError, sendImages: c.sendImages, includeDemand: c.includeDemand, only: batchSecs.length ? c.only : null, parallel: c.parallel, instructions: Object.entries(batchConcl).filter(([, v]) => v.has && v.editable && v.text !== v.orig).map(([id, v]) => ({id, text: v.text}))});
   busy = false;
   if (!r?.ok) { flash = {kind: 'err', ...(r?.error || {message: 'Não foi possível iniciar o lote.'})}; return render(); }
   batchAsked = false; run = r.run; render();
 }
 
+/** Evaluations of the batch that ended with sections missing (or did not open): "Refazer o que faltou" puts them back in the queue. */
+const redoN = () => (run?.batch?.list || []).filter(e => e.status === 'error' || ((e.status === 'done' || e.status === 'empty') && e.summary?.missing > 0)).length;
+/** ChatGPT Project note: the conversations are inside it, or why they are not. */
+const projNote = () => { const n = run?.projectNote || run?.lanes?.map(l => l.projectNote).find(x => x === 'not_found' || x === 'invalid'); return n === 'not_found' ? 'Projeto do ChatGPT não encontrado: as conversas foram abertas como comuns e aparecem em Recentes. Confira o endereço nas configurações da extensão.' : n === 'invalid' ? 'O endereço do projeto do ChatGPT nas configurações não é válido: as conversas são comuns e aparecem em Recentes.' : ''; };
 /** Batch part of the run screen: which evaluation, the whole batch and each evaluation's progress. */
 function batchCard(active) {
   const b = run.batch, n = b.list.length;
@@ -385,11 +389,13 @@ function batchCard(active) {
     if (!sm) return e.status === 'error' ? esc(e.error || '') : '';
     return `${sm.received} recebidos${sm.review ? ` · ${sm.review} para revisão` : ''}${sm.errors ? ` · ${sm.errors} com erro` : ''}`;
   };
-  const tone = e => e.status === 'done' ? 'ok' : e.status === 'error' ? 'err' : e.status === 'running' ? 'info' : e.status === 'skipped' || e.status === 'empty' ? 'mute' : 'mute';
-  return `<section class="card batch">
+  const lab = e => e.status === 'done' && e.summary?.missing > 0 ? 'Com falhas' : null;
+  const redoable = (e, i) => !active && (e.status === 'error' || ((e.status === 'done' || e.status === 'empty') && e.summary?.missing > 0));
+  const tone = e => lab(e) ? 'warn' : e.status === 'done' ? 'ok' : e.status === 'error' ? 'err' : e.status === 'running' ? 'info' : e.status === 'skipped' || e.status === 'empty' ? 'mute' : 'mute';
+  return `${projNote() ? `<div class="alert warn"><p>${esc(projNote())}</p></div>` : ''}<section class="card batch">
     <div class="lh"><h2>${ic('users', 17, 'hi')} Lote de avaliações${cur && active ? ` <small>agora: ${esc(name(cur, b.index))} (${b.index + 1} de ${n})</small>` : ''}</h2><span class="grow"></span><span class="pill mute">${ended} de ${n} concluídas</span></div>
     <div class="bar" role="progressbar" aria-label="Progresso do lote" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><i style="width:${pct}%"></i></div>
-    <ol class="list blist" aria-label="Avaliações do lote">${b.list.map((e, i) => { const L = at.get(i), on = !!L && e.status === 'running' && (L.status === 'running' || L.status === 'paused'); return `<li class="${on ? 'on' : ''}" ${on ? 'aria-current="step"' : ''}><span class="bn">${i + 1}</span><span class="grow"><span class="nm">${esc(name(e, i))}</span>${prog(e, i) ? ` <span class="st">${esc(prog(e, i))}</span>` : ''}</span><span class="pill ${tone(e)}">${esc(on && L.status === 'paused' ? 'Pausada' : BATCH_ITEM[e.status] || e.status)}</span></li>`; }).join('')}</ol>
+    <ol class="list blist" aria-label="Avaliações do lote">${b.list.map((e, i) => { const L = at.get(i), on = !!L && e.status === 'running' && (L.status === 'running' || L.status === 'paused'); return `<li class="${on ? 'on' : ''}" ${on ? 'aria-current="step"' : ''}><span class="bn">${i + 1}</span><span class="grow"><span class="nm">${esc(name(e, i))}</span>${prog(e, i) ? ` <span class="st">${esc(prog(e, i))}</span>` : ''}</span><span class="pill ${tone(e)}">${esc(on && L.status === 'paused' ? 'Pausada' : lab(e) || BATCH_ITEM[e.status] || e.status)}</span>${redoable(e, i) ? `<button class="btn sm" type="button" data-redo="${i}">Refazer o que faltou</button>` : ''}</li>`; }).join('')}</ol>
   </section>`;
 }
 
@@ -532,6 +538,7 @@ function renderLanes() {
     ${anyRun ? `<button class="btn" id="pause">${ic('pause', 15)} Pausar todas</button>` : ''}
     ${anyPaused ? `<button class="btn pri" id="resumeall">${ic('play', 15)} Continuar todas</button>` : ''}
     ${active ? `<button class="btn" id="stop">${ic('stop', 14)} Parar</button>` : `${remaining ? `<button class="btn pri" id="cont">${ic('play', 15)} Continuar de onde parou (${remaining})</button><button class="btn" id="new">Nova execução</button>` : '<button class="btn pri" id="new">Nova execução</button>'}`}
+    ${!active && redoN() ? `<button class="btn" id="redoall" type="button">Refazer o que faltou (${redoN()})</button>` : ''}
     <button class="btn out" id="det">${ic('fileText', 17)} ${showDetails ? 'Ocultar detalhes' : 'Ver detalhes'}</button>`;
   $('#pause') && ($('#pause').onclick = () => ask({type: 'run.pause'}));
   $('#resumeall') && ($('#resumeall').onclick = () => ask({type: 'run.resume', action: 'continue'}));
@@ -539,6 +546,8 @@ function renderLanes() {
   body.querySelectorAll('[data-chat]').forEach(x => x.onclick = () => ask({type: 'run.focus', which: 'chat', lane: +x.dataset.chat}));
   $('#stop') && ($('#stop').onclick = () => confirmBox(['Parar o lote inteiro?', 'Todas as avaliações em andamento param. Os rascunhos já recebidos ficam no NeuroLaudos IA; nada é apagado.'], 'Parar', () => ask({type: 'run.stop'})));
   $('#cont') && ($('#cont').onclick = () => ask({type: 'run.continue'}));
+  $('#redoall') && ($('#redoall').onclick = () => ask({type: 'run.redo'}));
+  body.querySelectorAll('[data-redo]').forEach(x => x.onclick = () => ask({type: 'run.redo', index: +x.dataset.redo}));
   $('#new') && ($('#new').onclick = async () => { await ask({type: 'run.clear'}); run = null; choice = null; await rescan(); render(); });
   $('#clear') && ($('#clear').onclick = async () => { await ask({type: 'run.clear'}); run = null; await rescan(); render(); });
   $('#det').onclick = () => { showDetails = !showDetails; render(); };
@@ -627,11 +636,14 @@ function renderRun() {
     ${run.status === 'running' ? `<button class="btn" id="pause">${ic('pause', 15)} Pausar</button>` : ''}
     ${run.status === 'paused' ? `<button class="btn pri" data-act="continue">${ic('play', 15)} ${pause?.code === 'assisted' ? 'Próxima seção' : 'Continuar'}</button>` : ''}
     ${active ? `<button class="btn" id="stop">${ic('stop', 14)} Parar</button>` : `${remaining ? `<button class="btn pri" id="cont">${ic('play', 15)} Continuar de onde parou (${remaining})</button><button class="btn" id="new">Nova execução</button>` : '<button class="btn pri" id="new">Nova execução</button>'}`}
+    ${!active && redoN() ? `<button class="btn" id="redoall" type="button">Refazer o que faltou (${redoN()})</button>` : ''}
     <button class="btn out" id="det">${ic('fileText', 17)} ${showDetails ? 'Ocultar detalhes' : 'Ver detalhes'}</button>`;
   $('#pause') && ($('#pause').onclick = () => ask({type: 'run.pause'}));
   document.querySelectorAll('[data-act]').forEach(b => b.onclick = () => ask({type: 'run.resume', action: b.dataset.act}));
   $('#stop') && ($('#stop').onclick = () => confirmBox(['Parar a execução?', 'Os rascunhos já recebidos ficam no NeuroLaudos IA; nada é apagado.'], 'Parar', () => ask({type: 'run.stop'})));
   $('#cont') && ($('#cont').onclick = () => ask({type: 'run.continue'}));
+  $('#redoall') && ($('#redoall').onclick = () => ask({type: 'run.redo'}));
+  body.querySelectorAll('[data-redo]').forEach(x => x.onclick = () => ask({type: 'run.redo', index: +x.dataset.redo}));
   body.querySelectorAll('[data-rev]').forEach(b => b.onclick = () => openReview(b.dataset.rev, run.items.find(i => i.key === b.dataset.rev)?.name || ''));
   $('#new') && ($('#new').onclick = async () => { await ask({type: 'run.clear'}); run = null; choice = null; await rescan(); render(); });
   $('#clear') && ($('#clear').onclick = async () => { await ask({type: 'run.clear'}); run = null; await rescan(); render(); });

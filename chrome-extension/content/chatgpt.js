@@ -265,7 +265,7 @@
     if (!msg?.cmd?.startsWith('cg.')) return false;
     (async () => {
       switch (msg.cmd) {
-        case 'cg.ping': { const c = composer(); return {ok: true, ready: !!c && !loginShown(), loggedIn: !loginShown(), composer: !!c, hasMessages: allMsgs().length > 0}; }
+        case 'cg.ping': { const c = composer(); return {ok: true, ready: !!c && !loginShown(), loggedIn: !loginShown(), composer: !!c, hasMessages: allMsgs().length > 0, path: location.pathname.slice(0, 60)}; }
         case 'cg.selectPlugin': return selectPlugin(msg.name, msg.trustManual);
         case 'cg.insert': return insert(msg.text, msg.code, msg.name, msg.images);
         case 'cg.send': return sendMessage(msg.code);

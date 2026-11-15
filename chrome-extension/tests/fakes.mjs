@@ -56,7 +56,7 @@ export function makeEnv(opts = {}) {
     if (msg.cmd !== 'nl.scan' && msg.evaluationId && msg.evaluationId !== tab.evaluationId) return {ok: false, code: 'nl_changed'};
     switch (msg.cmd) {
       case 'nl.scan': return tab.evaluationId ? {ok: true, evaluationId: tab.evaluationId, readOnly: tab.readOnly, sections: tab.sections} : {ok: false, code: 'nl_not_review'};
-      case 'nl.getInstruction': { const e = evals?.[tab.evaluationId]; return {ok: true, text: e?.instruction ?? 'Integrar os resultados; relatar no final que apresenta características ', editable: true}; }
+      case 'nl.getInstruction': { const e = evals?.[tab.evaluationId]; return {ok: true, text: e?.instruction ?? 'Integrar os resultados; relatar no final que apresenta características ', editable: true, saved: e?.instruction != null}; }
       case 'nl.openSection': return {ok: true};
       case 'nl.openModal': if (nl.notEligible.includes(msg.key)) return {ok: true, notEligible: true, reason: 'Texto fixo do arquivo'}; if (tab === nl) openModal = msg.key; return {ok: true, modal: view(msg.key, tab)};
       case 'nl.modalInfo': return {ok: true, modal: view(msg.key, tab)};

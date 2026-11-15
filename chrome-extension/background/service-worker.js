@@ -245,7 +245,7 @@ async function handle(msg, sender) {
           if (!out.sections) { const seen = new Set(); out.sections = (r.sections || []).filter(x => x.kind === 'ai' && x.name && !seen.has(x.name) && seen.add(x.name)).map(x => ({name: x.name})); }
           const c = (r.sections || []).find(x => x.key === 'conclusao' && x.kind === 'ai' && x.state !== 'ap' && x.state !== 'file');
           const g = c && !r.readOnly ? await send(tabId, {cmd: 'nl.getInstruction', key: 'conclusao', evaluationId: id}, 20000).catch(() => null) : null;
-          out.concl[id] = g?.ok ? {has: true, text: g.text, editable: !!g.editable} : {has: false};
+          out.concl[id] = g?.ok ? {has: true, text: g.text, editable: !!g.editable, saved: g.saved !== false} : {has: false};
         } catch { out.concl[id] = {has: false}; }
       }
       if (!out.sections) return {ok: false};

@@ -261,3 +261,15 @@ test('ChatGPT project: conversations open inside the configured project; not fou
   assert.equal((await t.env.state.load()).projectNote, 'invalid');
   assert.ok(t.opened.every(o => o.url === 'https://chatgpt.com/'));
 });
+
+test('Conclusão instruction: each evaluation is asked for its own saved text; one with none saved (default, unfinished) does not generate it', async () => {
+  const t = makeEnv({evals: three({[EV[1]]: {instruction: undefined}})});
+  await batch(t, {policy: {existing: 'draft', onError: 'pause', sendImages: false, sameChat: false}});
+  const s = await finish(t);
+  assert.equal(s.status, 'done');
+  const asked = cmds(t, 'nl.getInstruction');
+  assert.deepEqual(asked.map(c => c.evaluationId), EV, 'asked once per evaluation, naming it');
+  assert.ok(asked.every(c => c.shown === c.evaluationId), 'the page showed that evaluation when asked');
+  const concl = t.prepared.filter(p => p.key === 'conclusao').map(p => p.evaluationId);
+  assert.deepEqual(concl, [EV[0], EV[2]], 'the evaluation without a saved instruction has no Conclusão');
+});

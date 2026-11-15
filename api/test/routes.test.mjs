@@ -1137,3 +1137,22 @@ test('approval waits for Local e data when the base file has that line', async (
   assert.equal((await api('PUT', ev + '/place-date', {token: tokens.psy, body: {value: 'Cidade Fictícia, 2 de janeiro de 2026.'}})).status, 200);
   assert.equal((await api('POST', ev + '/approve', {token: tokens.psy, body: {approveSections: true}})).status, 200);
 });
+
+test('Conclusão instruction is saved per evaluation; default only when none is saved; admin and psychologist edit, assistant cannot', async () => {
+  const a = await newEvaluation(), b = await newEvaluation();
+  const get = (id, token = tokens.psy) => api('GET', `/api/evaluations/${id}/instructions`, {token});
+  const concl = r => r.data.sections.find(s => s.key === 'conclusao');
+  assert.equal(concl(await get(a)).custom, null, 'nothing saved yet: the default is used');
+  const TEXT_A = 'Integrar atenção e memória; relatar no final que apresenta características sintéticas A.';
+  const TEXT_B = 'Integrar linguagem e funções executivas; relatar no final que apresenta características sintéticas B.';
+  const put = (id, prompt, token) => api('PUT', `/api/evaluations/${id}/instructions/conclusao`, {token, body: {prompt}});
+  assert.equal((await put(a, TEXT_A, tokens.psy)).status, 200);
+  assert.equal((await put(b, TEXT_B, tokens.admin)).status, 200, 'admin saves the instruction too');
+  assert.equal(concl(await get(a)).custom, TEXT_A);
+  assert.equal(concl(await get(b, tokens.admin)).custom, TEXT_B, 'each evaluation keeps its own text');
+  const c = await newEvaluation();
+  assert.equal(concl(await get(c)).custom, null, 'another evaluation is not touched');
+  assert.equal(concl(await get(a, tokens.admin)).custom, TEXT_A, 'admin reads it');
+  assert.equal((await put(a, 'Texto do auxiliar sintético, que não deve gravar.', tokens.assistant)).status, 403);
+  assert.equal(concl(await get(a)).custom, TEXT_A);
+});

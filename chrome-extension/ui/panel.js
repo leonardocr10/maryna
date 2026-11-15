@@ -259,7 +259,7 @@ async function loadConclusion(c) {
   c.conclLoading = true;
   const r = await ask({type: 'instruction.get', key: CONCL, evaluationId: scan?.evaluationId});
   c.conclLoading = false;
-  if (r?.ok && typeof r.text === 'string') { c.conclusion = c.conclusionOrig = r.text; c.conclEditable = !!r.editable; } else { c.conclusion = null; }
+  if (r?.ok && typeof r.text === 'string') { c.conclusion = c.conclusionOrig = r.text; c.conclEditable = !!r.editable; c.conclSaved = r.saved !== false; } else { c.conclusion = null; }
   if (!run || run.nlTabId !== tabId) render();
 }
 /** Conclusão instruction, editable before the run (saved in the evaluation, used when its task is prepared). */
@@ -270,6 +270,7 @@ function conclCard(c) {
   return `<section class="card concl">
     <div class="lh"><h2>${ic('flag', 17, 'hi')} Instrução da Conclusão <small>vai para o ChatGPT junto com os textos das seções</small></h2><span class="grow"></span>${c.conclusion !== c.conclusionOrig ? '<button class="lnk" id="concl-reset" type="button">Desfazer alterações</button>' : ''}</div>
     <textarea id="concl" class="ta" rows="4" maxlength="6000" ${c.conclEditable ? '' : 'disabled'} aria-label="Instrução da Conclusão" placeholder="Ex.: Integrar atenção e funções executivas com as queixas escolares; relatar no final que apresenta características de…">${esc(c.conclusion)}</textarea>
+    ${c.conclSaved === false ? '<p class="hint">Sem orientação salva nesta avaliação; usando o padrão.</p>' : ''}
     <p class="hint warn" id="concl-warn" ${unfinished(c.conclusion) ? '' : 'hidden'}>Complete a instrução: ela termina em "características" e espera o que você quer relatar.</p>
     <label class="chk"><input type="checkbox" id="concl-ok" ${c.conclOk ? 'checked' : ''}> Conferi a instrução da Conclusão desta avaliação</label>
   </section>`;
@@ -284,6 +285,7 @@ function conclBatchCard(c) {
   return `<section class="card concl"><div class="lh"><h2>${ic('flag', 17, 'hi')} Instrução da Conclusão <small>uma para cada avaliação</small></h2></div>
     <div class="cl">${rows.map((x, i) => { const v = batchConcl[x.id]; return `<div class="clrow"><label for="cl${i}"><b>${esc(x.name || 'Avaliação ' + (batchSel.indexOf(x) + 1))}</b></label>
       <textarea id="cl${i}" class="ta" rows="3" maxlength="6000" data-cid="${esc(x.id)}" ${v.editable ? '' : 'disabled'} aria-label="Instrução da Conclusão desta avaliação">${esc(v.text)}</textarea>
+      ${v.saved ? '' : '<p class="hint">Sem orientação salva nesta avaliação; usando o padrão.</p>'}
       <p class="hint warn" data-cw="${esc(x.id)}" ${conclusionUnfinished(v.text) ? '' : 'hidden'}>Instrução incompleta: a Conclusão (e as Recomendações) desta avaliação não será gerada. Complete o final de "características…".</p></div>`; }).join('')}</div>
     <label class="chk"><input type="checkbox" id="cl-ok" ${c.conclOk ? 'checked' : ''}> Conferi a instrução da Conclusão de cada avaliação acima</label>
     <p class="hint">Vai para o ChatGPT só com o texto dessa avaliação; é salva nela antes do lote começar.</p></section>`;
@@ -292,7 +294,7 @@ function renderBatchSetup() {
   $('#sub').textContent = 'Gere rascunhos de várias avaliações, uma depois da outra';
   if (!batchSel) { body.innerHTML = '<p class="muted">Lendo as avaliações escolhidas…</p>'; ft.innerHTML = '<button class="btn" id="cancel">Cancelar</button>'; $('#cancel').onclick = close; return; }
   if (batchSecs === null) {
-    if (!peeking) { peeking = true; ask({type: 'batch.peek', ids: batchSel.map(x => x.id)}).then(r => { batchSecs = r?.ok ? r.sections.map(x => x.name) : []; batchConcl = {}; if (r?.ok) for (const [id, v] of Object.entries(r.concl || {})) batchConcl[id] = v.has ? {has: true, text: v.text, orig: v.text, editable: v.editable} : {has: false}; peeking = false; render(); }); }
+    if (!peeking) { peeking = true; ask({type: 'batch.peek', ids: batchSel.map(x => x.id)}).then(r => { batchSecs = r?.ok ? r.sections.map(x => x.name) : []; batchConcl = {}; if (r?.ok) for (const [id, v] of Object.entries(r.concl || {})) batchConcl[id] = v.has ? {has: true, text: v.text, orig: v.text, editable: v.editable, saved: v.saved !== false} : {has: false}; peeking = false; render(); }); }
     body.innerHTML = '<p class="muted">Lendo as seções e as instruções da Conclusão de cada avaliação…</p>'; ft.innerHTML = '<button class="btn" id="cancel">Cancelar</button>'; $('#cancel').onclick = () => { batchAsked = false; close(); }; return;
   }
   const s = settings || {}, l = s.last || {};

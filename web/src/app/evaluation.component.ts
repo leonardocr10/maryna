@@ -162,9 +162,14 @@ export class EvaluationComponent implements OnDestroy {
   /** Reference material behind a section: section texts for the conclusion, tables for the others. */
   refCount(k: string) { return k === MANUAL_KEY ? this.conclusionSources().length : this.refs(k).length; }
   refLabel(k: string) { return this.refOpen === k ? (k === MANUAL_KEY ? 'Ocultar textos' : 'Ocultar tabelas') : (k === MANUAL_KEY ? 'Ver textos das seções (' : 'Ver tabelas de referência (') + this.refCount(k) + ')'; }
+  /** Evaluation the loaded instructions belong to (a Modo automático question never gets another evaluation's text). */
+  private instrFor = '';
   async loadInstructions() {
+    const id = this.evaluationId;
     try {
-      const r = await this.api.req('GET', `/evaluations/${this.evaluationId}/instructions`);
+      const r = await this.api.req('GET', `/evaluations/${id}/instructions`);
+      if (id !== this.evaluationId) return;
+      this.instrFor = id;
       this.instructions = r.sections; this.instrModel = r.model || null;
       this.instrDraft = Object.fromEntries(r.sections.map((x: any) => [x.key, x.custom || this.inherited(x)]));
     } catch {}
@@ -927,20 +932,29 @@ export class EvaluationComponent implements OnDestroy {
     if (this.step !== 3) this.goStep(3);
     if (this.mode !== 'secoes') this.setMode('secoes');
   }
+  /** The extension's question: {key, evaluationId} (older extensions send just the key). */
+  private extAsk(e: Event): {key: string; evaluationId: string} {
+    const d = String((e as CustomEvent).detail || '');
+    try { const j = JSON.parse(d); if (j && typeof j === 'object') return {key: String(j.key || ''), evaluationId: String(j.evaluationId || '')}; } catch {}
+    return {key: d, evaluationId: ''};
+  }
   @HostListener('window:nlx-instruction-get', ['$event'])
   async onExtInstructionGet(e: Event) {
-    const key = String((e as CustomEvent).detail || '');
+    const {key, evaluationId} = this.extAsk(e);
     if (key !== MANUAL_KEY) return;
-    if (!this.instructions.length) await this.loadInstructions();
-    window.dispatchEvent(new CustomEvent('nlx-instruction', {detail: JSON.stringify({key, text: this.instrDraft[key] ?? this.inherited(this.instruction(key)), editable: !this.readOnly() && !!this.instruction(key)})}));
+    if (evaluationId && evaluationId !== this.evaluationId) return void window.dispatchEvent(new CustomEvent('nlx-instruction', {detail: JSON.stringify({key, ok: false, evaluationId})}));
+    if (this.instrFor !== this.evaluationId || !this.instructions.length) await this.loadInstructions();
+    const ins = this.instruction(key);
+    // The instruction saved in THIS evaluation (the one the section screen shows); the default only when none is saved.
+    window.dispatchEvent(new CustomEvent('nlx-instruction', {detail: JSON.stringify({key, evaluationId: this.evaluationId, text: this.instrDraft[key] ?? this.inherited(ins), saved: !!ins?.custom, editable: !this.readOnly() && !!ins})}));
   }
   @HostListener('window:nlx-instruction-set', ['$event'])
   async onExtInstructionSet(e: Event) {
-    let key = '', text = '';
-    try { ({key, text} = JSON.parse(String((e as CustomEvent).detail || '{}'))); } catch {}
+    let key = '', text = '', evaluationId = '';
+    try { ({key, text, evaluationId = ''} = JSON.parse(String((e as CustomEvent).detail || '{}'))); } catch {}
     let ok = false;
-    if (key === MANUAL_KEY && !this.readOnly()) {
-      if (!this.instructions.length) await this.loadInstructions();
+    if (key === MANUAL_KEY && !this.readOnly() && (!evaluationId || evaluationId === this.evaluationId)) {
+      if (this.instrFor !== this.evaluationId || !this.instructions.length) await this.loadInstructions();
       this.instrDraft[key] = String(text || '').slice(0, 6000);
       ok = await this.saveInstruction(key, this.instrDraft[key]);
     }

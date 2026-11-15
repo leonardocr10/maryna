@@ -217,20 +217,39 @@ async function handle(msg, sender) {
       const cfg = await settings();
       const policy = {existing: msg.existing === 'skip' ? 'skip' : 'draft', onError: msg.onError === 'next' ? 'next' : 'pause', sendImages: !!(msg.sendImages ?? cfg.sendImages), sameChat: false, background: !!(msg.background ?? cfg.chatBackground), includeDemand: !!msg.includeDemand, only: Array.isArray(msg.only) ? msg.only.slice(0, 80).map(x => String(x).slice(0, 120)) : null};
       const parallel = Math.max(1, Math.min(10, Math.floor(+(msg.parallel ?? cfg.batchParallel)) || 1));
+      // Each evaluation's own Conclusão instruction (edited on the batch screen) is saved in that evaluation only,
+      // opened and confirmed one by one, before anything starts.
+      for (const it of Array.isArray(msg.instructions) ? msg.instructions.slice(0, 10) : []) {
+        const id = String(it?.id || ''), text = String(it?.text || '').slice(0, 6000);
+        const fail = why => ({ok: false, error: {message: `A instrução da Conclusão não foi salva (${why}).`, hint: 'Nada foi iniciado. Confira a conexão com o NeuroLaudos IA e tente de novo.'}});
+        if (!EVAL_ID_RE.test(id) || !(msg.ids || []).includes(id)) return fail('avaliação inválida');
+        const o = await send(tabId, {cmd: 'nl.openEvaluation', evaluationId: id}, 35000).catch(() => null);
+        if (!o?.ok) return fail('a avaliação não abriu');
+        const w = await send(tabId, {cmd: 'nl.setInstruction', key: 'conclusao', text, evaluationId: id}, 20000).catch(() => null);
+        if (!w?.ok) return fail('o NeuroLaudos IA não confirmou');
+      }
       return {ok: true, run: await manager.startBatch({nlTabId: tabId, nlOrigin: origin, mode: MODES[msg.mode] ? msg.mode : 'auto', policy, ids: Array.isArray(msg.ids) ? msg.ids : [], parallel})};
     }
     case 'batch.peek': {
-      // Names of the sections of the first evaluation of the batch (the choice then applies to all of them).
+      // Reads each evaluation of the batch, one at a time in this tab: the section names of the first one (the choice
+      // then applies to all) and, per evaluation, its own Conclusão instruction. Every answer is tied to its id.
       const tabId = msg.tabId ?? sender.tab?.id;
-      if (!EVAL_ID_RE.test(String(msg.id || ''))) return {ok: false};
-      try {
-        const o = await send(tabId, {cmd: 'nl.openEvaluation', evaluationId: msg.id}, 35000);
-        if (!o?.ok) return {ok: false};
-        const r = await send(tabId, {cmd: 'nl.scan'}, 20000);
-        if (!r?.ok) return {ok: false};
-        const seen = new Set();
-        return {ok: true, sections: (r.sections || []).filter(x => x.kind === 'ai' && x.name && !seen.has(x.name) && seen.add(x.name)).map(x => ({name: x.name}))};
-      } catch { return {ok: false}; }
+      const ids = Array.isArray(msg.ids) ? msg.ids.map(String).slice(0, 10) : [];
+      if (!ids.length || !ids.every(x => EVAL_ID_RE.test(x))) return {ok: false};
+      const out = {ok: true, sections: null, concl: {}};
+      for (const id of ids) {
+        try {
+          const o = await send(tabId, {cmd: 'nl.openEvaluation', evaluationId: id}, 35000);
+          const r = o?.ok ? await send(tabId, {cmd: 'nl.scan'}, 20000) : null;
+          if (!r?.ok || r.evaluationId !== id) { out.concl[id] = {has: false}; if (!out.sections && id === ids[0]) out.sections = null; continue; }
+          if (!out.sections) { const seen = new Set(); out.sections = (r.sections || []).filter(x => x.kind === 'ai' && x.name && !seen.has(x.name) && seen.add(x.name)).map(x => ({name: x.name})); }
+          const c = (r.sections || []).find(x => x.key === 'conclusao' && x.kind === 'ai' && x.state !== 'ap' && x.state !== 'file');
+          const g = c && !r.readOnly ? await send(tabId, {cmd: 'nl.getInstruction', key: 'conclusao', evaluationId: id}, 20000).catch(() => null) : null;
+          out.concl[id] = g?.ok ? {has: true, text: g.text, editable: !!g.editable} : {has: false};
+        } catch { out.concl[id] = {has: false}; }
+      }
+      if (!out.sections) return {ok: false};
+      return out;
     }
     case 'run.pause': await manager.pause(); return {ok: true, run: await state.load()};
     case 'review.get': {

@@ -25,7 +25,7 @@ const ORDERS = ['Mais recentes', 'Mais antigas', 'Nome (A–Z)', 'Nome (Z–A)',
   <div class="card kpi" [title]="monthNew() + ' criadas neste mês'"><span class="kpi-icon"><nl-icon name="clipboard"/></span><div><div class="kpi-label">Total de avaliações</div><div class="kpi-value">{{evaluations.length}}</div></div></div>
   <div class="card kpi" title="Aguardando revisão clínica"><span class="kpi-icon warn"><nl-icon name="clock"/></span><div><div class="kpi-label">Pendentes de revisão</div><div class="kpi-value">{{count('rv')}}</div></div></div>
   <div class="card kpi" [title]="count('ap') + ' aprovadas no total'"><span class="kpi-icon ok"><nl-icon name="checkc"/></span><div><div class="kpi-label">Aprovadas no mês</div><div class="kpi-value">{{monthApproved()}}</div></div></div>
-  <div class="card kpi" [title]="brl(usage?.month?.cost_brl||0) + ' neste mês'"><span class="kpi-icon review"><nl-icon name="coins"/></span><div><div class="kpi-label">Custo total da IA</div><div class="kpi-value">{{brl(usage?.total?.cost_brl||0)}}</div></div></div>
+  <div class="card kpi" [title]="unDownloaded() ? 'Laudos aprovados cujo arquivo ainda não foi baixado' : 'Todos os laudos aprovados já foram baixados'"><span class="kpi-icon" [ngClass]="unDownloaded() ? 'warn' : 'ok'"><nl-icon name="download"/></span><div><div class="kpi-label">Aprovadas sem baixar</div><div class="kpi-value">{{unDownloaded()}}</div></div></div>
 </div>
 
 <section class="card dlist">
@@ -175,7 +175,6 @@ export class DashboardComponent implements OnInit {
   @Output() open = new EventEmitter<string>();
   @Output() create = new EventEmitter<void>();
   STATUS = STATUS; brDate = brDate; brl = brl;
-  usage: any = null;
   filter: Filter = 'all';
   order = ORDERS[0]; orders = ORDERS;
   page = 1; per = 10;
@@ -207,7 +206,7 @@ export class DashboardComponent implements OnInit {
   chips() { return [...this.filters, ...([{id: 'queue', label: 'Enviadas'}, {id: 'fix', label: 'Correção pedida'}, {id: 'deliver', label: 'Aguardando entrega'}, {id: 'late', label: 'Atrasadas'}, {id: 'soon', label: 'Vencem em 7 dias'}] as {id: Filter; label: string}[]).filter(f => this.filter === f.id || this.count(f.id))]; }
   sessions: any[] = [];
   kindName(k: string) { return ({anamnese: 'Anamnese', aplicacao: 'Aplicação de testes', devolutiva: 'Devolutiva', outra: 'Sessão'} as any)[k] || 'Sessão'; }
-  async ngOnInit() { try { this.usage = await this.api.req('GET', '/ai/usage'); } catch {} try { this.sessions = await this.api.req<any[]>('GET', '/sessions'); } catch {} }
+  async ngOnInit() { try { this.sessions = await this.api.req<any[]>('GET', '/sessions'); } catch {} }
 
   /** Icon for the sex column; null when not informed. */
   sexIcon(v: string) { const x = fold(v || ''); return x.startsWith('fem') ? 'female' : x.startsWith('masc') ? 'male' : null; }
@@ -280,6 +279,8 @@ export class DashboardComponent implements OnInit {
   setQuery(v: string) { this.query = v; this.page = 1; this.queryChange.emit(v); }
   private inMonth(d: any) { if (!d) return false; const x = new Date(d), n = new Date(); return x.getFullYear() === n.getFullYear() && x.getMonth() === n.getMonth(); }
   monthNew() { return this.evaluations.filter(e => this.inMonth(e.created_at)).length; }
+  /** Approved reports whose Word/PDF was never downloaded since the approval (the file is the point of the process). */
+  unDownloaded() { return this.evaluations.filter(e => e.status === 'approved' && !+e.download_count).length; }
   monthApproved() { return this.evaluations.filter(e => listStatus(e) === 'ap' && this.inMonth(e.approved_at)).length; }
 
   filtered() {

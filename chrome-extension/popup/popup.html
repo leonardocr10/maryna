@@ -6,7 +6,9 @@
 <link rel="stylesheet" href="../ui/panel.css">
 <style>
   body{width:360px;background:var(--bg)}
-  .pn{border:0;border-radius:0}
+  html,body{height:auto}
+  /* the popup takes its height from the content (Chrome caps it at 600px): 100vh here cut it short */
+  .pn{border:0;border-radius:0;height:auto;max-height:596px}
   main{max-height:none}
   .field{display:flex;flex-direction:column;gap:4px;font-size:12.5px}
   .field input[type=number],.field input[type=url]{height:32px;border:1px solid var(--line);border-radius:7px;padding:0 8px;background:var(--bg);color:var(--text);font:inherit;margin:0}
